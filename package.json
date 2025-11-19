@@ -1,0 +1,14 @@
+{
+  "name": "peer-eval",
+  "version": "1.0.0",
+  "description": "Peer Evaluation System for student projects",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && node server.js",
+    "postinstall": "npm run install:all && npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
