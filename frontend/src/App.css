@@ -1,0 +1,594 @@
+.app {
+  min-height: 100vh;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  font-size: 1.2rem;
+  color: #666;
+}
+
+/* Common styles */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  background: #2c3e50;
+  color: white;
+  padding: 15px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.header-right span {
+  font-size: 0.9rem;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.2s;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c0392b;
+}
+
+.btn-success {
+  background: #27ae60;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #219a52;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.card h2 {
+  margin-top: 0;
+  color: #2c3e50;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.form-group textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.error {
+  color: #e74c3c;
+  font-size: 0.9rem;
+  margin-top: 5px;
+}
+
+.success {
+  color: #27ae60;
+  font-size: 0.9rem;
+  margin-top: 5px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table th,
+table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+table th {
+  background: #f8f9fa;
+  font-weight: 600;
+}
+
+table tr:hover {
+  background: #f8f9fa;
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  padding: 10px 20px;
+  background: #ecf0f1;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.tab.active {
+  background: #3498db;
+  color: white;
+}
+
+.tab:hover:not(.active) {
+  background: #bdc3c7;
+}
+
+/* Login page */
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.login-card {
+  background: white;
+  padding: 40px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-card h1 {
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 30px;
+}
+
+/* Likert scale */
+.likert-scale {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+}
+
+.likert-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+}
+
+.likert-option input {
+  margin-bottom: 5px;
+}
+
+.likert-option span {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.likert-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 5px;
+}
+
+/* Phase tabs */
+.phase-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.phase-tab {
+  flex: 1;
+  padding: 15px;
+  text-align: center;
+  background: #ecf0f1;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.phase-tab.active {
+  background: #3498db;
+  color: white;
+}
+
+.phase-tab.completed {
+  background: #27ae60;
+  color: white;
+}
+
+/* Evaluation form */
+.evaluation-section {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.evaluation-section:last-child {
+  border-bottom: none;
+}
+
+.member-name {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 15px;
+}
+
+.criteria-item {
+  margin-bottom: 20px;
+}
+
+.criteria-label {
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #333;
+}
+
+/* Score input */
+.score-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.score-input input {
+  width: 80px;
+  text-align: center;
+}
+
+.score-input span {
+  color: #666;
+}
+
+/* File upload */
+.file-upload {
+  border: 2px dashed #ddd;
+  padding: 30px;
+  text-align: center;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.file-upload:hover {
+  border-color: #3498db;
+}
+
+.file-upload input {
+  display: none;
+}
+
+.file-upload p {
+  margin: 0;
+  color: #666;
+}
+
+/* Admin grid */
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+/* Messages */
+.message {
+  padding: 10px 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.message.error {
+  background: #fde8e8;
+  border: 1px solid #f5c6c6;
+  color: #c0392b;
+}
+
+.message.success {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  color: #155724;
+}
+
+/* Dark mode toggle button */
+.theme-toggle {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+/* Dark mode styles */
+body.dark-mode {
+  background-color: #1a1a2e;
+  color: #e0e0e0;
+}
+
+body.dark-mode .loading {
+  color: #a0a0a0;
+}
+
+body.dark-mode .header {
+  background: #16213e;
+}
+
+body.dark-mode .card {
+  background: #0f3460;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+body.dark-mode .card h2 {
+  color: #e0e0e0;
+}
+
+body.dark-mode .form-group label {
+  color: #e0e0e0;
+}
+
+body.dark-mode .form-group input,
+body.dark-mode .form-group textarea,
+body.dark-mode .form-group select {
+  background: #1a1a2e;
+  border-color: #3a3a5e;
+  color: #e0e0e0;
+}
+
+body.dark-mode .form-group input::placeholder,
+body.dark-mode .form-group textarea::placeholder {
+  color: #666;
+}
+
+body.dark-mode table th {
+  background: #16213e;
+  color: #e0e0e0;
+}
+
+body.dark-mode table td {
+  border-bottom-color: #3a3a5e;
+}
+
+body.dark-mode table tr:hover {
+  background: #16213e;
+}
+
+body.dark-mode .tab {
+  background: #16213e;
+  color: #e0e0e0;
+}
+
+body.dark-mode .tab:hover:not(.active) {
+  background: #1a3a6e;
+}
+
+body.dark-mode .phase-tab {
+  background: #16213e;
+  color: #e0e0e0;
+}
+
+body.dark-mode .login-container {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+body.dark-mode .login-card {
+  background: #0f3460;
+}
+
+body.dark-mode .login-card h1 {
+  color: #e0e0e0;
+}
+
+body.dark-mode .likert-option span,
+body.dark-mode .likert-labels {
+  color: #a0a0a0;
+}
+
+body.dark-mode .member-name {
+  color: #e0e0e0;
+}
+
+body.dark-mode .criteria-label {
+  color: #e0e0e0;
+}
+
+body.dark-mode .score-input span {
+  color: #a0a0a0;
+}
+
+body.dark-mode .file-upload {
+  border-color: #3a3a5e;
+}
+
+body.dark-mode .file-upload:hover {
+  border-color: #3498db;
+}
+
+body.dark-mode .file-upload p {
+  color: #a0a0a0;
+}
+
+body.dark-mode .message.error {
+  background: #3d1f1f;
+  border-color: #5c2e2e;
+  color: #ff6b6b;
+}
+
+body.dark-mode .message.success {
+  background: #1f3d2a;
+  border-color: #2e5c3e;
+  color: #6bff8a;
+}
+
+body.dark-mode .evaluation-section {
+  border-bottom-color: #3a3a5e;
+}
+
+body.dark-mode .btn-secondary {
+  background: #3a3a5e;
+}
+
+body.dark-mode .btn-secondary:hover {
+  background: #4a4a6e;
+}
+
+body.dark-mode .btn:disabled {
+  background: #3a3a5e;
+  color: #666;
+  cursor: not-allowed;
+}
+
+/* Report card styles */
+.report-student-card {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.report-student-card h3,
+.report-student-card h4 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+}
+
+.report-student-card h4 span {
+  font-weight: normal;
+  color: #666;
+}
+
+.report-muted-text {
+  color: #666;
+}
+
+.report-empty-text {
+  color: #999;
+  font-style: italic;
+}
+
+.report-progress-bg {
+  background: #ddd;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.report-comment-border {
+  border-bottom: 1px solid #ddd;
+}
+
+.report-phase-header {
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+  color: inherit;
+}
+
+/* Dark mode for reports */
+body.dark-mode .report-student-card {
+  background: #16213e;
+}
+
+body.dark-mode .report-student-card h3,
+body.dark-mode .report-student-card h4 {
+  color: #e0e0e0;
+}
+
+body.dark-mode .report-student-card h4 span {
+  color: #a0a0a0;
+}
+
+body.dark-mode .report-muted-text {
+  color: #a0a0a0;
+}
+
+body.dark-mode .report-empty-text {
+  color: #666;
+}
+
+body.dark-mode .report-progress-bg {
+  background: #3a3a5e;
+}
+
+body.dark-mode .report-comment-border {
+  border-bottom-color: #3a3a5e;
+}
+
+body.dark-mode .report-phase-header {
+  border-bottom-color: #3498db;
+}
