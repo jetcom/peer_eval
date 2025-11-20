@@ -348,7 +348,15 @@ function AdminDashboard() {
                 {uploadedCredentials.length > 0 && (
                   <div style={{ marginTop: '15px' }}>
                     <h3 style={{ marginBottom: '10px' }}>Generated Credentials</h3>
-                    <div style={{ maxHeight: '200px', overflow: 'auto', background: '#f8f9fa', padding: '10px', borderRadius: '4px', fontSize: '0.85rem' }}>
+                    <div style={{
+                      maxHeight: '200px',
+                      overflow: 'auto',
+                      background: darkMode ? '#1a2744' : '#f8f9fa',
+                      padding: '10px',
+                      borderRadius: '4px',
+                      fontSize: '0.85rem',
+                      color: darkMode ? '#e0e0e0' : 'inherit'
+                    }}>
                       <table style={{ width: '100%' }}>
                         <thead>
                           <tr>
@@ -360,7 +368,7 @@ function AdminDashboard() {
                           {uploadedCredentials.map((cred, idx) => (
                             <tr key={idx}>
                               <td>{cred.email}</td>
-                              <td><code>{cred.password}</code></td>
+                              <td><code style={{ background: darkMode ? '#2a3a5a' : '#e9ecef', padding: '2px 6px', borderRadius: '3px' }}>{cred.password}</code></td>
                             </tr>
                           ))}
                         </tbody>
