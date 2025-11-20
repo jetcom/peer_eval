@@ -12,12 +12,13 @@ function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
 
   // Form states
-  const [newUser, setNewUser] = useState({ email: '', password: '', name: '', role: 'student' });
+  const [newUser, setNewUser] = useState({ email: '', password: '', first_name: '', last_name: '', role: 'student' });
   const [newGroup, setNewGroup] = useState({ name: '' });
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
@@ -30,16 +31,18 @@ function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [usersRes, groupsRes, evalsRes, groupsWithMembersRes] = await Promise.all([
+      const [usersRes, groupsRes, evalsRes, groupsWithMembersRes, classesRes] = await Promise.all([
         axios.get('/api/users'),
         axios.get('/api/groups'),
         axios.get('/api/evaluations/all'),
-        axios.get('/api/groups/with-members')
+        axios.get('/api/groups/with-members'),
+        axios.get('/api/classes')
       ]);
       setUsers(usersRes.data);
       setGroups(groupsRes.data);
       setEvaluations(evalsRes.data);
       setGroupsWithMembers(groupsWithMembersRes.data);
+      setClasses(classesRes.data);
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load data' });
     } finally {
@@ -51,7 +54,7 @@ function AdminDashboard() {
     e.preventDefault();
     try {
       await axios.post('/api/users', newUser);
-      setNewUser({ email: '', password: '', name: '', role: 'student' });
+      setNewUser({ email: '', password: '', first_name: '', last_name: '', role: 'student' });
       setMessage({ type: 'success', text: 'User created successfully' });
       fetchData();
     } catch (err) {
@@ -241,6 +244,12 @@ function AdminDashboard() {
           >
             Reports
           </button>
+          <button
+            className={`tab ${activeTab === 'classes' ? 'active' : ''}`}
+            onClick={() => setActiveTab('classes')}
+          >
+            Classes
+          </button>
         </div>
 
         {activeTab === 'users' && (
@@ -268,11 +277,20 @@ function AdminDashboard() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Name</label>
+                    <label>First Name</label>
                     <input
                       type="text"
-                      value={newUser.name}
-                      onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
+                      value={newUser.first_name}
+                      onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Last Name</label>
+                    <input
+                      type="text"
+                      value={newUser.last_name}
+                      onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
                       required
                     />
                   </div>
@@ -283,6 +301,7 @@ function AdminDashboard() {
                       onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                     >
                       <option value="student">Student</option>
+                      <option value="teacher">Teacher</option>
                       <option value="admin">Admin</option>
                     </select>
                   </div>
@@ -292,10 +311,10 @@ function AdminDashboard() {
 
               <div className="card">
                 <h2>Upload Users CSV</h2>
-                <p>CSV format: <code>email,name,role</code></p>
+                <p>CSV columns: <code>university_id, last_name, first_name, email, group_name, role</code></p>
                 <p style={{ fontSize: '0.85rem', color: '#666' }}>
-                  Passwords auto-generated as: username + "Pass123"<br />
-                  Students must change password on first login.
+                  Lines can start/end with #. Password = university_id or auto-generated.<br />
+                  Users must change password on first login.
                 </p>
                 <label className="file-upload">
                   <input type="file" accept=".csv" onChange={handleUploadUsers} />
@@ -350,7 +369,7 @@ function AdminDashboard() {
                   {users.map(u => (
                     <tr key={u.id}>
                       <td>
-                        {u.name}
+                        {u.last_name}, {u.first_name}
                         {u.protected === 1 && <span style={{ marginLeft: '8px', color: '#7f8c8d', fontSize: '12px' }}>(protected)</span>}
                       </td>
                       <td>{u.email}</td>
@@ -455,7 +474,7 @@ function AdminDashboard() {
                     <tbody>
                       {groupMembers.map(member => (
                         <tr key={member.id}>
-                          <td>{member.name}</td>
+                          <td>{member.last_name}, {member.first_name}</td>
                           <td>{member.email}</td>
                           <td>
                             <button
@@ -785,6 +804,40 @@ function AdminDashboard() {
               );
             })()}
           </>
+        )}
+
+        {activeTab === 'classes' && (
+          <div className="card">
+            <h2>All Classes</h2>
+            {classes.length === 0 ? (
+              <p>No classes created yet. Teachers can create classes from their dashboard.</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Class Name</th>
+                    <th>Section</th>
+                    <th>Semester</th>
+                    <th>Teacher</th>
+                    <th>Students</th>
+                    <th>Groups</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {classes.map(c => (
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>{c.section || '-'}</td>
+                      <td>{c.semester || '-'}</td>
+                      <td>{c.teacher_name} ({c.teacher_email})</td>
+                      <td>{c.student_count}</td>
+                      <td>{c.group_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -21,6 +21,8 @@ function Login() {
       const user = await login(email, password);
       if (user.role === 'admin') {
         navigate('/admin');
+      } else if (user.role === 'teacher') {
+        navigate('/teacher');
       } else {
         navigate('/dashboard');
       }

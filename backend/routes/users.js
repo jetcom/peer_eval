@@ -10,7 +10,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 // Get all users (admin only)
 router.get('/', authenticateToken, requireAdmin, (req, res) => {
-  db.all('SELECT id, email, name, role, protected, created_at FROM users ORDER BY name', (err, users) => {
+  db.all('SELECT id, email, first_name, last_name, university_id, role, protected, created_at FROM users ORDER BY last_name, first_name', (err, users) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
@@ -20,12 +20,12 @@ router.get('/', authenticateToken, requireAdmin, (req, res) => {
 
 // Create user (admin only)
 router.post('/', authenticateToken, requireAdmin, (req, res) => {
-  const { email, password, name, role = 'student' } = req.body;
+  const { email, password, first_name, last_name, role = 'student' } = req.body;
   const hashedPassword = bcrypt.hashSync(password, 10);
 
   db.run(
-    'INSERT INTO users (email, password, name, role) VALUES (?, ?, ?, ?)',
-    [email, hashedPassword, name, role],
+    'INSERT INTO users (email, password, first_name, last_name, role) VALUES (?, ?, ?, ?, ?)',
+    [email, hashedPassword, first_name, last_name, role],
     function(err) {
       if (err) {
         if (err.message.includes('UNIQUE constraint')) {
@@ -33,15 +33,13 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
         }
         return res.status(500).json({ error: 'Failed to create user' });
       }
-      res.json({ id: this.lastID, email, name, role });
+      res.json({ id: this.lastID, email, first_name, last_name, role });
     }
   );
 });
 
 // Upload users via CSV (admin only)
-// CSV format: email,name,role,university_id (university_id used as temp password)
-// Or: email,password,name,role (if password column exists)
-// Or: email,name,role (password auto-generated as username + "Pass123")
+// CSV format: #university_id, last_name, first_name, email, group_name#
 router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'), (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -50,7 +48,16 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
   const results = [];
   const errors = [];
 
-  parse(req.file.buffer, {
+  // Preprocess CSV to strip # markers from start and end of lines
+  let csvContent = req.file.buffer.toString('utf8');
+  csvContent = csvContent.split('\n').map(line => {
+    line = line.trim();
+    if (line.startsWith('#')) line = line.substring(1);
+    if (line.endsWith('#')) line = line.slice(0, -1);
+    return line;
+  }).join('\n');
+
+  parse(csvContent, {
     columns: true,
     skip_empty_lines: true,
     trim: true
@@ -69,10 +76,10 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
     const credentials = [];
 
     records.forEach((record) => {
-      const { email, password, name, role = 'student', university_id } = record;
+      const { university_id, last_name, first_name, email, group_name, role = 'student' } = record;
 
-      if (!email || !name) {
-        errors.push({ email: email || 'unknown', error: 'Missing required fields (email, name)' });
+      if (!email || !first_name || !last_name) {
+        errors.push({ email: email || 'unknown', error: 'Missing required fields (email, first_name, last_name)' });
         processed++;
         if (processed === total) {
           res.json({ created: results.length, errors, credentials });
@@ -80,11 +87,9 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
         return;
       }
 
-      // Password priority: explicit password > university_id > auto-generated
+      // Password: use university_id or auto-generate
       let generatedPassword;
-      if (password) {
-        generatedPassword = password;
-      } else if (university_id) {
+      if (university_id) {
         generatedPassword = university_id;
       } else {
         const username = email.split('@')[0];
@@ -92,26 +97,69 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
       }
       const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
 
-      // Set must_change_password = 1 for auto-generated/university_id passwords
-      const mustChange = password ? 0 : 1;
-
       db.run(
-        'INSERT INTO users (email, password, name, role, must_change_password) VALUES (?, ?, ?, ?, ?)',
-        [email, hashedPassword, name, role || 'student', mustChange],
+        'INSERT INTO users (email, password, first_name, last_name, university_id, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)',
+        [email, hashedPassword, first_name, last_name, university_id || null, role || 'student'],
         function(err) {
           if (err) {
             errors.push({ email, error: err.message.includes('UNIQUE') ? 'Email already exists' : err.message });
-          } else {
-            const userResult = { id: this.lastID, email, name, role: role || 'student' };
-            results.push(userResult);
-            // Include generated password in response (only if auto-generated)
-            if (!password) {
-              credentials.push({ email, password: generatedPassword });
+            processed++;
+            if (processed === total) {
+              res.json({ created: results.length, errors, credentials });
             }
+            return;
           }
-          processed++;
-          if (processed === total) {
-            res.json({ created: results.length, errors, credentials });
+
+          const userId = this.lastID;
+          const userResult = { id: userId, email, first_name, last_name, role: role || 'student' };
+          results.push(userResult);
+          credentials.push({ email, password: generatedPassword });
+
+          // If group_name is provided, add user to group
+          if (group_name) {
+            // Check if group exists, create if not
+            db.get('SELECT id FROM groups WHERE name = ?', [group_name], (err, group) => {
+              if (err) {
+                processed++;
+                if (processed === total) {
+                  res.json({ created: results.length, errors, credentials });
+                }
+                return;
+              }
+
+              if (group) {
+                // Add to existing group
+                db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [group.id, userId], () => {
+                  processed++;
+                  if (processed === total) {
+                    res.json({ created: results.length, errors, credentials });
+                  }
+                });
+              } else {
+                // Create group and add user
+                db.run('INSERT INTO groups (name) VALUES (?)', [group_name], function(err) {
+                  if (err) {
+                    processed++;
+                    if (processed === total) {
+                      res.json({ created: results.length, errors, credentials });
+                    }
+                    return;
+                  }
+                  const groupId = this.lastID;
+                  db.run('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId], () => {
+                    processed++;
+                    if (processed === total) {
+                      res.json({ created: results.length, errors, credentials });
+                    }
+                  });
+                });
+              }
+            });
+          } else {
+            processed++;
+            if (processed === total) {
+              res.json({ created: results.length, errors, credentials });
+            }
           }
         }
       );

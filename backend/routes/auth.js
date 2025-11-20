@@ -24,7 +24,7 @@ router.post('/login', (req, res) => {
       }
 
       const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role, name: user.name },
+        { id: user.id, email: user.email, role: user.role, first_name: user.first_name, last_name: user.last_name },
         JWT_SECRET,
         { expiresIn: '24h' }
       );
@@ -34,7 +34,9 @@ router.post('/login', (req, res) => {
         user: {
           id: user.id,
           email: user.email,
-          name: user.name,
+          first_name: user.first_name,
+          last_name: user.last_name,
+          name: `${user.first_name} ${user.last_name}`.trim(),
           role: user.role,
           mustChangePassword: user.must_change_password === 1
         }
@@ -45,7 +47,7 @@ router.post('/login', (req, res) => {
 
 // Get current user
 router.get('/me', authenticateToken, (req, res) => {
-  db.get('SELECT id, email, name, role, must_change_password FROM users WHERE id = ?', [req.user.id], (err, user) => {
+  db.get('SELECT id, email, first_name, last_name, role, must_change_password FROM users WHERE id = ?', [req.user.id], (err, user) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
@@ -55,7 +57,9 @@ router.get('/me', authenticateToken, (req, res) => {
     res.json({
       id: user.id,
       email: user.email,
-      name: user.name,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      name: `${user.first_name} ${user.last_name}`.trim(),
       role: user.role,
       mustChangePassword: user.must_change_password === 1
     });

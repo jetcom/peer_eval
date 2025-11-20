@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -22,6 +22,8 @@ const LIKERT_OPTIONS = [
 
 function Evaluation() {
   const { phase } = useParams();
+  const [searchParams] = useSearchParams();
+  const classId = searchParams.get('class_id');
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -35,8 +37,11 @@ function Evaluation() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        const groupUrl = classId
+          ? `/api/groups/my/group?class_id=${classId}`
+          : '/api/groups/my/group';
         const [groupRes, evalRes, finalCommentsRes] = await Promise.all([
-          axios.get('/api/groups/my/group'),
+          axios.get(groupUrl),
           axios.get('/api/evaluations/my-evaluations'),
           axios.get('/api/evaluations/my-final-comments')
         ]);
@@ -78,7 +83,7 @@ function Evaluation() {
     };
 
     fetchData();
-  }, [phase]);
+  }, [phase, classId]);
 
   const handleCriteriaChange = (memberId, criterion, value) => {
     setEvaluations(prev => ({
@@ -194,7 +199,7 @@ function Evaluation() {
         {group?.members.map(member => (
           <div key={member.id} className="card evaluation-section">
             <div className="member-name">
-              {member.name} {member.id === user?.id && '(Self-Evaluation)'}
+              {member.last_name}, {member.first_name} {member.id === user?.id && '(Self-Evaluation)'}
             </div>
 
             {CRITERIA.map(criterion => (
@@ -245,7 +250,7 @@ function Evaluation() {
               <textarea
                 value={evaluations[member.id]?.comments || ''}
                 onChange={(e) => handleCommentsChange(member.id, e.target.value)}
-                placeholder={`Enter your comments about ${member.name}'s performance in Phase ${phase}...`}
+                placeholder={`Enter your comments about ${member.first_name}'s performance in Phase ${phase}...`}
               />
             </div>
 
@@ -255,7 +260,7 @@ function Evaluation() {
                 <textarea
                   value={finalComments[member.id] || ''}
                   onChange={(e) => handleFinalCommentsChange(member.id, e.target.value)}
-                  placeholder={`Enter your final overall comments about ${member.name}'s contribution to the entire project...`}
+                  placeholder={`Enter your final overall comments about ${member.first_name}'s contribution to the entire project...`}
                 />
               </div>
             )}

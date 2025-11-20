@@ -33,11 +33,11 @@ router.get('/with-members', authenticateToken, requireAdmin, (req, res) => {
 
     groups.forEach(group => {
       db.all(`
-        SELECT u.id, u.email, u.name
+        SELECT u.id, u.email, u.first_name, u.last_name
         FROM users u
         JOIN group_members gm ON u.id = gm.user_id
         WHERE gm.group_id = ?
-        ORDER BY u.name
+        ORDER BY u.last_name, u.first_name
       `, [group.id], (err, members) => {
         results.push({ ...group, members: members || [] });
         processed++;
@@ -76,13 +76,28 @@ router.get('/:id', authenticateToken, (req, res) => {
   });
 });
 
-// Get current user's group
+// Get current user's group (optionally filtered by class)
 router.get('/my/group', authenticateToken, (req, res) => {
-  db.get(`
-    SELECT g.* FROM groups g
-    JOIN group_members gm ON g.id = gm.group_id
-    WHERE gm.user_id = ?
-  `, [req.user.id], (err, group) => {
+  const { class_id } = req.query;
+
+  let query, params;
+  if (class_id) {
+    query = `
+      SELECT g.* FROM groups g
+      JOIN group_members gm ON g.id = gm.group_id
+      WHERE gm.user_id = ? AND g.class_id = ?
+    `;
+    params = [req.user.id, class_id];
+  } else {
+    query = `
+      SELECT g.* FROM groups g
+      JOIN group_members gm ON g.id = gm.group_id
+      WHERE gm.user_id = ?
+    `;
+    params = [req.user.id];
+  }
+
+  db.get(query, params, (err, group) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
@@ -105,56 +120,101 @@ router.get('/my/group', authenticateToken, (req, res) => {
   });
 });
 
-// Create group (admin only)
-router.post('/', authenticateToken, requireAdmin, (req, res) => {
-  const { name } = req.body;
+// Create group (admin only, or teacher for their class)
+router.post('/', authenticateToken, (req, res) => {
+  const { name, class_id } = req.body;
 
-  db.run('INSERT INTO groups (name) VALUES (?)', [name], function(err) {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to create group' });
-    }
-    res.json({ id: this.lastID, name });
-  });
+  // If class_id provided, check teacher owns the class
+  if (class_id && req.user.role === 'teacher') {
+    db.get('SELECT * FROM classes WHERE id = ? AND teacher_id = ?', [class_id, req.user.id], (err, classData) => {
+      if (err || !classData) {
+        return res.status(403).json({ error: 'Not authorized for this class' });
+      }
+
+      db.run('INSERT INTO groups (name, class_id) VALUES (?, ?)', [name, class_id], function(err) {
+        if (err) {
+          return res.status(500).json({ error: 'Failed to create group' });
+        }
+        res.json({ id: this.lastID, name, class_id });
+      });
+    });
+  } else if (req.user.role === 'admin') {
+    db.run('INSERT INTO groups (name, class_id) VALUES (?, ?)', [name, class_id || null], function(err) {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to create group' });
+      }
+      res.json({ id: this.lastID, name, class_id });
+    });
+  } else {
+    return res.status(403).json({ error: 'Admin or teacher access required' });
+  }
 });
 
-// Add member to group (admin only)
-router.post('/:id/members', authenticateToken, requireAdmin, (req, res) => {
+// Add member to group (admin or teacher who owns the class)
+router.post('/:id/members', authenticateToken, (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
 
-  // First remove user from any existing group
-  db.run('DELETE FROM group_members WHERE user_id = ?', [userId], (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+  // Check if user has permission (admin or teacher who owns the class)
+  db.get('SELECT g.*, c.teacher_id FROM groups g LEFT JOIN classes c ON g.class_id = c.id WHERE g.id = ?', [id], (err, group) => {
+    if (err || !group) {
+      return res.status(404).json({ error: 'Group not found' });
     }
 
-    db.run(
-      'INSERT INTO group_members (group_id, user_id) VALUES (?, ?)',
-      [id, userId],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to add member' });
-        }
-        res.json({ message: 'Member added' });
+    if (req.user.role !== 'admin' && req.user.id !== group.teacher_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // First remove user from any existing group in the same class
+    const removeQuery = group.class_id
+      ? 'DELETE FROM group_members WHERE user_id = ? AND group_id IN (SELECT id FROM groups WHERE class_id = ?)'
+      : 'DELETE FROM group_members WHERE user_id = ?';
+    const removeParams = group.class_id ? [userId, group.class_id] : [userId];
+
+    db.run(removeQuery, removeParams, (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
       }
-    );
+
+      db.run(
+        'INSERT INTO group_members (group_id, user_id) VALUES (?, ?)',
+        [id, userId],
+        function(err) {
+          if (err) {
+            return res.status(500).json({ error: 'Failed to add member' });
+          }
+          res.json({ message: 'Member added' });
+        }
+      );
+    });
   });
 });
 
-// Remove member from group (admin only)
-router.delete('/:id/members/:userId', authenticateToken, requireAdmin, (req, res) => {
+// Remove member from group (admin or teacher who owns the class)
+router.delete('/:id/members/:userId', authenticateToken, (req, res) => {
   const { id, userId } = req.params;
 
-  db.run(
-    'DELETE FROM group_members WHERE group_id = ? AND user_id = ?',
-    [id, userId],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to remove member' });
-      }
-      res.json({ message: 'Member removed' });
+  // Check if user has permission (admin or teacher who owns the class)
+  db.get('SELECT g.*, c.teacher_id FROM groups g LEFT JOIN classes c ON g.class_id = c.id WHERE g.id = ?', [id], (err, group) => {
+    if (err || !group) {
+      return res.status(404).json({ error: 'Group not found' });
     }
-  );
+
+    if (req.user.role !== 'admin' && req.user.id !== group.teacher_id) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    db.run(
+      'DELETE FROM group_members WHERE group_id = ? AND user_id = ?',
+      [id, userId],
+      function(err) {
+        if (err) {
+          return res.status(500).json({ error: 'Failed to remove member' });
+        }
+        res.json({ message: 'Member removed' });
+      }
+    );
+  });
 });
 
 // Upload groups via CSV (admin only)
