@@ -76,13 +76,25 @@ function AdminDashboard() {
       const res = await axios.post('/api/users/upload-csv', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      let messageText = `Created ${res.data.created} users.`;
+      if (res.data.errors.length > 0) {
+        const errorDetails = res.data.errors.slice(0, 5).map(e =>
+          `${e.email || 'unknown'}: ${e.error}`
+        ).join('; ');
+        const moreErrors = res.data.errors.length > 5 ? ` (and ${res.data.errors.length - 5} more)` : '';
+        messageText += ` ${res.data.errors.length} errors: ${errorDetails}${moreErrors}`;
+      }
       setMessage({
-        type: 'success',
-        text: `Created ${res.data.created} users. ${res.data.errors.length} errors.`
+        type: res.data.errors.length > 0 && res.data.created === 0 ? 'error' : 'success',
+        text: messageText
       });
       // Store generated credentials to display
       if (res.data.credentials && res.data.credentials.length > 0) {
         setUploadedCredentials(res.data.credentials);
+      }
+      // Log full errors to console for debugging
+      if (res.data.errors.length > 0) {
+        console.log('CSV Upload Errors:', res.data.errors);
       }
       fetchData();
     } catch (err) {
