@@ -356,7 +356,7 @@ function Evaluation() {
                 <div key={criterion.key} className="criteria-item">
                   <div className="criteria-label">
                     {criterion.label}
-                    <span style={{ fontWeight: 'normal', color: '#666', marginLeft: '10px' }}>
+                    <span className="criteria-description">
                       - {criterion.description}
                     </span>
                   </div>

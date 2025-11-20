@@ -255,9 +255,8 @@ function Dashboard() {
                     })}
                     {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
                       <button
-                        className={`phase-tab ${getPhaseStatus(4) === 'completed' ? 'completed' : ''}`}
+                        className={`phase-tab final-eval ${getPhaseStatus(4) === 'completed' ? 'completed' : ''}`}
                         onClick={() => navigate(`/evaluate/final?class_id=${selectedClass}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
-                        style={{ background: '#9b59b6' }}
                       >
                         Final Evaluation
                         {getPhaseStatus(4) === 'completed' && ' ✓'}

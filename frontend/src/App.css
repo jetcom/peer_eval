@@ -263,7 +263,12 @@ table tr:hover {
 }
 
 .phase-tab.completed {
-  background: #27ae60;
+  background: #16a085;
+  color: white;
+}
+
+.phase-tab.final-eval {
+  background: #9b59b6;
   color: white;
 }
 
@@ -293,6 +298,12 @@ table tr:hover {
   font-weight: 500;
   margin-bottom: 8px;
   color: #333;
+}
+
+.criteria-description {
+  font-weight: normal;
+  color: #666;
+  margin-left: 10px;
 }
 
 /* Score input */
@@ -377,141 +388,205 @@ table tr:hover {
   border-color: rgba(255, 255, 255, 0.5);
 }
 
-/* Dark mode styles */
+/* Dark mode styles - Solarized theme (darker variant) */
 body.dark-mode {
-  background-color: #1a1a2e;
-  color: #e0e0e0;
+  background-color: #001e27;
+  color: #93a1a1;
 }
 
 body.dark-mode .loading {
-  color: #a0a0a0;
+  color: #657b83;
 }
 
 body.dark-mode .header {
-  background: #16213e;
+  background: #00141a;
+  border-bottom: 1px solid #073642;
 }
 
 body.dark-mode .card {
-  background: #0f3460;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  background: #002b36;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
 body.dark-mode .card h2 {
-  color: #e0e0e0;
+  color: #eee8d5;
 }
 
 body.dark-mode .form-group label {
-  color: #e0e0e0;
+  color: #93a1a1;
 }
 
 body.dark-mode .form-group input,
 body.dark-mode .form-group textarea,
 body.dark-mode .form-group select {
-  background: #1a1a2e;
-  border-color: #3a3a5e;
-  color: #e0e0e0;
+  background: #001e27;
+  border-color: #073642;
+  color: #93a1a1;
 }
 
 body.dark-mode .form-group input::placeholder,
 body.dark-mode .form-group textarea::placeholder {
-  color: #666;
+  color: #586e75;
 }
 
 body.dark-mode table th {
-  background: #16213e;
-  color: #e0e0e0;
+  background: #002b36;
+  color: #eee8d5;
 }
 
 body.dark-mode table td {
-  border-bottom-color: #3a3a5e;
+  border-bottom-color: #073642;
+  color: #93a1a1;
 }
 
 body.dark-mode table tr:hover {
-  background: #16213e;
+  background: #073642;
 }
 
 body.dark-mode .tab {
-  background: #16213e;
-  color: #e0e0e0;
+  background: #002b36;
+  color: #93a1a1;
 }
 
 body.dark-mode .tab:hover:not(.active) {
-  background: #1a3a6e;
+  background: #073642;
+}
+
+body.dark-mode .tab.active {
+  background: #268bd2;
+  color: #fdf6e3;
 }
 
 body.dark-mode .phase-tab {
-  background: #16213e;
-  color: #e0e0e0;
+  background: #002b36;
+  color: #93a1a1;
+  border: 1px solid #586e75;
+}
+
+body.dark-mode .phase-tab.active {
+  background: #268bd2;
+  color: #fdf6e3;
+  border: 1px solid #268bd2;
+}
+
+body.dark-mode .phase-tab.completed {
+  background: #2aa198;
+  color: #fdf6e3;
+  border: 1px solid #2aa198;
+}
+
+body.dark-mode .phase-tab.final-eval {
+  background: #6c71c4;
+  color: #fdf6e3;
+  border: 1px solid #6c71c4;
+}
+
+body.dark-mode .phase-tab.final-eval.completed {
+  background: #2aa198;
+  color: #fdf6e3;
+  border: 1px solid #2aa198;
 }
 
 body.dark-mode .login-container {
-  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(135deg, #001e27 0%, #002b36 100%);
 }
 
 body.dark-mode .login-card {
-  background: #0f3460;
+  background: #002b36;
 }
 
 body.dark-mode .login-card h1 {
-  color: #e0e0e0;
+  color: #eee8d5;
 }
 
 body.dark-mode .likert-option span,
 body.dark-mode .likert-labels {
-  color: #a0a0a0;
+  color: #839496;
 }
 
 body.dark-mode .member-name {
-  color: #e0e0e0;
+  color: #2aa198;
 }
 
 body.dark-mode .criteria-label {
-  color: #e0e0e0;
+  color: #eee8d5;
+}
+
+body.dark-mode .criteria-description {
+  color: #839496;
 }
 
 body.dark-mode .score-input span {
-  color: #a0a0a0;
+  color: #839496;
 }
 
 body.dark-mode .file-upload {
-  border-color: #3a3a5e;
+  border-color: #073642;
 }
 
 body.dark-mode .file-upload:hover {
-  border-color: #3498db;
+  border-color: #268bd2;
 }
 
 body.dark-mode .file-upload p {
-  color: #a0a0a0;
+  color: #657b83;
 }
 
 body.dark-mode .message.error {
-  background: #3d1f1f;
-  border-color: #5c2e2e;
-  color: #ff6b6b;
+  background: #2d1010;
+  border-color: #dc322f;
+  color: #dc322f;
 }
 
 body.dark-mode .message.success {
-  background: #1f3d2a;
-  border-color: #2e5c3e;
-  color: #6bff8a;
+  background: #1a2910;
+  border-color: #859900;
+  color: #859900;
 }
 
 body.dark-mode .evaluation-section {
-  border-bottom-color: #3a3a5e;
+  border-bottom-color: #073642;
+}
+
+body.dark-mode .btn-primary {
+  background: #268bd2;
+  color: #fdf6e3;
+}
+
+body.dark-mode .btn-primary:hover {
+  background: #3a9fe6;
 }
 
 body.dark-mode .btn-secondary {
-  background: #3a3a5e;
+  background: #586e75;
+  color: #fdf6e3;
 }
 
 body.dark-mode .btn-secondary:hover {
-  background: #4a4a6e;
+  background: #657b83;
+}
+
+body.dark-mode .btn-success {
+  background: #859900;
+  color: #fdf6e3;
+}
+
+body.dark-mode .btn-success:hover {
+  background: #99ad00;
+}
+
+body.dark-mode .btn-danger {
+  background: #dc322f;
+  color: #fdf6e3;
+}
+
+body.dark-mode .btn-danger:hover {
+  background: #e85f5c;
 }
 
 body.dark-mode .btn:disabled {
-  background: #3a3a5e;
-  color: #666;
+  background: #002b36;
+  color: #586e75;
   cursor: not-allowed;
 }
 
@@ -559,36 +634,44 @@ body.dark-mode .btn:disabled {
   color: inherit;
 }
 
-/* Dark mode for reports */
+/* Dark mode for reports - Solarized (darker variant) */
 body.dark-mode .report-student-card {
-  background: #16213e;
+  background: #073642;
+  border: 1px solid #586e75;
 }
 
 body.dark-mode .report-student-card h3,
 body.dark-mode .report-student-card h4 {
-  color: #e0e0e0;
+  color: #eee8d5;
 }
 
 body.dark-mode .report-student-card h4 span {
-  color: #a0a0a0;
+  color: #839496;
+}
+
+body.dark-mode .report-student-card div {
+  color: #93a1a1;
 }
 
 body.dark-mode .report-muted-text {
-  color: #a0a0a0;
+  color: #839496;
 }
 
 body.dark-mode .report-empty-text {
-  color: #666;
+  color: #657b83;
+  opacity: 0.9;
 }
 
 body.dark-mode .report-progress-bg {
-  background: #3a3a5e;
+  background: #002b36;
+  border: 1px solid #586e75;
 }
 
 body.dark-mode .report-comment-border {
-  border-bottom-color: #3a3a5e;
+  border-bottom-color: #586e75;
 }
 
 body.dark-mode .report-phase-header {
-  border-bottom-color: #3498db;
+  border-bottom-color: #2aa198;
+  color: #2aa198;
 }
