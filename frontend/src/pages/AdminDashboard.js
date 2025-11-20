@@ -20,6 +20,7 @@ function AdminDashboard() {
   // Form states
   const [newUser, setNewUser] = useState({ email: '', password: '', first_name: '', last_name: '', role: 'student' });
   const [newGroup, setNewGroup] = useState({ name: '' });
+  const [newClass, setNewClass] = useState({ name: '', section: '', semester: '', teacher_id: '' });
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
   const [reportGroup, setReportGroup] = useState('all');
@@ -98,6 +99,38 @@ function AdminDashboard() {
       fetchData();
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to delete user' });
+    }
+  };
+
+  const handleCreateClass = async (e) => {
+    e.preventDefault();
+    try {
+      const classData = {
+        name: newClass.name,
+        section: newClass.section || null,
+        semester: newClass.semester || null
+      };
+      // If teacher_id is specified and not empty, include it
+      if (newClass.teacher_id) {
+        classData.teacher_id = parseInt(newClass.teacher_id);
+      }
+      await axios.post('/api/classes', classData);
+      setNewClass({ name: '', section: '', semester: '', teacher_id: '' });
+      setMessage({ type: 'success', text: 'Class created successfully' });
+      fetchData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to create class' });
+    }
+  };
+
+  const handleDeleteClass = async (id) => {
+    if (!window.confirm('Are you sure? This will delete all students, groups, and evaluations in this class.')) return;
+    try {
+      await axios.delete(`/api/classes/${id}`);
+      setMessage({ type: 'success', text: 'Class deleted' });
+      fetchData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to delete class' });
     }
   };
 
@@ -807,36 +840,93 @@ function AdminDashboard() {
         )}
 
         {activeTab === 'classes' && (
-          <div className="card">
-            <h2>All Classes</h2>
-            {classes.length === 0 ? (
-              <p>No classes created yet. Teachers can create classes from their dashboard.</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Class Name</th>
-                    <th>Section</th>
-                    <th>Semester</th>
-                    <th>Teacher</th>
-                    <th>Students</th>
-                    <th>Groups</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {classes.map(c => (
-                    <tr key={c.id}>
-                      <td>{c.name}</td>
-                      <td>{c.section || '-'}</td>
-                      <td>{c.semester || '-'}</td>
-                      <td>{c.teacher_name} ({c.teacher_email})</td>
-                      <td>{c.student_count}</td>
-                      <td>{c.group_count}</td>
+          <div className="admin-grid">
+            <div className="card">
+              <h2>Create Class</h2>
+              <form onSubmit={handleCreateClass}>
+                <div className="form-group">
+                  <label>Class Name</label>
+                  <input
+                    type="text"
+                    value={newClass.name}
+                    onChange={(e) => setNewClass({ ...newClass, name: e.target.value })}
+                    required
+                    placeholder="e.g., Software Engineering"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Section (optional)</label>
+                  <input
+                    type="text"
+                    value={newClass.section}
+                    onChange={(e) => setNewClass({ ...newClass, section: e.target.value })}
+                    placeholder="e.g., 001"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Semester (optional)</label>
+                  <input
+                    type="text"
+                    value={newClass.semester}
+                    onChange={(e) => setNewClass({ ...newClass, semester: e.target.value })}
+                    placeholder="e.g., Fall 2024"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Assign to Teacher (optional)</label>
+                  <select
+                    value={newClass.teacher_id}
+                    onChange={(e) => setNewClass({ ...newClass, teacher_id: e.target.value })}
+                  >
+                    <option value="">Myself (Admin)</option>
+                    {users.filter(u => u.role === 'teacher' || u.role === 'admin').map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.last_name}, {u.first_name} ({u.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button type="submit" className="btn btn-primary">Create Class</button>
+              </form>
+            </div>
+
+            <div className="card">
+              <h2>All Classes</h2>
+              {classes.length === 0 ? (
+                <p>No classes created yet.</p>
+              ) : (
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Class Name</th>
+                      <th>Section</th>
+                      <th>Semester</th>
+                      <th>Teacher</th>
+                      <th>Students</th>
+                      <th>Groups</th>
+                      <th>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                  </thead>
+                  <tbody>
+                    {classes.map(c => (
+                      <tr key={c.id}>
+                        <td>{c.name}</td>
+                        <td>{c.section || '-'}</td>
+                        <td>{c.semester || '-'}</td>
+                        <td>{c.teacher_name} ({c.teacher_email})</td>
+                        <td>{c.student_count}</td>
+                        <td>{c.group_count}</td>
+                        <td>
+                          <button className="btn btn-danger" onClick={() => handleDeleteClass(c.id)}>
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
         )}
       </div>
