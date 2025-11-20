@@ -74,21 +74,53 @@ router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 
 // Create class
 router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { name, section, semester } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation } = req.body;
   const teacher_id = req.user.role === 'admin' && req.body.teacher_id
     ? req.body.teacher_id
     : req.user.id;
 
   db.run(
-    'INSERT INTO classes (name, section, semester, teacher_id) VALUES (?, ?, ?, ?)',
-    [name, section || null, semester || null, teacher_id],
+    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation) VALUES (?, ?, ?, ?, ?, ?)',
+    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1],
     function(err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to create class' });
       }
-      res.json({ id: this.lastID, name, section, semester, teacher_id });
+      res.json({ id: this.lastID, name, section, semester, teacher_id, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1 });
     }
   );
+});
+
+// Update class
+router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const { id } = req.params;
+  const { name, section, semester, num_phases, has_final_evaluation } = req.body;
+
+  // Check ownership if not admin
+  const checkQuery = req.user.role === 'admin'
+    ? 'SELECT * FROM classes WHERE id = ?'
+    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
+  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
+
+  db.get(checkQuery, checkParams, (err, classData) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found or access denied' });
+    }
+
+    db.run(
+      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ? WHERE id = ?',
+      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, id],
+      function(err) {
+        if (err) {
+          return res.status(500).json({ error: 'Failed to update class' });
+        }
+        res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1 });
+      }
+    );
+  });
 });
 
 // Delete class
@@ -226,8 +258,69 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       return res.json({ created: 0, enrolled: 0, errors: [], credentials: [] });
     }
 
-    records.forEach((record) => {
-      const { university_id, last_name, first_name, email, group_name } = record;
+    // Helper to get field value with flexible column names
+    const getField = (record, ...names) => {
+      for (const name of names) {
+        if (record[name] !== undefined) return record[name];
+        const lowerName = name.toLowerCase();
+        for (const key of Object.keys(record)) {
+          if (key.toLowerCase() === lowerName) return record[key];
+        }
+      }
+      return undefined;
+    };
+
+    // Pre-process: collect all unique group names and create them first
+    const uniqueGroupNames = new Set();
+    records.forEach(record => {
+      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project Groups', 'Project Group');
+      if (group_name && group_name.trim()) {
+        uniqueGroupNames.add(group_name.trim());
+      }
+    });
+
+    // Map to store group name -> group id
+    const groupMap = new Map();
+
+    // Function to ensure all groups exist before processing students
+    const ensureGroupsExist = (callback) => {
+      const groupNames = Array.from(uniqueGroupNames);
+      if (groupNames.length === 0) {
+        callback();
+        return;
+      }
+
+      let groupsProcessed = 0;
+      groupNames.forEach(groupName => {
+        // Check if group exists in this class
+        db.get('SELECT id FROM groups WHERE name = ? AND class_id = ?', [groupName, id], (err, existingGroup) => {
+          if (existingGroup) {
+            groupMap.set(groupName, existingGroup.id);
+            groupsProcessed++;
+            if (groupsProcessed === groupNames.length) callback();
+          } else {
+            // Create group
+            db.run('INSERT INTO groups (name, class_id) VALUES (?, ?)', [groupName, id], function(err) {
+              if (!err && this.lastID) {
+                groupMap.set(groupName, this.lastID);
+              }
+              groupsProcessed++;
+              if (groupsProcessed === groupNames.length) callback();
+            });
+          }
+        });
+      });
+    };
+
+    // First ensure all groups exist, then process students
+    ensureGroupsExist(() => {
+      records.forEach((record) => {
+        // Support flexible column names
+        const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
+        const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
+        const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
+        const email = getField(record, 'email', 'Email', 'e-mail', 'EMAIL');
+        const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project Groups', 'Project Group');
 
       if (!email || !first_name || !last_name) {
         errors.push({ email: email || 'unknown', error: 'Missing required fields (email, first_name, last_name)' });
@@ -249,6 +342,21 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           return;
         }
 
+        // Helper function to add user to group (uses pre-created groupMap)
+        const addToGroup = (userId, groupName, callback) => {
+          if (!groupName || !groupName.trim()) {
+            callback();
+            return;
+          }
+
+          const groupId = groupMap.get(groupName.trim());
+          if (groupId) {
+            db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId], callback);
+          } else {
+            callback();
+          }
+        };
+
         if (existingUser) {
           // User exists, just enroll them
           db.run(
@@ -257,13 +365,22 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
             function(err) {
               if (err) {
                 errors.push({ email, error: 'Failed to enroll existing user' });
-              } else {
-                results.push({ id: existingUser.id, email, first_name, last_name, existing: true });
+                processed++;
+                if (processed === total) {
+                  res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
+                }
+                return;
               }
-              processed++;
-              if (processed === total) {
-                res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-              }
+
+              results.push({ id: existingUser.id, email, first_name, last_name, existing: true });
+
+              // Add to group if specified
+              addToGroup(existingUser.id, group_name, () => {
+                processed++;
+                if (processed === total) {
+                  res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
+                }
+              });
             }
           );
         } else {
@@ -299,14 +416,23 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
                 function(err) {
                   if (err) {
                     errors.push({ email, error: 'Created user but failed to enroll' });
-                  } else {
-                    results.push({ id: userId, email, first_name, last_name, existing: false });
-                    credentials.push({ email, password: generatedPassword });
+                    processed++;
+                    if (processed === total) {
+                      res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
+                    }
+                    return;
                   }
-                  processed++;
-                  if (processed === total) {
-                    res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-                  }
+
+                  results.push({ id: userId, email, first_name, last_name, existing: false });
+                  credentials.push({ email, password: generatedPassword });
+
+                  // Add to group if specified
+                  addToGroup(userId, group_name, () => {
+                    processed++;
+                    if (processed === total) {
+                      res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
+                    }
+                  });
                 }
               );
             }
@@ -314,6 +440,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
         }
       });
     });
+  });
   });
   });
 });
@@ -359,16 +486,40 @@ router.get('/:id/groups', authenticateToken, requireTeacherOrAdmin, (req, res) =
   });
 });
 
-// Get classes for a student
+// Get classes for a student (or teacher/admin viewing student dashboard)
 router.get('/my/enrolled', authenticateToken, (req, res) => {
-  db.all(`
-    SELECT c.*, (u.first_name || ' ' || u.last_name) as teacher_name
-    FROM classes c
-    JOIN class_enrollments ce ON c.id = ce.class_id
-    JOIN users u ON c.teacher_id = u.id
-    WHERE ce.user_id = ?
-    ORDER BY c.created_at DESC
-  `, [req.user.id], (err, classes) => {
+  // For teachers/admins, include classes they teach
+  const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
+
+  let query;
+  let params;
+
+  if (isTeacherOrAdmin) {
+    // Get classes they teach (and any they're enrolled in)
+    query = `
+      SELECT DISTINCT c.*, (u.first_name || ' ' || u.last_name) as teacher_name
+      FROM classes c
+      JOIN users u ON c.teacher_id = u.id
+      WHERE c.teacher_id = ? OR c.id IN (
+        SELECT class_id FROM class_enrollments WHERE user_id = ?
+      )
+      ORDER BY c.created_at DESC
+    `;
+    params = [req.user.id, req.user.id];
+  } else {
+    // Students only see enrolled classes
+    query = `
+      SELECT c.*, (u.first_name || ' ' || u.last_name) as teacher_name
+      FROM classes c
+      JOIN class_enrollments ce ON c.id = ce.class_id
+      JOIN users u ON c.teacher_id = u.id
+      WHERE ce.user_id = ?
+      ORDER BY c.created_at DESC
+    `;
+    params = [req.user.id];
+  }
+
+  db.all(query, params, (err, classes) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }

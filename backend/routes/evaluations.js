@@ -5,14 +5,21 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
 
 // Get evaluations for current user (what they've submitted)
+// Admins/teachers can pass user_id to masquerade as a student
 router.get('/my-evaluations', authenticateToken, (req, res) => {
+  const { user_id } = req.query;
+
+  // Allow admins/teachers to masquerade as a student
+  const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
+  const targetUserId = (isTeacherOrAdmin && user_id) ? user_id : req.user.id;
+
   db.all(`
     SELECT e.*, (u.first_name || ' ' || u.last_name) as evaluatee_name
     FROM evaluations e
     JOIN users u ON e.evaluatee_id = u.id
     WHERE e.evaluator_id = ?
     ORDER BY e.phase, u.last_name
-  `, [req.user.id], (err, evaluations) => {
+  `, [targetUserId], (err, evaluations) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
@@ -21,14 +28,21 @@ router.get('/my-evaluations', authenticateToken, (req, res) => {
 });
 
 // Get final comments for current user
+// Admins/teachers can pass user_id to masquerade as a student
 router.get('/my-final-comments', authenticateToken, (req, res) => {
+  const { user_id } = req.query;
+
+  // Allow admins/teachers to masquerade as a student
+  const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
+  const targetUserId = (isTeacherOrAdmin && user_id) ? user_id : req.user.id;
+
   db.all(`
-    SELECT fc.*, (u.first_name || ' ' || u.last_name) as evaluatee_name
+    SELECT fc.*, fc.final_points, (u.first_name || ' ' || u.last_name) as evaluatee_name
     FROM final_comments fc
     JOIN users u ON fc.evaluatee_id = u.id
     WHERE fc.evaluator_id = ?
     ORDER BY u.last_name
-  `, [req.user.id], (err, comments) => {
+  `, [targetUserId], (err, comments) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
@@ -111,7 +125,7 @@ router.post('/', authenticateToken, (req, res) => {
 
 // Submit or update final comments
 router.post('/final-comments', authenticateToken, (req, res) => {
-  const { evaluatee_id, comments } = req.body;
+  const { evaluatee_id, comments, final_points } = req.body;
 
   db.get(
     'SELECT id FROM final_comments WHERE evaluator_id = ? AND evaluatee_id = ?',
@@ -125,9 +139,10 @@ router.post('/final-comments', authenticateToken, (req, res) => {
         db.run(`
           UPDATE final_comments SET
             comments = ?,
+            final_points = ?,
             updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `, [comments, existing.id],
+        `, [comments, final_points || 0, existing.id],
         function(err) {
           if (err) {
             return res.status(500).json({ error: 'Failed to update final comments' });
@@ -136,9 +151,9 @@ router.post('/final-comments', authenticateToken, (req, res) => {
         });
       } else {
         db.run(`
-          INSERT INTO final_comments (evaluator_id, evaluatee_id, comments)
-          VALUES (?, ?, ?)
-        `, [req.user.id, evaluatee_id, comments],
+          INSERT INTO final_comments (evaluator_id, evaluatee_id, comments, final_points)
+          VALUES (?, ?, ?, ?)
+        `, [req.user.id, evaluatee_id, comments, final_points || 0],
         function(err) {
           if (err) {
             return res.status(500).json({ error: 'Failed to create final comments' });

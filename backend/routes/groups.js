@@ -77,8 +77,13 @@ router.get('/:id', authenticateToken, (req, res) => {
 });
 
 // Get current user's group (optionally filtered by class)
+// Admins/teachers can pass user_id to masquerade as a student
 router.get('/my/group', authenticateToken, (req, res) => {
-  const { class_id } = req.query;
+  const { class_id, user_id } = req.query;
+
+  // Allow admins/teachers to masquerade as a student
+  const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
+  const targetUserId = (isTeacherOrAdmin && user_id) ? user_id : req.user.id;
 
   let query, params;
   if (class_id) {
@@ -87,14 +92,14 @@ router.get('/my/group', authenticateToken, (req, res) => {
       JOIN group_members gm ON g.id = gm.group_id
       WHERE gm.user_id = ? AND g.class_id = ?
     `;
-    params = [req.user.id, class_id];
+    params = [targetUserId, class_id];
   } else {
     query = `
       SELECT g.* FROM groups g
       JOIN group_members gm ON g.id = gm.group_id
       WHERE gm.user_id = ?
     `;
-    params = [req.user.id];
+    params = [targetUserId];
   }
 
   db.get(query, params, (err, group) => {
@@ -102,15 +107,15 @@ router.get('/my/group', authenticateToken, (req, res) => {
       return res.status(500).json({ error: 'Database error' });
     }
     if (!group) {
-      return res.status(404).json({ error: 'You are not in any group' });
+      return res.status(404).json({ error: 'User is not in any group' });
     }
 
     db.all(`
-      SELECT u.id, u.email, u.name
+      SELECT u.id, u.email, u.first_name, u.last_name
       FROM users u
       JOIN group_members gm ON u.id = gm.user_id
       WHERE gm.group_id = ?
-      ORDER BY u.name
+      ORDER BY u.last_name, u.first_name
     `, [group.id], (err, members) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });

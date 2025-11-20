@@ -1,4 +1,5 @@
 const path = require('path');
+const { createSampleData } = require('./sampleData');
 
 // Database abstraction layer - supports both SQLite (local) and PostgreSQL (production)
 let db;
@@ -141,9 +142,23 @@ async function initializeDatabase() {
           section TEXT,
           semester TEXT,
           teacher_id INTEGER NOT NULL REFERENCES users(id),
+          num_phases INTEGER DEFAULT 3,
+          has_final_evaluation INTEGER DEFAULT 1,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      // Add new columns if they don't exist (for existing databases)
+      try {
+        await pool.query(`ALTER TABLE classes ADD COLUMN num_phases INTEGER DEFAULT 3`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await pool.query(`ALTER TABLE classes ADD COLUMN has_final_evaluation INTEGER DEFAULT 1`);
+      } catch (e) {
+        // Column may already exist
+      }
 
       // Class enrollments table
       await pool.query(`
@@ -203,26 +218,37 @@ async function initializeDatabase() {
           evaluator_id INTEGER NOT NULL REFERENCES users(id),
           evaluatee_id INTEGER NOT NULL REFERENCES users(id),
           comments TEXT,
+          final_points INTEGER DEFAULT 0,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(evaluator_id, evaluatee_id)
         )
       `);
 
+      // Add final_points column if it doesn't exist (for existing databases)
+      try {
+        await pool.query(`ALTER TABLE final_comments ADD COLUMN final_points INTEGER DEFAULT 0`);
+      } catch (e) {
+        // Column may already exist
+      }
+
       // Create protected admin users (using ON CONFLICT for PostgreSQL)
       await pool.query(`
         INSERT INTO users (email, password, first_name, last_name, role, must_change_password, protected)
-        VALUES ($1, $2, 'Admin', 'JXB', 'admin', 1, 1)
+        VALUES ($1, $2, 'Jeremy', 'Brown', 'admin', 1, 1)
         ON CONFLICT (email) DO NOTHING
       `, ['jxbvcs@rit.edu', hashedPassword]);
 
       await pool.query(`
         INSERT INTO users (email, password, first_name, last_name, role, must_change_password, protected)
-        VALUES ($1, $2, 'Admin', 'SXJ', 'admin', 1, 1)
+        VALUES ($1, $2, 'Scott', 'Johnson', 'admin', 1, 1)
         ON CONFLICT (email) DO NOTHING
       `, ['sxjcs@rit.edu', hashedPassword]);
 
       console.log('PostgreSQL database initialized');
+
+      // Create sample data for demo purposes
+      await createSampleData(db, isPostgres);
     } catch (err) {
       console.error('Error initializing PostgreSQL database:', err);
     }
@@ -263,10 +289,16 @@ async function initializeDatabase() {
           section TEXT,
           semester TEXT,
           teacher_id INTEGER NOT NULL,
+          num_phases INTEGER DEFAULT 3,
+          has_final_evaluation INTEGER DEFAULT 1,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (teacher_id) REFERENCES users(id)
         )
       `);
+
+      // Add new columns if they don't exist (for existing databases)
+      db.run(`ALTER TABLE classes ADD COLUMN num_phases INTEGER DEFAULT 3`, () => {});
+      db.run(`ALTER TABLE classes ADD COLUMN has_final_evaluation INTEGER DEFAULT 1`, () => {});
 
       // Class enrollments table
       db.run(`
@@ -335,6 +367,7 @@ async function initializeDatabase() {
           evaluator_id INTEGER NOT NULL,
           evaluatee_id INTEGER NOT NULL,
           comments TEXT,
+          final_points INTEGER DEFAULT 0,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (evaluator_id) REFERENCES users(id),
@@ -343,19 +376,31 @@ async function initializeDatabase() {
         )
       `);
 
+      // Add final_points column if it doesn't exist (for existing databases)
+      db.run(`ALTER TABLE final_comments ADD COLUMN final_points INTEGER DEFAULT 0`, () => {});
+
       // Create protected admin users
       db.run(`
         INSERT OR IGNORE INTO users (email, password, first_name, last_name, role, must_change_password, protected)
-        VALUES ('jxbvcs@rit.edu', ?, 'Admin', 'JXB', 'admin', 1, 1)
+        VALUES ('jxbvcs@rit.edu', ?, 'Jeremy', 'Brown', 'admin', 1, 1)
       `, [hashedPassword]);
 
       db.run(`
         INSERT OR IGNORE INTO users (email, password, first_name, last_name, role, must_change_password, protected)
-        VALUES ('sxjcs@rit.edu', ?, 'Admin', 'SXJ', 'admin', 1, 1)
+        VALUES ('sxjcs@rit.edu', ?, 'Scott', 'Johnson', 'admin', 1, 1)
       `, [hashedPassword]);
+
+      // Update existing admin names (in case they already exist)
+      db.run(`UPDATE users SET first_name = 'Jeremy', last_name = 'Brown' WHERE email = 'jxbvcs@rit.edu'`);
+      db.run(`UPDATE users SET first_name = 'Scott', last_name = 'Johnson' WHERE email = 'sxjcs@rit.edu'`);
     });
 
     console.log('SQLite database initialized');
+
+    // Create sample data for demo purposes (with delay to ensure tables exist)
+    setTimeout(() => {
+      createSampleData(db, isPostgres);
+    }, 1000);
   }
 }
 

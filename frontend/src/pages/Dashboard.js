@@ -16,6 +16,12 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Masquerade feature for admins/teachers
+  const [classStudents, setClassStudents] = useState([]);
+  const [masqueradeUser, setMasqueradeUser] = useState(null);
+  const [finalComments, setFinalComments] = useState([]);
+  const isTeacherOrAdmin = user?.role === 'teacher' || user?.role === 'admin';
+
   useEffect(() => {
     fetchClasses();
   }, []);
@@ -24,29 +30,56 @@ function Dashboard() {
     setLoading(true);
     setError('');
     setGroup(null);
+
+    // Fetch students for masquerade dropdown if admin/teacher
+    if (isTeacherOrAdmin && selectedClass) {
+      try {
+        const studentsRes = await axios.get(`/api/classes/${selectedClass}/students`);
+        setClassStudents(studentsRes.data);
+      } catch (err) {
+        setClassStudents([]);
+      }
+    }
+
+    // If admin/teacher and no masquerade user selected, just show the student picker
+    if (isTeacherOrAdmin && !masqueradeUser) {
+      setLoading(false);
+      return;
+    }
+
     try {
-      const [groupRes, evalRes] = await Promise.all([
-        axios.get(`/api/groups/my/group?class_id=${selectedClass}`),
-        axios.get('/api/evaluations/my-evaluations')
+      // Use masquerade user ID if set, otherwise use own ID
+      const userIdParam = isTeacherOrAdmin && masqueradeUser ? `&user_id=${masqueradeUser}` : '';
+
+      const [groupRes, evalRes, finalCommentsRes] = await Promise.all([
+        axios.get(`/api/groups/my/group?class_id=${selectedClass}${userIdParam}`),
+        axios.get(`/api/evaluations/my-evaluations?class_id=${selectedClass}${userIdParam}`),
+        axios.get(`/api/evaluations/my-final-comments?${userIdParam.substring(1)}`)
       ]);
       setGroup(groupRes.data);
       setEvaluations(evalRes.data);
+      setFinalComments(finalCommentsRes.data);
     } catch (err) {
       if (err.response?.status === 404) {
-        setError('You are not assigned to any group in this class yet. Please contact your instructor.');
+        setError('This student is not assigned to any group in this class yet.');
       } else {
         setError('Failed to load data');
       }
     } finally {
       setLoading(false);
     }
-  }, [selectedClass]);
+  }, [selectedClass, masqueradeUser, isTeacherOrAdmin]);
 
   useEffect(() => {
     if (selectedClass) {
       fetchClassData();
     }
   }, [selectedClass, fetchClassData]);
+
+  // Reset masquerade when class changes
+  useEffect(() => {
+    setMasqueradeUser(null);
+  }, [selectedClass]);
 
   const fetchClasses = async () => {
     try {
@@ -66,6 +99,14 @@ function Dashboard() {
   const getPhaseStatus = (phase) => {
     if (!group) return 'not-started';
     const memberCount = group.members.length;
+
+    // Phase 4 is Final Evaluation - check finalComments
+    if (phase === 4) {
+      if (finalComments.length === memberCount) return 'completed';
+      if (finalComments.length > 0) return 'in-progress';
+      return 'not-started';
+    }
+
     const phaseEvals = evaluations.filter(e => e.phase === phase);
     if (phaseEvals.length === memberCount) return 'completed';
     if (phaseEvals.length > 0) return 'in-progress';
@@ -89,7 +130,28 @@ function Dashboard() {
       <div className="header">
         <h1>Peer Evaluation</h1>
         <div className="header-right">
-          <span>Welcome, {user?.name}</span>
+          {classes.length > 0 && (
+            <select
+              value={selectedClass || ''}
+              onChange={(e) => setSelectedClass(parseInt(e.target.value))}
+              style={{
+                padding: '8px 12px',
+                borderRadius: '4px',
+                border: '1px solid #ccc',
+                background: darkMode ? '#2a3a5a' : '#fff',
+                color: darkMode ? '#e0e0e0' : '#333',
+                marginRight: '10px',
+                minWidth: '200px'
+              }}
+            >
+              {classes.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.section && `(${c.section})`} {c.semester && `- ${c.semester}`}
+                </option>
+              ))}
+            </select>
+          )}
+          <span>Welcome, {user?.first_name || user?.name}</span>
           <button className="theme-toggle" onClick={toggleDarkMode}>
             {darkMode ? 'Light' : 'Dark'}
           </button>
@@ -112,27 +174,45 @@ function Dashboard() {
           </div>
         ) : (
           <>
-            {classes.length > 1 && (
+            {currentClass && (
               <div className="card">
-                <h2>Select Class</h2>
-                <select
-                  value={selectedClass || ''}
-                  onChange={(e) => setSelectedClass(parseInt(e.target.value))}
-                  style={{ width: '100%', padding: '10px', fontSize: '1rem' }}
-                >
-                  {classes.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.section && `(${c.section})`} - {c.teacher_name}
-                    </option>
-                  ))}
-                </select>
+                <h2>{currentClass.name} {currentClass.section && `(${currentClass.section})`}</h2>
+                {currentClass.semester && <p style={{ color: darkMode ? '#a0a0a0' : '#666', marginBottom: '5px' }}>{currentClass.semester}</p>}
+                <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>Instructor: {currentClass.teacher_name}</p>
               </div>
             )}
 
-            {currentClass && classes.length === 1 && (
-              <div className="card">
-                <h2>{currentClass.name} {currentClass.section && `(${currentClass.section})`}</h2>
-                <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>Instructor: {currentClass.teacher_name}</p>
+            {/* Masquerade selector for admins/teachers */}
+            {isTeacherOrAdmin && selectedClass && (
+              <div className="card" style={{ background: darkMode ? '#2a4a6a' : '#fff3cd', borderLeft: '4px solid #f39c12' }}>
+                <h2 style={{ marginBottom: '10px' }}>👁️ View as Student</h2>
+                <p style={{ marginBottom: '15px', color: darkMode ? '#e0e0e0' : '#666' }}>
+                  Select a student to view their dashboard experience.
+                </p>
+                <select
+                  value={masqueradeUser || ''}
+                  onChange={(e) => setMasqueradeUser(e.target.value ? parseInt(e.target.value) : null)}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    border: '1px solid #ccc',
+                    background: darkMode ? '#1e3a5f' : '#fff',
+                    color: darkMode ? '#e0e0e0' : '#333'
+                  }}
+                >
+                  <option value="">-- Select a student --</option>
+                  {classStudents.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.last_name}, {s.first_name} ({s.email})
+                    </option>
+                  ))}
+                </select>
+                {masqueradeUser && (
+                  <p style={{ marginTop: '10px', fontWeight: 'bold', color: darkMode ? '#f39c12' : '#856404' }}>
+                    Viewing as: {classStudents.find(s => s.id === masqueradeUser)?.first_name} {classStudents.find(s => s.id === masqueradeUser)?.last_name}
+                  </p>
+                )}
               </div>
             )}
 
@@ -148,7 +228,7 @@ function Dashboard() {
                   <ul>
                     {group.members.map(member => (
                       <li key={member.id}>
-                        {member.last_name}, {member.first_name} {member.id === user?.id && '(You)'}
+                        {member.last_name}, {member.first_name} {member.id === (masqueradeUser || user?.id) && '(You)'}
                       </li>
                     ))}
                   </ul>
@@ -159,13 +239,13 @@ function Dashboard() {
                   <p>Click on a phase to submit or update your peer evaluations.</p>
 
                   <div className="phase-tabs">
-                    {[1, 2, 3].map(phase => {
+                    {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => {
                       const status = getPhaseStatus(phase);
                       return (
                         <button
                           key={phase}
                           className={`phase-tab ${status === 'completed' ? 'completed' : ''}`}
-                          onClick={() => navigate(`/evaluate/${phase}?class_id=${selectedClass}`)}
+                          onClick={() => navigate(`/evaluate/${phase}?class_id=${selectedClass}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
                         >
                           Phase {phase}
                           {status === 'completed' && ' ✓'}
@@ -173,6 +253,17 @@ function Dashboard() {
                         </button>
                       );
                     })}
+                    {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
+                      <button
+                        className={`phase-tab ${getPhaseStatus(4) === 'completed' ? 'completed' : ''}`}
+                        onClick={() => navigate(`/evaluate/final?class_id=${selectedClass}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
+                        style={{ background: '#9b59b6' }}
+                      >
+                        Final Evaluation
+                        {getPhaseStatus(4) === 'completed' && ' ✓'}
+                        {getPhaseStatus(4) === 'in-progress' && ' (In Progress)'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -182,16 +273,19 @@ function Dashboard() {
                     <thead>
                       <tr>
                         <th>Team Member</th>
-                        <th>Phase 1</th>
-                        <th>Phase 2</th>
-                        <th>Phase 3</th>
+                        {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => (
+                          <th key={phase}>Phase {phase}</th>
+                        ))}
+                        {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
+                          <th>Final</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
                       {group.members.map(member => (
                         <tr key={member.id}>
-                          <td>{member.last_name}, {member.first_name} {member.id === user?.id && '(You)'}</td>
-                          {[1, 2, 3].map(phase => {
+                          <td>{member.last_name}, {member.first_name} {member.id === (masqueradeUser || user?.id) && '(You)'}</td>
+                          {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => {
                             const hasEval = evaluations.some(
                               e => e.evaluatee_id === member.id && e.phase === phase
                             );
@@ -205,6 +299,15 @@ function Dashboard() {
                               </td>
                             );
                           })}
+                          {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
+                            <td>
+                              {finalComments.some(fc => fc.evaluatee_id === member.id) ? (
+                                <span style={{ color: '#27ae60' }}>✓ Complete</span>
+                              ) : (
+                                <span style={{ color: '#95a5a6' }}>Pending</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
