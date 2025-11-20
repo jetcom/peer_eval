@@ -28,61 +28,57 @@ function Evaluation() {
   const [group, setGroup] = useState(null);
   const [evaluations, setEvaluations] = useState({});
   const [finalComments, setFinalComments] = useState({});
-  const [existingEvals, setExistingEvals] = useState([]);
-  const [existingFinalComments, setExistingFinalComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [groupRes, evalRes, finalCommentsRes] = await Promise.all([
+          axios.get('/api/groups/my/group'),
+          axios.get('/api/evaluations/my-evaluations'),
+          axios.get('/api/evaluations/my-final-comments')
+        ]);
+
+        setGroup(groupRes.data);
+
+        // Initialize evaluations state from existing data
+        const evalMap = {};
+        const phaseEvals = evalRes.data.filter(e => e.phase === parseInt(phase));
+
+        groupRes.data.members.forEach(member => {
+          const existing = phaseEvals.find(e => e.evaluatee_id === member.id);
+          evalMap[member.id] = existing || {
+            contribution: 3,
+            communication: 3,
+            reliability: 3,
+            quality_of_work: 3,
+            collaboration: 3,
+            score: 80,
+            comments: ''
+          };
+        });
+        setEvaluations(evalMap);
+
+        // Initialize final comments if phase 3
+        if (parseInt(phase) === 3) {
+          const fcMap = {};
+          groupRes.data.members.forEach(member => {
+            const existing = finalCommentsRes.data.find(fc => fc.evaluatee_id === member.id);
+            fcMap[member.id] = existing?.comments || '';
+          });
+          setFinalComments(fcMap);
+        }
+      } catch (err) {
+        setMessage({ type: 'error', text: 'Failed to load data' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
   }, [phase]);
-
-  const fetchData = async () => {
-    try {
-      const [groupRes, evalRes, finalCommentsRes] = await Promise.all([
-        axios.get('/api/groups/my/group'),
-        axios.get('/api/evaluations/my-evaluations'),
-        axios.get('/api/evaluations/my-final-comments')
-      ]);
-
-      setGroup(groupRes.data);
-      setExistingEvals(evalRes.data);
-      setExistingFinalComments(finalCommentsRes.data);
-
-      // Initialize evaluations state from existing data
-      const evalMap = {};
-      const phaseEvals = evalRes.data.filter(e => e.phase === parseInt(phase));
-
-      groupRes.data.members.forEach(member => {
-        const existing = phaseEvals.find(e => e.evaluatee_id === member.id);
-        evalMap[member.id] = existing || {
-          contribution: 3,
-          communication: 3,
-          reliability: 3,
-          quality_of_work: 3,
-          collaboration: 3,
-          score: 80,
-          comments: ''
-        };
-      });
-      setEvaluations(evalMap);
-
-      // Initialize final comments if phase 3
-      if (parseInt(phase) === 3) {
-        const fcMap = {};
-        groupRes.data.members.forEach(member => {
-          const existing = finalCommentsRes.data.find(fc => fc.evaluatee_id === member.id);
-          fcMap[member.id] = existing?.comments || '';
-        });
-        setFinalComments(fcMap);
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to load data' });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCriteriaChange = (memberId, criterion, value) => {
     setEvaluations(prev => ({
