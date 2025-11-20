@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 function ChangePasswordModal({ onComplete }) {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -9,6 +10,7 @@ function ChangePasswordModal({ onComplete }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { clearMustChangePassword } = useAuth();
+  const { darkMode } = useTheme();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -54,15 +56,15 @@ function ChangePasswordModal({ onComplete }) {
       zIndex: 1000
     }}>
       <div style={{
-        background: 'white',
+        background: darkMode ? '#0f3460' : 'white',
         padding: '30px',
         borderRadius: '8px',
         maxWidth: '400px',
         width: '90%',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)'
       }}>
-        <h2 style={{ marginTop: 0, color: '#2c3e50' }}>Change Password Required</h2>
-        <p style={{ color: '#666', marginBottom: '20px' }}>
+        <h2 style={{ marginTop: 0, color: darkMode ? '#e0e0e0' : '#2c3e50' }}>Change Password Required</h2>
+        <p style={{ color: darkMode ? '#a0a0a0' : '#666', marginBottom: '20px' }}>
           For security, you must change your temporary password before continuing.
         </p>
 
