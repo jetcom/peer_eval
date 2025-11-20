@@ -7,11 +7,11 @@ const router = express.Router();
 // Get evaluations for current user (what they've submitted)
 router.get('/my-evaluations', authenticateToken, (req, res) => {
   db.all(`
-    SELECT e.*, u.name as evaluatee_name
+    SELECT e.*, (u.first_name || ' ' || u.last_name) as evaluatee_name
     FROM evaluations e
     JOIN users u ON e.evaluatee_id = u.id
     WHERE e.evaluator_id = ?
-    ORDER BY e.phase, u.name
+    ORDER BY e.phase, u.last_name
   `, [req.user.id], (err, evaluations) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -23,11 +23,11 @@ router.get('/my-evaluations', authenticateToken, (req, res) => {
 // Get final comments for current user
 router.get('/my-final-comments', authenticateToken, (req, res) => {
   db.all(`
-    SELECT fc.*, u.name as evaluatee_name
+    SELECT fc.*, (u.first_name || ' ' || u.last_name) as evaluatee_name
     FROM final_comments fc
     JOIN users u ON fc.evaluatee_id = u.id
     WHERE fc.evaluator_id = ?
-    ORDER BY u.name
+    ORDER BY u.last_name
   `, [req.user.id], (err, comments) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -155,15 +155,15 @@ router.get('/all', authenticateToken, requireAdmin, (req, res) => {
   db.all(`
     SELECT
       e.*,
-      evaluator.name as evaluator_name,
-      evaluatee.name as evaluatee_name,
+      (evaluator.first_name || ' ' || evaluator.last_name) as evaluator_name,
+      (evaluatee.first_name || ' ' || evaluatee.last_name) as evaluatee_name,
       g.name as group_name
     FROM evaluations e
     JOIN users evaluator ON e.evaluator_id = evaluator.id
     JOIN users evaluatee ON e.evaluatee_id = evaluatee.id
     LEFT JOIN group_members gm ON evaluatee.id = gm.user_id
     LEFT JOIN groups g ON gm.group_id = g.id
-    ORDER BY g.name, e.phase, evaluatee.name, evaluator.name
+    ORDER BY g.name, e.phase, evaluatee.last_name, evaluator.last_name
   `, (err, evaluations) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
@@ -177,15 +177,15 @@ router.get('/all-final-comments', authenticateToken, requireAdmin, (req, res) =>
   db.all(`
     SELECT
       fc.*,
-      evaluator.name as evaluator_name,
-      evaluatee.name as evaluatee_name,
+      (evaluator.first_name || ' ' || evaluator.last_name) as evaluator_name,
+      (evaluatee.first_name || ' ' || evaluatee.last_name) as evaluatee_name,
       g.name as group_name
     FROM final_comments fc
     JOIN users evaluator ON fc.evaluator_id = evaluator.id
     JOIN users evaluatee ON fc.evaluatee_id = evaluatee.id
     LEFT JOIN group_members gm ON evaluatee.id = gm.user_id
     LEFT JOIN groups g ON gm.group_id = g.id
-    ORDER BY g.name, evaluatee.name, evaluator.name
+    ORDER BY g.name, evaluatee.last_name, evaluator.last_name
   `, (err, comments) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
