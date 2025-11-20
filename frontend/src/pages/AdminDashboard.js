@@ -34,6 +34,8 @@ function AdminDashboard() {
   const [editingClass, setEditingClass] = useState(null);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [finalCommentsData, setFinalCommentsData] = useState([]);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState([]);
 
   useEffect(() => {
     fetchData();
@@ -188,8 +190,46 @@ function AdminDashboard() {
       // Refresh class students
       const studentsRes = await axios.get(`/api/classes/${selectedClass}/students`);
       setClassStudents(studentsRes.data);
+      // Clear search results after adding
+      setUserSearchResults(userSearchResults.filter(u => u.id !== userId));
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to add to class' });
+    }
+  };
+
+  const handleUserSearch = (query) => {
+    setUserSearchQuery(query);
+    if (query.length < 2) {
+      setUserSearchResults([]);
+      return;
+    }
+
+    const lowerQuery = query.toLowerCase();
+    const results = users.filter(u =>
+      // Not already in the class
+      !classStudents.some(s => s.id === u.id) &&
+      // Match search query
+      (u.email.toLowerCase().includes(lowerQuery) ||
+       u.first_name.toLowerCase().includes(lowerQuery) ||
+       u.last_name.toLowerCase().includes(lowerQuery) ||
+       `${u.first_name} ${u.last_name}`.toLowerCase().includes(lowerQuery) ||
+       `${u.last_name}, ${u.first_name}`.toLowerCase().includes(lowerQuery))
+    ).slice(0, 10); // Limit to 10 results
+
+    setUserSearchResults(results);
+  };
+
+  const handleRemoveFromClass = async (userId, userName) => {
+    if (!window.confirm(`Remove ${userName} from this class?`)) return;
+
+    try {
+      await axios.delete(`/api/classes/${selectedClass}/students/${userId}`);
+      setMessage({ type: 'success', text: `${userName} removed from class` });
+      // Refresh class students
+      const studentsRes = await axios.get(`/api/classes/${selectedClass}/students`);
+      setClassStudents(studentsRes.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove from class' });
     }
   };
 
@@ -706,179 +746,233 @@ function AdminDashboard() {
 
         {activeTab === 'users' && (
           <>
-            <div className="admin-grid">
+            {!selectedClass ? (
               <div className="card">
-                <h2>Add User</h2>
-                <form onSubmit={handleCreateUser}>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input
-                      type="email"
-                      value={newUser.email}
-                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Password</label>
-                    <input
-                      type="password"
-                      value={newUser.password}
-                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>First Name</label>
-                    <input
-                      type="text"
-                      value={newUser.first_name}
-                      onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Last Name</label>
-                    <input
-                      type="text"
-                      value={newUser.last_name}
-                      onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Role</label>
-                    <select
-                      value={newUser.role}
-                      onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                    >
-                      <option value="student">Student</option>
-                      <option value="teacher">Teacher</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-                  <button type="submit" className="btn btn-primary">Add User</button>
-                </form>
+                <h2>Select a Class</h2>
+                <p>Please select a class from the header dropdown to manage users.</p>
               </div>
-
-              <div className="card">
-                <h2>Upload Students to Class</h2>
-                {selectedClass ? (
-                  <p style={{ marginBottom: '15px', fontWeight: '500' }}>
-                    Uploading to: {classes.find(c => c.id === parseInt(selectedClass))?.name}
-                  </p>
-                ) : (
-                  <p style={{ color: darkMode ? '#ff6b6b' : '#e74c3c', marginBottom: '15px' }}>
-                    Please select a class from the header dropdown first.
-                  </p>
-                )}
-                <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
-                  CSV columns: <code>university_id, last_name, first_name, email, group_name</code>
-                </p>
-                <p style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
-                  Lines can start/end with #. Existing users are enrolled without new password.<br />
-                  Groups are created per-class (no duplicates).
-                </p>
-                <label className="file-upload" style={{ opacity: selectedClass ? 1 : 0.5, cursor: selectedClass ? 'pointer' : 'not-allowed' }}>
-                  <input type="file" accept=".csv" onChange={handleUploadStudents} disabled={!selectedClass} />
-                  <p>{selectedClass ? 'Click to upload CSV file' : 'Select a class first'}</p>
-                </label>
-
-                {uploadedCredentials.length > 0 && (
-                  <div style={{ marginTop: '15px' }}>
-                    <h3 style={{ marginBottom: '10px' }}>Generated Credentials (New Users Only)</h3>
-                    <div style={{
-                      maxHeight: '200px',
-                      overflow: 'auto',
-                      background: darkMode ? '#1a2744' : '#f8f9fa',
-                      padding: '10px',
-                      borderRadius: '4px',
-                      fontSize: '0.85rem',
-                      color: darkMode ? '#e0e0e0' : 'inherit'
-                    }}>
-                      <table style={{ width: '100%' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ textAlign: 'left' }}>Email</th>
-                            <th style={{ textAlign: 'left' }}>Temporary Password</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {uploadedCredentials.map((cred, idx) => (
-                            <tr key={idx}>
-                              <td>{cred.email}</td>
-                              <td><code style={{ background: darkMode ? '#2a3a5a' : '#e9ecef', padding: '2px 6px', borderRadius: '3px' }}>{cred.password}</code></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ marginTop: '10px', fontSize: '0.85rem' }}
-                      onClick={() => setUploadedCredentials([])}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="card">
-              <h2>All Users ({users.length})</h2>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map(u => (
-                    <tr key={u.id}>
-                      <td>
-                        {u.last_name}, {u.first_name}
-                        {u.protected === 1 && <span style={{ marginLeft: '8px', color: '#7f8c8d', fontSize: '12px' }}>(protected)</span>}
-                      </td>
-                      <td>{u.email}</td>
-                      <td>{u.role}</td>
-                      <td>
-                        {selectedClass && !classStudents.some(s => s.id === u.id) && (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => handleAddToClass(u.id, `${u.first_name} ${u.last_name}`)}
-                            style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
-                          >
-                            Add to Class
-                          </button>
-                        )}
-                        {u.role === 'student' && (
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleResetPassword(u.id, `${u.first_name} ${u.last_name}`)}
-                            style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
-                          >
-                            Reset Password
-                          </button>
-                        )}
-                        <button
-                          className="btn btn-danger"
-                          onClick={() => handleDeleteUser(u.id)}
-                          disabled={u.id === user?.id || u.protected === 1}
-                          title={u.protected === 1 ? 'Cannot delete protected admin' : ''}
-                          style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+            ) : (
+              <>
+                <div className="admin-grid">
+                  <div className="card">
+                    <h2>Add User to System</h2>
+                    <form onSubmit={handleCreateUser}>
+                      <div className="form-group">
+                        <label>Email</label>
+                        <input
+                          type="email"
+                          value={newUser.email}
+                          onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Password</label>
+                        <input
+                          type="password"
+                          value={newUser.password}
+                          onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>First Name</label>
+                        <input
+                          type="text"
+                          value={newUser.first_name}
+                          onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Last Name</label>
+                        <input
+                          type="text"
+                          value={newUser.last_name}
+                          onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Role</label>
+                        <select
+                          value={newUser.role}
+                          onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
                         >
-                          Delete
+                          <option value="student">Student</option>
+                          <option value="teacher">Teacher</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </div>
+                      <button type="submit" className="btn btn-primary">Add User</button>
+                    </form>
+                  </div>
+
+                  <div className="card">
+                    <h2>Upload Students to Class</h2>
+                    <p style={{ marginBottom: '15px', fontWeight: '500' }}>
+                      Uploading to: {classes.find(c => c.id === parseInt(selectedClass))?.name}
+                    </p>
+                    <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
+                      CSV columns: <code>university_id, last_name, first_name, email, group_name</code>
+                    </p>
+                    <p style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
+                      Lines can start/end with #. Existing users are enrolled without new password.<br />
+                      Groups are created per-class (no duplicates).
+                    </p>
+                    <label className="file-upload">
+                      <input type="file" accept=".csv" onChange={handleUploadStudents} />
+                      <p>Click to upload CSV file</p>
+                    </label>
+
+                    {uploadedCredentials.length > 0 && (
+                      <div style={{ marginTop: '15px' }}>
+                        <h3 style={{ marginBottom: '10px' }}>Generated Credentials (New Users Only)</h3>
+                        <div style={{
+                          maxHeight: '200px',
+                          overflow: 'auto',
+                          background: darkMode ? '#1a2744' : '#f8f9fa',
+                          padding: '10px',
+                          borderRadius: '4px',
+                          fontSize: '0.85rem',
+                          color: darkMode ? '#e0e0e0' : 'inherit'
+                        }}>
+                          <table style={{ width: '100%' }}>
+                            <thead>
+                              <tr>
+                                <th style={{ textAlign: 'left' }}>Email</th>
+                                <th style={{ textAlign: 'left' }}>Temporary Password</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {uploadedCredentials.map((cred, idx) => (
+                                <tr key={idx}>
+                                  <td>{cred.email}</td>
+                                  <td><code style={{ background: darkMode ? '#2a3a5a' : '#e9ecef', padding: '2px 6px', borderRadius: '3px' }}>{cred.password}</code></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ marginTop: '10px', fontSize: '0.85rem' }}
+                          onClick={() => setUploadedCredentials([])}
+                        >
+                          Clear
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Search for existing users to add to class */}
+                <div className="card">
+                  <h2>Add Existing User to Class</h2>
+                  <p style={{ marginBottom: '15px', color: darkMode ? '#a0a0a0' : '#666' }}>
+                    Search for existing users (teachers, admins, or students from other classes) to add to this class.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    value={userSearchQuery}
+                    onChange={(e) => handleUserSearch(e.target.value)}
+                    style={{ width: '100%', padding: '10px', marginBottom: '10px' }}
+                  />
+                  {userSearchResults.length > 0 && (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Role</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userSearchResults.map(u => (
+                          <tr key={u.id}>
+                            <td>{u.last_name}, {u.first_name}</td>
+                            <td>{u.email}</td>
+                            <td>{u.role}</td>
+                            <td>
+                              <button
+                                className="btn btn-primary"
+                                onClick={() => handleAddToClass(u.id, `${u.first_name} ${u.last_name}`)}
+                                style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                              >
+                                Add to Class
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                  {userSearchQuery.length >= 2 && userSearchResults.length === 0 && (
+                    <p style={{ color: darkMode ? '#888' : '#999', fontStyle: 'italic' }}>
+                      No matching users found (or all matches are already in this class).
+                    </p>
+                  )}
+                </div>
+
+                {/* Users in current class */}
+                <div className="card">
+                  <h2>Users in {classes.find(c => c.id === parseInt(selectedClass))?.name} ({classStudents.length})</h2>
+                  {classStudents.length === 0 ? (
+                    <p>No users enrolled in this class yet.</p>
+                  ) : (
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Role</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {classStudents.map(u => (
+                          <tr key={u.id}>
+                            <td>
+                              {u.last_name}, {u.first_name}
+                              {u.protected === 1 && <span style={{ marginLeft: '8px', color: '#7f8c8d', fontSize: '12px' }}>(protected)</span>}
+                            </td>
+                            <td>{u.email}</td>
+                            <td>{u.role}</td>
+                            <td>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => handleResetPassword(u.id, `${u.first_name} ${u.last_name}`)}
+                                style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
+                              >
+                                Reset Password
+                              </button>
+                              <button
+                                className="btn btn-danger"
+                                onClick={() => handleRemoveFromClass(u.id, `${u.first_name} ${u.last_name}`)}
+                                style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
+                              >
+                                Remove
+                              </button>
+                              <button
+                                className="btn btn-danger"
+                                onClick={() => handleDeleteUser(u.id)}
+                                disabled={u.id === user?.id || u.protected === 1}
+                                title={u.protected === 1 ? 'Cannot delete protected admin' : 'Delete user from system'}
+                                style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </>
+            )}
           </>
         )}
 
