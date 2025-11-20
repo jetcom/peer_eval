@@ -157,9 +157,16 @@ function AdminDashboard() {
       const res = await axios.post('/api/groups/upload-csv', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      let messageText = `Created ${res.data.created} groups.`;
+      if (res.data.errors.length > 0) {
+        const errorDetails = res.data.errors.map(e =>
+          e.email ? `${e.email}: ${e.error}` : `${e.group}: ${e.error}`
+        ).join('; ');
+        messageText += ` ${res.data.errors.length} errors: ${errorDetails}`;
+      }
       setMessage({
-        type: 'success',
-        text: `Created ${res.data.created} groups. ${res.data.errors.length} errors.`
+        type: res.data.errors.length > 0 ? 'error' : 'success',
+        text: messageText
       });
       fetchData();
     } catch (err) {
