@@ -15,7 +15,9 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3002',
+  origin: process.env.NODE_ENV === 'production'
+    ? true  // Allow same-origin in production
+    : process.env.FRONTEND_URL || 'http://localhost:3002',
   credentials: true
 }));
 app.use(express.json());
@@ -26,7 +28,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'peer-eval-session-secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: process.env.NODE_ENV === 'production' }
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax'
+  }
 }));
 
 // Passport initialization
