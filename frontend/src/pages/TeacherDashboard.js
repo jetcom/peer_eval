@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,17 +21,7 @@ function TeacherDashboard() {
   const [newGroup, setNewGroup] = useState({ name: '' });
   const [activeTab, setActiveTab] = useState('students');
 
-  useEffect(() => {
-    fetchClasses();
-  }, []);
-
-  useEffect(() => {
-    if (selectedClass) {
-      fetchClassData();
-    }
-  }, [selectedClass]);
-
-  const fetchClasses = async () => {
+  const fetchClasses = useCallback(async () => {
     try {
       const res = await axios.get('/api/classes');
       setClasses(res.data);
@@ -43,9 +33,9 @@ function TeacherDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedClass]);
 
-  const fetchClassData = async () => {
+  const fetchClassData = useCallback(async () => {
     try {
       const [studentsRes, groupsRes] = await Promise.all([
         axios.get(`/api/classes/${selectedClass}/students`),
@@ -56,7 +46,17 @@ function TeacherDashboard() {
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load class data' });
     }
-  };
+  }, [selectedClass]);
+
+  useEffect(() => {
+    fetchClasses();
+  }, [fetchClasses]);
+
+  useEffect(() => {
+    if (selectedClass) {
+      fetchClassData();
+    }
+  }, [selectedClass, fetchClassData]);
 
   const handleCreateClass = async (e) => {
     e.preventDefault();
@@ -125,16 +125,6 @@ function TeacherDashboard() {
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to add to group' });
-    }
-  };
-
-  const handleRemoveFromGroup = async (groupId, userId) => {
-    try {
-      await axios.delete(`/api/groups/${groupId}/members/${userId}`);
-      setMessage({ type: 'success', text: 'Student removed from group' });
-      fetchClassData();
-    } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove from group' });
     }
   };
 

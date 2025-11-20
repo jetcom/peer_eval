@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,28 +20,7 @@ function Dashboard() {
     fetchClasses();
   }, []);
 
-  useEffect(() => {
-    if (selectedClass) {
-      fetchClassData();
-    }
-  }, [selectedClass]);
-
-  const fetchClasses = async () => {
-    try {
-      const res = await axios.get('/api/classes/my/enrolled');
-      setClasses(res.data);
-      if (res.data.length > 0) {
-        setSelectedClass(res.data[0].id);
-      } else {
-        setLoading(false);
-      }
-    } catch (err) {
-      setError('Failed to load classes');
-      setLoading(false);
-    }
-  };
-
-  const fetchClassData = async () => {
+  const fetchClassData = useCallback(async () => {
     setLoading(true);
     setError('');
     setGroup(null);
@@ -59,6 +38,27 @@ function Dashboard() {
         setError('Failed to load data');
       }
     } finally {
+      setLoading(false);
+    }
+  }, [selectedClass]);
+
+  useEffect(() => {
+    if (selectedClass) {
+      fetchClassData();
+    }
+  }, [selectedClass, fetchClassData]);
+
+  const fetchClasses = async () => {
+    try {
+      const res = await axios.get('/api/classes/my/enrolled');
+      setClasses(res.data);
+      if (res.data.length > 0) {
+        setSelectedClass(res.data[0].id);
+      } else {
+        setLoading(false);
+      }
+    } catch (err) {
+      setError('Failed to load classes');
       setLoading(false);
     }
   };
