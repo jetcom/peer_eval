@@ -75,11 +75,37 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
 
     const credentials = [];
 
+    // Helper to get field value with flexible column names
+    const getField = (record, ...names) => {
+      for (const name of names) {
+        // Check exact match and case-insensitive
+        if (record[name] !== undefined) return record[name];
+        const lowerName = name.toLowerCase();
+        for (const key of Object.keys(record)) {
+          if (key.toLowerCase() === lowerName) return record[key];
+        }
+      }
+      return undefined;
+    };
+
     records.forEach((record) => {
-      const { university_id, last_name, first_name, email, group_name, role = 'student' } = record;
+      // Support flexible column names (including spaces)
+      const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
+      const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
+      const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
+      const email = getField(record, 'email', 'Email', 'e-mail', 'EMAIL');
+      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project Groups', 'Project Group');
+      const role = getField(record, 'role', 'Role', 'type') || 'student';
 
       if (!email || !first_name || !last_name) {
-        errors.push({ email: email || 'unknown', error: 'Missing required fields (email, first_name, last_name)' });
+        const missing = [];
+        if (!email) missing.push('email');
+        if (!first_name) missing.push('first_name/First');
+        if (!last_name) missing.push('last_name/Last');
+        errors.push({
+          email: email || 'unknown',
+          error: `Missing: ${missing.join(', ')}. Columns found: ${Object.keys(record).join(', ')}`
+        });
         processed++;
         if (processed === total) {
           res.json({ created: results.length, errors, credentials });

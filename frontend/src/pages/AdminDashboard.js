@@ -158,34 +158,6 @@ function AdminDashboard() {
     }
   };
 
-  const handleUploadGroups = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await axios.post('/api/groups/upload-csv', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      let messageText = `Created ${res.data.created} groups.`;
-      if (res.data.errors.length > 0) {
-        const errorDetails = res.data.errors.map(e =>
-          e.email ? `${e.email}: ${e.error}` : `${e.group}: ${e.error}`
-        ).join('; ');
-        messageText += ` ${res.data.errors.length} errors: ${errorDetails}`;
-      }
-      setMessage({
-        type: res.data.errors.length > 0 ? 'error' : 'success',
-        text: messageText
-      });
-      fetchData();
-    } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload CSV' });
-    }
-    e.target.value = '';
-  };
 
   const fetchGroupMembers = async (groupId) => {
     try {
@@ -463,14 +435,6 @@ function AdminDashboard() {
                 </form>
               </div>
 
-              <div className="card">
-                <h2>Upload Groups CSV</h2>
-                <p>CSV format: group_name,user_email</p>
-                <label className="file-upload">
-                  <input type="file" accept=".csv" onChange={handleUploadGroups} />
-                  <p>Click to upload CSV file</p>
-                </label>
-              </div>
             </div>
 
             <div className="card">
