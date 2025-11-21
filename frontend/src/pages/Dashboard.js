@@ -4,13 +4,17 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+import CustomDropdown from '../components/CustomDropdown';
 
 function Dashboard() {
   const { user, logout, mustChangePassword } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
-  const [selectedClass, setSelectedClass] = useState(null);
+  const [selectedClass, setSelectedClass] = useState(() => {
+    const stored = localStorage.getItem('studentSelectedClass');
+    return stored ? parseInt(stored) : null;
+  });
   const [group, setGroup] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,6 +29,15 @@ function Dashboard() {
   useEffect(() => {
     fetchClasses();
   }, []);
+
+  // Save selectedClass to localStorage when it changes
+  useEffect(() => {
+    if (selectedClass) {
+      localStorage.setItem('studentSelectedClass', selectedClass.toString());
+    } else {
+      localStorage.removeItem('studentSelectedClass');
+    }
+  }, [selectedClass]);
 
   const fetchClassData = useCallback(async () => {
     setLoading(true);
@@ -86,7 +99,18 @@ function Dashboard() {
       const res = await axios.get('/api/classes/my/enrolled');
       setClasses(res.data);
       if (res.data.length > 0) {
-        setSelectedClass(res.data[0].id);
+        // Check if stored selectedClass exists in the available classes
+        if (selectedClass) {
+          const classExists = res.data.some(c => c.id === selectedClass);
+          if (!classExists) {
+            // Stored class doesn't exist, select first class
+            setSelectedClass(res.data[0].id);
+          }
+          // else: stored class is valid, keep it
+        } else {
+          // No stored class, select first class
+          setSelectedClass(res.data[0].id);
+        }
       } else {
         setLoading(false);
       }
@@ -131,25 +155,16 @@ function Dashboard() {
         <h1>Peer Evaluation</h1>
         <div className="header-right">
           {classes.length > 0 && (
-            <select
-              value={selectedClass || ''}
-              onChange={(e) => setSelectedClass(parseInt(e.target.value))}
-              style={{
-                padding: '8px 12px',
-                borderRadius: '4px',
-                border: '1px solid #ccc',
-                background: darkMode ? '#2a3a5a' : '#fff',
-                color: darkMode ? '#e0e0e0' : '#333',
-                marginRight: '10px',
-                minWidth: '200px'
-              }}
-            >
-              {classes.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.section && `(${c.section})`} {c.semester && `- ${c.semester}`}
-                </option>
-              ))}
-            </select>
+            <CustomDropdown
+              value={selectedClass}
+              onChange={(value) => setSelectedClass(value)}
+              options={classes.map(c => ({
+                value: c.id,
+                label: `${c.name}${c.section ? ` (${c.section})` : ''}${c.semester ? ` - ${c.semester}` : ''}`
+              }))}
+              darkMode={darkMode}
+              style={{ marginRight: '10px' }}
+            />
           )}
           <span>Welcome, {user?.first_name || user?.name}</span>
           <button className="theme-toggle" onClick={toggleDarkMode}>
@@ -178,7 +193,37 @@ function Dashboard() {
               <div className="card">
                 <h2>{currentClass.name} {currentClass.section && `(${currentClass.section})`}</h2>
                 {currentClass.semester && <p style={{ color: darkMode ? '#a0a0a0' : '#666', marginBottom: '5px' }}>{currentClass.semester}</p>}
-                <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>Instructor: {currentClass.teacher_name}</p>
+                <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>
+                  {currentClass.instructors && currentClass.instructors.length > 0 ? (
+                    <>
+                      {currentClass.instructors.length === 1 ? 'Instructor: ' : 'Instructors: '}
+                      {currentClass.instructors.map((instructor, idx) => (
+                        <span key={instructor.id}>
+                          {instructor.first_name} {instructor.last_name}
+                          {idx < currentClass.instructors.length - 1 ? ', ' : ''}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    <>Instructor: {currentClass.teacher_name}</>
+                  )}
+                  {currentClass.due_date && (
+                    <>
+                      <br />
+                      <span style={{ color: darkMode ? '#f39c12' : '#d68910', fontWeight: '500' }}>
+                        Peer Evaluation Due: {new Date(currentClass.due_date).toLocaleString('en-US', {
+                          timeZone: currentClass.due_date_timezone || 'America/New_York',
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })} ({currentClass.due_date_timezone || 'ET'})
+                      </span>
+                    </>
+                  )}
+                </p>
               </div>
             )}
 
@@ -189,25 +234,19 @@ function Dashboard() {
                 <p style={{ marginBottom: '15px', color: darkMode ? '#e0e0e0' : '#666' }}>
                   Select a student to view their dashboard experience.
                 </p>
-                <select
+                <CustomDropdown
                   value={masqueradeUser || ''}
-                  onChange={(e) => setMasqueradeUser(e.target.value ? parseInt(e.target.value) : null)}
-                  style={{
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '4px',
-                    border: '1px solid #ccc',
-                    background: darkMode ? '#1e3a5f' : '#fff',
-                    color: darkMode ? '#e0e0e0' : '#333'
-                  }}
-                >
-                  <option value="">-- Select a student --</option>
-                  {classStudents.map(s => (
-                    <option key={s.id} value={s.id}>
-                      {s.last_name}, {s.first_name} ({s.email})
-                    </option>
-                  ))}
-                </select>
+                  onChange={(value) => setMasqueradeUser(value ? value : null)}
+                  options={[
+                    { value: '', label: '-- Select a student --' },
+                    ...classStudents.map(s => ({
+                      value: s.id,
+                      label: `${s.last_name}, ${s.first_name} (${s.email})`
+                    }))
+                  ]}
+                  darkMode={darkMode}
+                  style={{ width: '100%' }}
+                />
                 {masqueradeUser && (
                   <p style={{ marginTop: '10px', fontWeight: 'bold', color: darkMode ? '#f39c12' : '#856404' }}>
                     Viewing as: {classStudents.find(s => s.id === masqueradeUser)?.first_name} {classStudents.find(s => s.id === masqueradeUser)?.last_name}

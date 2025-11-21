@@ -144,6 +144,8 @@ async function initializeDatabase() {
           teacher_id INTEGER NOT NULL REFERENCES users(id),
           num_phases INTEGER DEFAULT 3,
           has_final_evaluation INTEGER DEFAULT 1,
+          due_date TEXT,
+          due_date_timezone TEXT,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -159,6 +161,27 @@ async function initializeDatabase() {
       } catch (e) {
         // Column may already exist
       }
+      try {
+        await pool.query(`ALTER TABLE classes ADD COLUMN due_date TEXT`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await pool.query(`ALTER TABLE classes ADD COLUMN due_date_timezone TEXT`);
+      } catch (e) {
+        // Column may already exist
+      }
+
+      // Class instructors table (for multiple instructors per class)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS class_instructors (
+          id SERIAL PRIMARY KEY,
+          class_id INTEGER NOT NULL REFERENCES classes(id),
+          user_id INTEGER NOT NULL REFERENCES users(id),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(class_id, user_id)
+        )
+      `);
 
       // Class enrollments table
       await pool.query(`
@@ -291,6 +314,8 @@ async function initializeDatabase() {
           teacher_id INTEGER NOT NULL,
           num_phases INTEGER DEFAULT 3,
           has_final_evaluation INTEGER DEFAULT 1,
+          due_date TEXT,
+          due_date_timezone TEXT,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (teacher_id) REFERENCES users(id)
         )
@@ -299,6 +324,21 @@ async function initializeDatabase() {
       // Add new columns if they don't exist (for existing databases)
       db.run(`ALTER TABLE classes ADD COLUMN num_phases INTEGER DEFAULT 3`, () => {});
       db.run(`ALTER TABLE classes ADD COLUMN has_final_evaluation INTEGER DEFAULT 1`, () => {});
+      db.run(`ALTER TABLE classes ADD COLUMN due_date TEXT`, () => {});
+      db.run(`ALTER TABLE classes ADD COLUMN due_date_timezone TEXT`, () => {});
+
+      // Class instructors table (for multiple instructors per class)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS class_instructors (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          class_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (class_id) REFERENCES classes(id),
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          UNIQUE(class_id, user_id)
+        )
+      `);
 
       // Class enrollments table
       db.run(`

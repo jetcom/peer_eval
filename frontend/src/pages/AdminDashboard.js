@@ -27,12 +27,14 @@ function AdminDashboard() {
   // Form states
   const [newUser, setNewUser] = useState({ email: '', password: '', first_name: '', last_name: '', role: 'student' });
   const [newGroup, setNewGroup] = useState({ name: '' });
-  const [newClass, setNewClass] = useState({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true });
+  const [newClass, setNewClass] = useState({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [] });
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
   const [reportGroup, setReportGroup] = useState('all');
   const [, setGroupsWithMembers] = useState([]);
-  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedClass, setSelectedClass] = useState(() => {
+    return localStorage.getItem('adminSelectedClass') || '';
+  });
   const [classGroups, setClassGroups] = useState([]);
   const [classStudents, setClassStudents] = useState([]);
   const [showCreateClassModal, setShowCreateClassModal] = useState(false);
@@ -48,6 +50,15 @@ function AdminDashboard() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Save selectedClass to localStorage when it changes
+  useEffect(() => {
+    if (selectedClass) {
+      localStorage.setItem('adminSelectedClass', selectedClass);
+    } else {
+      localStorage.removeItem('adminSelectedClass');
+    }
+  }, [selectedClass]);
 
   // Fetch class-specific data when selectedClass changes
   useEffect(() => {
@@ -87,6 +98,14 @@ function AdminDashboard() {
       setGroupsWithMembers(groupsWithMembersRes.data);
       setClasses(classesRes.data);
       setFinalCommentsData(finalCommentsRes.data);
+
+      // Validate stored selectedClass - if it doesn't exist in the classes list, clear it
+      if (selectedClass) {
+        const classExists = classesRes.data.some(c => c.id.toString() === selectedClass);
+        if (!classExists) {
+          setSelectedClass('');
+        }
+      }
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load data' });
     } finally {
@@ -247,14 +266,17 @@ function AdminDashboard() {
         section: newClass.section || null,
         semester: newClass.semester || null,
         num_phases: newClass.num_phases || 3,
-        has_final_evaluation: newClass.has_final_evaluation ? 1 : 0
+        has_final_evaluation: newClass.has_final_evaluation ? 1 : 0,
+        due_date: newClass.due_date || null,
+        due_date_timezone: newClass.due_date_timezone || null,
+        instructor_ids: newClass.instructor_ids && newClass.instructor_ids.length > 0 ? newClass.instructor_ids : null
       };
       // If teacher_id is specified and not empty, include it
       if (newClass.teacher_id) {
         classData.teacher_id = parseInt(newClass.teacher_id);
       }
       const res = await axios.post('/api/classes', classData);
-      setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true });
+      setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [] });
       setMessage({ type: 'success', text: 'Class created successfully' });
       setShowCreateClassModal(false);
       fetchData();
@@ -273,7 +295,10 @@ function AdminDashboard() {
         section: editingClass.section || null,
         semester: editingClass.semester || null,
         num_phases: editingClass.num_phases || 3,
-        has_final_evaluation: editingClass.has_final_evaluation ? 1 : 0
+        has_final_evaluation: editingClass.has_final_evaluation ? 1 : 0,
+        due_date: editingClass.due_date || null,
+        due_date_timezone: editingClass.due_date_timezone || null,
+        instructor_ids: editingClass.instructor_ids || []
       };
       await axios.put(`/api/classes/${editingClass.id}`, classData);
       setMessage({ type: 'success', text: 'Class updated successfully' });
@@ -285,12 +310,27 @@ function AdminDashboard() {
     }
   };
 
-  const openEditClassModal = (classItem) => {
-    setEditingClass({
-      ...classItem,
-      has_final_evaluation: classItem.has_final_evaluation === 1 || classItem.has_final_evaluation === true
-    });
-    setShowEditClassModal(true);
+  const openEditClassModal = async (classItem) => {
+    try {
+      // Fetch instructors and enrolled users for this class
+      const [instructorsRes, studentsRes] = await Promise.all([
+        axios.get(`/api/classes/${classItem.id}/instructors`),
+        axios.get(`/api/classes/${classItem.id}/students`)
+      ]);
+
+      // Filter enrolled users to only teachers/admins
+      const enrolledTeachers = studentsRes.data.filter(u => u.role === 'teacher' || u.role === 'admin');
+
+      setEditingClass({
+        ...classItem,
+        has_final_evaluation: classItem.has_final_evaluation === 1 || classItem.has_final_evaluation === true,
+        instructor_ids: instructorsRes.data.map(i => i.id),
+        enrolledTeachers: enrolledTeachers
+      });
+      setShowEditClassModal(true);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to load class instructors' });
+    }
   };
 
   const handleCreateGroup = async (e) => {
@@ -426,7 +466,8 @@ function AdminDashboard() {
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
-                      background: selectedClass === c.id.toString() ? (darkMode ? '#3a4a6a' : '#e3f2fd') : 'transparent'
+                      background: selectedClass === c.id.toString() ? (darkMode ? '#3a4a6a' : '#e3f2fd') : 'transparent',
+                      color: darkMode ? '#e0e0e0' : '#000'
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.background = darkMode ? '#3a4a6a' : '#f5f5f5'}
                     onMouseLeave={(e) => e.currentTarget.style.background = selectedClass === c.id.toString() ? (darkMode ? '#3a4a6a' : '#e3f2fd') : 'transparent'}
@@ -436,7 +477,10 @@ function AdminDashboard() {
                         setSelectedClass(c.id.toString());
                         setShowClassDropdown(false);
                       }}
-                      style={{ flex: 1 }}
+                      style={{
+                        flex: 1,
+                        color: darkMode ? '#e0e0e0' : '#000'
+                      }}
                     >
                       {c.name} {c.section ? `(${c.section})` : ''} {c.semester ? `- ${c.semester}` : ''}
                     </span>
@@ -497,11 +541,11 @@ function AdminDashboard() {
           darkMode={darkMode}
           newClass={newClass}
           setNewClass={setNewClass}
-          users={users}
+          currentUser={user}
           onSubmit={handleCreateClass}
           onClose={() => {
             setShowCreateClassModal(false);
-            setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true });
+            setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [] });
           }}
         />
       )}

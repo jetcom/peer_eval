@@ -120,7 +120,36 @@ router.get('/my/group', authenticateToken, (req, res) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-      res.json({ ...group, members });
+
+      // If group has a class_id, fetch class details including instructors
+      if (group.class_id) {
+        db.get(`
+          SELECT c.*, (u.first_name || ' ' || u.last_name) as teacher_name
+          FROM classes c
+          JOIN users u ON c.teacher_id = u.id
+          WHERE c.id = ?
+        `, [group.class_id], (err, classData) => {
+          if (err || !classData) {
+            return res.json({ ...group, members });
+          }
+
+          // Fetch instructors for the class
+          db.all(`
+            SELECT u.id, u.first_name, u.last_name, u.email
+            FROM users u
+            JOIN class_instructors ci ON u.id = ci.user_id
+            WHERE ci.class_id = ?
+            ORDER BY u.last_name, u.first_name
+          `, [group.class_id], (err, instructors) => {
+            if (!err && instructors) {
+              classData.instructors = instructors;
+            }
+            res.json({ ...group, members, class: classData });
+          });
+        });
+      } else {
+        res.json({ ...group, members });
+      }
     });
   });
 });

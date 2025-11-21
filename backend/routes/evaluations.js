@@ -4,6 +4,50 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Helper function to check if evaluations are past due for a user
+function checkIfPastDue(userId, callback) {
+  // Get the user's class and check the due date
+  db.get(`
+    SELECT c.due_date, c.due_date_timezone
+    FROM classes c
+    JOIN class_enrollments ce ON c.id = ce.class_id
+    WHERE ce.user_id = ?
+    LIMIT 1
+  `, [userId], (err, classInfo) => {
+    if (err) {
+      return callback(err, null);
+    }
+
+    if (!classInfo || !classInfo.due_date) {
+      // No due date set, evaluations are open
+      return callback(null, false);
+    }
+
+    // Parse the due date and timezone
+    const dueDate = new Date(classInfo.due_date);
+    const now = new Date();
+
+    // Check if current time is past the due date
+    const isPastDue = now > dueDate;
+    callback(null, isPastDue);
+  });
+}
+
+// Check if evaluations are past due (read-only)
+router.get('/is-read-only', authenticateToken, (req, res) => {
+  // Teachers and admins can always edit
+  if (req.user.role === 'teacher' || req.user.role === 'admin') {
+    return res.json({ isReadOnly: false });
+  }
+
+  checkIfPastDue(req.user.id, (err, isPastDue) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json({ isReadOnly: isPastDue });
+  });
+});
+
 // Get evaluations for current user (what they've submitted)
 // Admins/teachers can pass user_id to masquerade as a student
 router.get('/my-evaluations', authenticateToken, (req, res) => {
@@ -74,95 +118,129 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Score must be between 0 and 100' });
   }
 
-  // Check if evaluation exists
-  db.get(
-    'SELECT id FROM evaluations WHERE evaluator_id = ? AND evaluatee_id = ? AND phase = ?',
-    [req.user.id, evaluatee_id, phase],
-    (err, existing) => {
+  // Check if evaluations are past due (only for students)
+  if (req.user.role === 'student') {
+    checkIfPastDue(req.user.id, (err, isPastDue) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-
-      if (existing) {
-        // Update existing evaluation
-        db.run(`
-          UPDATE evaluations SET
-            contribution = ?,
-            communication = ?,
-            reliability = ?,
-            quality_of_work = ?,
-            collaboration = ?,
-            score = ?,
-            comments = ?,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [contribution, communication, reliability, quality_of_work, collaboration, score, comments, existing.id],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to update evaluation' });
-          }
-          res.json({ id: existing.id, message: 'Evaluation updated' });
-        });
-      } else {
-        // Create new evaluation
-        db.run(`
-          INSERT INTO evaluations (
-            evaluator_id, evaluatee_id, phase,
-            contribution, communication, reliability,
-            quality_of_work, collaboration, score, comments
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [req.user.id, evaluatee_id, phase, contribution, communication, reliability, quality_of_work, collaboration, score, comments],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to create evaluation' });
-          }
-          res.json({ id: this.lastID, message: 'Evaluation created' });
-        });
+      if (isPastDue) {
+        return res.status(403).json({ error: 'Evaluations are past due and can no longer be submitted or modified' });
       }
-    }
-  );
+      submitEvaluation();
+    });
+  } else {
+    submitEvaluation();
+  }
+
+  function submitEvaluation() {
+    // Check if evaluation exists
+    db.get(
+      'SELECT id FROM evaluations WHERE evaluator_id = ? AND evaluatee_id = ? AND phase = ?',
+      [req.user.id, evaluatee_id, phase],
+      (err, existing) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (existing) {
+          // Update existing evaluation
+          db.run(`
+            UPDATE evaluations SET
+              contribution = ?,
+              communication = ?,
+              reliability = ?,
+              quality_of_work = ?,
+              collaboration = ?,
+              score = ?,
+              comments = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `, [contribution, communication, reliability, quality_of_work, collaboration, score, comments, existing.id],
+          function(err) {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to update evaluation' });
+            }
+            res.json({ id: existing.id, message: 'Evaluation updated' });
+          });
+        } else {
+          // Create new evaluation
+          db.run(`
+            INSERT INTO evaluations (
+              evaluator_id, evaluatee_id, phase,
+              contribution, communication, reliability,
+              quality_of_work, collaboration, score, comments
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [req.user.id, evaluatee_id, phase, contribution, communication, reliability, quality_of_work, collaboration, score, comments],
+          function(err) {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to create evaluation' });
+            }
+            res.json({ id: this.lastID, message: 'Evaluation created' });
+          });
+        }
+      }
+    );
+  }
 });
 
 // Submit or update final comments
 router.post('/final-comments', authenticateToken, (req, res) => {
   const { evaluatee_id, comments, final_points } = req.body;
 
-  db.get(
-    'SELECT id FROM final_comments WHERE evaluator_id = ? AND evaluatee_id = ?',
-    [req.user.id, evaluatee_id],
-    (err, existing) => {
+  // Check if evaluations are past due (only for students)
+  if (req.user.role === 'student') {
+    checkIfPastDue(req.user.id, (err, isPastDue) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
-
-      if (existing) {
-        db.run(`
-          UPDATE final_comments SET
-            comments = ?,
-            final_points = ?,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `, [comments, final_points || 0, existing.id],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to update final comments' });
-          }
-          res.json({ id: existing.id, message: 'Final comments updated' });
-        });
-      } else {
-        db.run(`
-          INSERT INTO final_comments (evaluator_id, evaluatee_id, comments, final_points)
-          VALUES (?, ?, ?, ?)
-        `, [req.user.id, evaluatee_id, comments, final_points || 0],
-        function(err) {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to create final comments' });
-          }
-          res.json({ id: this.lastID, message: 'Final comments created' });
-        });
+      if (isPastDue) {
+        return res.status(403).json({ error: 'Evaluations are past due and can no longer be submitted or modified' });
       }
-    }
-  );
+      submitFinalComments();
+    });
+  } else {
+    submitFinalComments();
+  }
+
+  function submitFinalComments() {
+    db.get(
+      'SELECT id FROM final_comments WHERE evaluator_id = ? AND evaluatee_id = ?',
+      [req.user.id, evaluatee_id],
+      (err, existing) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (existing) {
+          db.run(`
+            UPDATE final_comments SET
+              comments = ?,
+              final_points = ?,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `, [comments, final_points || 0, existing.id],
+          function(err) {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to update final comments' });
+            }
+            res.json({ id: existing.id, message: 'Final comments updated' });
+          });
+        } else {
+          db.run(`
+            INSERT INTO final_comments (evaluator_id, evaluatee_id, comments, final_points)
+            VALUES (?, ?, ?, ?)
+          `, [req.user.id, evaluatee_id, comments, final_points || 0],
+          function(err) {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to create final comments' });
+            }
+            res.json({ id: this.lastID, message: 'Final comments created' });
+          });
+        }
+      }
+    );
+  }
 });
 
 // Get all evaluations (admin only)

@@ -51,6 +51,24 @@ router.get('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
   });
 });
 
+// Get instructors for a class
+router.get('/:id/instructors', authenticateToken, (req, res) => {
+  const { id } = req.params;
+
+  db.all(`
+    SELECT u.id, u.first_name, u.last_name, u.email
+    FROM users u
+    JOIN class_instructors ci ON u.id = ci.user_id
+    WHERE ci.class_id = ?
+    ORDER BY u.last_name, u.first_name
+  `, [id], (err, instructors) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(instructors);
+  });
+});
+
 // Get single class with details
 router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
   const { id } = req.params;
@@ -68,25 +86,71 @@ router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
     if (!classData) {
       return res.status(404).json({ error: 'Class not found' });
     }
-    res.json(classData);
+
+    // Get instructors for this class
+    db.all(`
+      SELECT u.id, u.first_name, u.last_name, u.email
+      FROM users u
+      JOIN class_instructors ci ON u.id = ci.user_id
+      WHERE ci.class_id = ?
+      ORDER BY u.last_name, u.first_name
+    `, [id], (err, instructors) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      classData.instructors = instructors;
+      res.json(classData);
+    });
   });
 });
 
 // Create class
 router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { name, section, semester, num_phases, has_final_evaluation } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation, due_date, due_date_timezone, instructor_ids } = req.body;
   const teacher_id = req.user.role === 'admin' && req.body.teacher_id
     ? req.body.teacher_id
     : req.user.id;
 
   db.run(
-    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation) VALUES (?, ?, ?, ?, ?, ?)',
-    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1],
+    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation, due_date, due_date_timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date || null, due_date_timezone || null],
     function(err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to create class' });
       }
-      res.json({ id: this.lastID, name, section, semester, teacher_id, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1 });
+
+      const classId = this.lastID;
+
+      // Add instructors to class_instructors table
+      const instructorList = instructor_ids && Array.isArray(instructor_ids) ? instructor_ids : (teacher_id ? [teacher_id] : []);
+
+      if (instructorList.length > 0) {
+        let insertedInstructors = 0;
+        instructorList.forEach(instructorId => {
+          db.run(
+            'INSERT OR IGNORE INTO class_instructors (class_id, user_id) VALUES (?, ?)',
+            [classId, instructorId],
+            (err) => {
+              insertedInstructors++;
+              if (insertedInstructors === instructorList.length) {
+                res.json({
+                  id: classId,
+                  name,
+                  section,
+                  semester,
+                  teacher_id,
+                  num_phases: num_phases || 3,
+                  has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+                  due_date: due_date || null,
+                  due_date_timezone: due_date_timezone || null
+                });
+              }
+            }
+          );
+        });
+      } else {
+        res.json({ id: classId, name, section, semester, teacher_id, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
+      }
     }
   );
 });
@@ -94,7 +158,7 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 // Update class
 router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
   const { id } = req.params;
-  const { name, section, semester, num_phases, has_final_evaluation } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation, due_date, due_date_timezone, instructor_ids } = req.body;
 
   // Check ownership if not admin
   const checkQuery = req.user.role === 'admin'
@@ -111,13 +175,43 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
     }
 
     db.run(
-      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ? WHERE id = ?',
-      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, id],
+      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ?, due_date = ?, due_date_timezone = ? WHERE id = ?',
+      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date || null, due_date_timezone || null, id],
       function(err) {
         if (err) {
           return res.status(500).json({ error: 'Failed to update class' });
         }
-        res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1 });
+
+        // Update instructors if provided
+        if (instructor_ids && Array.isArray(instructor_ids)) {
+          // Delete existing instructors
+          db.run('DELETE FROM class_instructors WHERE class_id = ?', [id], (err) => {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to update instructors' });
+            }
+
+            // Add new instructors
+            if (instructor_ids.length > 0) {
+              let insertedInstructors = 0;
+              instructor_ids.forEach(instructorId => {
+                db.run(
+                  'INSERT INTO class_instructors (class_id, user_id) VALUES (?, ?)',
+                  [id, instructorId],
+                  (err) => {
+                    insertedInstructors++;
+                    if (insertedInstructors === instructor_ids.length) {
+                      res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
+                    }
+                  }
+                );
+              });
+            } else {
+              res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
+            }
+          });
+        } else {
+          res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
+        }
       }
     );
   });
@@ -161,7 +255,7 @@ router.get('/:id/students', authenticateToken, requireTeacherOrAdmin, (req, res)
   const { id } = req.params;
 
   db.all(`
-    SELECT u.id, u.email, u.first_name, u.last_name, ce.created_at as enrolled_at
+    SELECT u.id, u.email, u.first_name, u.last_name, u.role, ce.created_at as enrolled_at
     FROM users u
     JOIN class_enrollments ce ON u.id = ce.user_id
     WHERE ce.class_id = ?
@@ -523,7 +617,34 @@ router.get('/my/enrolled', authenticateToken, (req, res) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
-    res.json(classes);
+
+    // If no classes, return empty array
+    if (!classes || classes.length === 0) {
+      return res.json([]);
+    }
+
+    // Fetch instructors for each class
+    let completedClasses = 0;
+    classes.forEach((classItem, index) => {
+      db.all(`
+        SELECT u.id, u.first_name, u.last_name, u.email
+        FROM users u
+        JOIN class_instructors ci ON u.id = ci.user_id
+        WHERE ci.class_id = ?
+        ORDER BY u.last_name, u.first_name
+      `, [classItem.id], (err, instructors) => {
+        if (!err) {
+          classes[index].instructors = instructors || [];
+        } else {
+          classes[index].instructors = [];
+        }
+
+        completedClasses++;
+        if (completedClasses === classes.length) {
+          res.json(classes);
+        }
+      });
+    });
   });
 });
 

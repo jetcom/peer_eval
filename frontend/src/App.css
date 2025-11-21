@@ -119,6 +119,13 @@
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 1rem;
+  color: #333;
+  background: #fff;
+}
+
+.form-group select option {
+  color: #333 !important;
+  background: #fff !important;
 }
 
 .form-group textarea {
@@ -674,4 +681,61 @@ body.dark-mode .report-comment-border {
 body.dark-mode .report-phase-header {
   border-bottom-color: #2aa198;
   color: #2aa198;
+}
+
+/* Fix for select dropdowns - force colors */
+.header select,
+.header-right select {
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
+  appearance: menulist;
+  background-color: #fff !important;
+  color: #000 !important;
+}
+
+.header select option,
+.header-right select option {
+  background-color: #fff !important;
+  color: #000 !important;
+  -webkit-text-fill-color: #000 !important;
+}
+
+/* Generic select styling for light mode */
+select {
+  color: #333;
+  background-color: #fff;
+  -webkit-text-fill-color: #333;
+}
+
+select option {
+  background-color: #fff !important;
+  color: #000 !important;
+  -webkit-text-fill-color: #000 !important;
+}
+
+/* Fix for select dropdowns in dark mode */
+body.dark-mode .header select,
+body.dark-mode .header-right select {
+  background-color: #2a3a5a !important;
+  color: #e0e0e0 !important;
+  -webkit-text-fill-color: #e0e0e0 !important;
+}
+
+body.dark-mode .header select option,
+body.dark-mode .header-right select option {
+  background-color: #001e27 !important;
+  color: #93a1a1 !important;
+  -webkit-text-fill-color: #93a1a1 !important;
+}
+
+body.dark-mode select {
+  color: #93a1a1;
+  background-color: #001e27;
+  -webkit-text-fill-color: #93a1a1;
+}
+
+body.dark-mode select option {
+  background-color: #001e27 !important;
+  color: #93a1a1 !important;
+  -webkit-text-fill-color: #93a1a1 !important;
 }

@@ -39,13 +39,24 @@ function Evaluation() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [masqueradeStudent, setMasqueradeStudent] = useState(null);
+  const [isPastDue, setIsPastDue] = useState(false);
 
-  // Check if viewing as another user (read-only mode)
-  const isReadOnly = !!masqueradeUserId;
+  // Check if viewing as another user (read-only mode) OR if evaluations are past due
+  const isReadOnly = !!masqueradeUserId || isPastDue;
 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Check if evaluations are past due (only for non-masquerade views)
+        if (!masqueradeUserId) {
+          try {
+            const readOnlyRes = await axios.get('/api/evaluations/is-read-only');
+            setIsPastDue(readOnlyRes.data.isReadOnly);
+          } catch (err) {
+            console.error('Failed to check read-only status:', err);
+          }
+        }
+
         // Build URL with masquerade user_id if provided
         const userIdParam = masqueradeUserId ? `&user_id=${masqueradeUserId}` : '';
         const groupUrl = classId
@@ -248,6 +259,41 @@ function Evaluation() {
             <h2 style={{ marginBottom: '10px' }}>👁️ Viewing as {masqueradeStudent.first_name} {masqueradeStudent.last_name}</h2>
             <p style={{ margin: 0, color: darkMode ? '#e0e0e0' : '#856404' }}>
               This is a read-only view of the student's evaluations. You cannot make changes.
+            </p>
+          </div>
+        )}
+
+        {isPastDue && !masqueradeStudent && (
+          <div className="card" style={{ background: darkMode ? '#3a2a2a' : '#f8d7da', borderLeft: '4px solid #dc3545' }}>
+            <h2 style={{ marginBottom: '10px' }}>⏰ Evaluations Past Due</h2>
+            <p style={{ margin: 0, color: darkMode ? '#e0e0e0' : '#721c24' }}>
+              The due date for peer evaluations has passed. You can view your previous submissions but cannot make any changes.
+            </p>
+          </div>
+        )}
+
+        {/* Class Information */}
+        {group && group.class && (
+          <div className="card">
+            <h2>{group.class.name} {group.class.section && `(${group.class.section})`}</h2>
+            {group.class.semester && <p style={{ color: darkMode ? '#a0a0a0' : '#666', marginBottom: '5px' }}>{group.class.semester}</p>}
+            <p style={{ color: darkMode ? '#a0a0a0' : '#666', marginBottom: '5px' }}>
+              {group.class.instructors && group.class.instructors.length > 0 ? (
+                <>
+                  {group.class.instructors.length === 1 ? 'Instructor: ' : 'Instructors: '}
+                  {group.class.instructors.map((instructor, idx) => (
+                    <span key={instructor.id}>
+                      {instructor.first_name} {instructor.last_name}
+                      {idx < group.class.instructors.length - 1 ? ', ' : ''}
+                    </span>
+                  ))}
+                </>
+              ) : (
+                <>Instructor: {group.class.teacher_name}</>
+              )}
+            </p>
+            <p style={{ color: darkMode ? '#a0a0a0' : '#666', margin: 0 }}>
+              Group: {group.name}
             </p>
           </div>
         )}

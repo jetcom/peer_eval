@@ -1,6 +1,8 @@
 import React from 'react';
 
-function CreateClassModal({ darkMode, newClass, setNewClass, users, onSubmit, onClose }) {
+function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubmit, onClose }) {
+  // For new classes, only show the current user as an instructor option
+  const availableInstructors = currentUser ? [currentUser] : [];
   return (
     <div style={{
       position: 'fixed',
@@ -54,18 +56,48 @@ function CreateClassModal({ darkMode, newClass, setNewClass, users, onSubmit, on
             />
           </div>
           <div className="form-group">
-            <label>Assign to Teacher (optional)</label>
-            <select
-              value={newClass.teacher_id}
-              onChange={(e) => setNewClass({ ...newClass, teacher_id: e.target.value })}
-            >
-              <option value="">Myself (Admin)</option>
-              {users.filter(u => u.role === 'teacher' || u.role === 'admin').map(u => (
-                <option key={u.id} value={u.id}>
-                  {u.last_name}, {u.first_name} ({u.email})
-                </option>
+            <label>Instructors (select one or more)</label>
+            <div style={{
+              maxHeight: '150px',
+              overflowY: 'auto',
+              border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
+              borderRadius: '4px',
+              padding: '10px',
+              backgroundColor: darkMode ? '#001e27' : '#fff',
+              textAlign: 'left'
+            }}>
+              {availableInstructors.map(u => (
+                <div
+                  key={u.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
+                    padding: '5px 0',
+                    cursor: 'pointer',
+                    color: darkMode ? '#93a1a1' : '#333'
+                  }}
+                  onClick={() => {
+                    const currentIds = newClass.instructor_ids || [];
+                    const newIds = currentIds.includes(u.id)
+                      ? currentIds.filter(id => id !== u.id)
+                      : [...currentIds, u.id];
+                    setNewClass({ ...newClass, instructor_ids: newIds });
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={(newClass.instructor_ids || []).includes(u.id)}
+                    onChange={() => {}}
+                    style={{ margin: '0 8px 0 0', cursor: 'pointer', width: 'auto' }}
+                  />
+                  <span>{u.last_name}, {u.first_name} ({u.email})</span>
+                </div>
               ))}
-            </select>
+            </div>
+            <small style={{ display: 'block', marginTop: '5px', opacity: 0.8 }}>
+              Selected: {(newClass.instructor_ids || []).length} instructor(s)
+            </small>
           </div>
           <div className="form-group">
             <label>Number of Phases</label>
@@ -90,6 +122,33 @@ function CreateClassModal({ darkMode, newClass, setNewClass, users, onSubmit, on
               />
               Include Final Evaluation (23-point distribution)
             </label>
+          </div>
+          <div className="form-group">
+            <label>Peer Evaluation Due Date (optional)</label>
+            <input
+              type="datetime-local"
+              value={newClass.due_date || ''}
+              onChange={(e) => setNewClass({ ...newClass, due_date: e.target.value })}
+            />
+            <small style={{ display: 'block', marginTop: '5px', opacity: 0.8 }}>
+              After this time, peer evaluations will be read-only
+            </small>
+          </div>
+          <div className="form-group">
+            <label>Due Date Timezone</label>
+            <select
+              value={newClass.due_date_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
+              onChange={(e) => setNewClass({ ...newClass, due_date_timezone: e.target.value })}
+            >
+              <option value="America/New_York">Eastern Time (ET)</option>
+              <option value="America/Chicago">Central Time (CT)</option>
+              <option value="America/Denver">Mountain Time (MT)</option>
+              <option value="America/Phoenix">Arizona Time (MST - no DST)</option>
+              <option value="America/Los_Angeles">Pacific Time (PT)</option>
+              <option value="America/Anchorage">Alaska Time (AKT)</option>
+              <option value="Pacific/Honolulu">Hawaii Time (HST)</option>
+              <option value="UTC">UTC (Coordinated Universal Time)</option>
+            </select>
           </div>
           <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
             <button type="submit" className="btn btn-primary">Create Class</button>
