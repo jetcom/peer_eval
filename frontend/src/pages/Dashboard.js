@@ -28,6 +28,7 @@ function Dashboard() {
 
   useEffect(() => {
     fetchClasses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Save selectedClass to localStorage when it changes
