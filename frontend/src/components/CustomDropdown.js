@@ -5,6 +5,8 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
   const dropdownRef = useRef(null);
 
   const selectedOption = options.find(opt => opt.value === value);
+  // Use headerLabel if provided, otherwise fall back to label
+  const displayLabel = selectedOption ? (selectedOption.headerLabel || selectedOption.label) : null;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -40,8 +42,8 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
           userSelect: 'none'
         }}
       >
-        <span>{selectedOption ? selectedOption.label : (placeholder || 'Select...')}</span>
-        <span style={{ marginLeft: '8px', fontSize: '0.8em' }}>▼</span>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel || (placeholder || 'Select...')}</span>
+        <span style={{ marginLeft: '8px', fontSize: '0.8em', flexShrink: 0 }}>▼</span>
       </div>
 
       {isOpen && (

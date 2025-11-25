@@ -95,7 +95,7 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
         padding: '30px',
         borderRadius: '8px',
         width: '100%',
-        maxWidth: '500px',
+        maxWidth: '650px',
         maxHeight: '90vh',
         overflow: 'auto'
       }}>

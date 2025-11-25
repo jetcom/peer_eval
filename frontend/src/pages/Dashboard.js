@@ -205,7 +205,8 @@ function Dashboard() {
               onChange={(value) => setSelectedClass(value)}
               options={classes.map(c => ({
                 value: c.id,
-                label: `${c.name}${c.section ? ` (${c.section})` : ''}${c.semester ? ` - ${c.semester}` : ''}`
+                label: `${c.name}${c.section ? ` (${c.section})` : ''}${c.semester ? ` - ${c.semester}` : ''}`,
+                headerLabel: `${c.name}${c.section ? ` (${c.section})` : ''}${c.semester ? ` - ${c.semester}` : ''}`
               }))}
               darkMode={darkMode}
               style={{ marginRight: '10px' }}
