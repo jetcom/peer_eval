@@ -48,7 +48,7 @@ function ReportsTab({
   // Get class config for number of phases and min word count
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
   const numPhases = selectedClassData?.num_phases || 3;
-  const minCommentWords = selectedClassData?.min_comment_words || 0;
+  const minCommentWords = parseInt(selectedClassData?.min_comment_words) || 0;
   const phaseNumbers = Array.from({ length: numPhases }, (_, i) => i + 1);
 
   // Word count helper
