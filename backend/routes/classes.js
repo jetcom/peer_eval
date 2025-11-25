@@ -271,9 +271,7 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 
         // Update phase due dates
         const updatePhaseDueDates = (callback) => {
-          console.log('updatePhaseDueDates called with:', JSON.stringify(phase_due_dates));
           if (!phase_due_dates || typeof phase_due_dates !== 'object') {
-            console.log('phase_due_dates is null or not object, skipping');
             callback();
             return;
           }
@@ -281,15 +279,12 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
           // Delete existing phase due dates for this class
           db.run('DELETE FROM phase_due_dates WHERE class_id = ?', [id], (err) => {
             if (err) {
-              console.log('Error deleting phase_due_dates:', err);
               callback();
               return;
             }
 
             const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
-            console.log('Phases to save:', phases, 'from keys:', Object.keys(phase_due_dates));
             if (phases.length === 0) {
-              console.log('No phases to save');
               callback();
               return;
             }
@@ -297,13 +292,11 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
             let savedCount = 0;
             phases.forEach(phase => {
               const dueDate = phase_due_dates[phase];
-              console.log(`Processing phase ${phase} with date ${dueDate}`);
               if (dueDate) {
                 db.run(
                   'INSERT INTO phase_due_dates (class_id, phase, due_date) VALUES (?, ?, ?)',
                   [id, parseInt(phase), dueDate],
-                  (err) => {
-                    if (err) console.log(`Error inserting phase ${phase}:`, err);
+                  () => {
                     savedCount++;
                     if (savedCount === phases.length) callback();
                   }
