@@ -42,8 +42,8 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
           userSelect: 'none'
         }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayLabel || (placeholder || 'Select...')}</span>
-        <span style={{ marginLeft: '8px', fontSize: '0.8em', flexShrink: 0 }}>▼</span>
+        <span>{displayLabel || (placeholder || 'Select...')}</span>
+        <span style={{ marginLeft: '8px', fontSize: '0.8em' }}>▼</span>
       </div>
 
       {isOpen && (
