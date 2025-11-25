@@ -58,18 +58,39 @@ function checkIfPhasePastDue(userId, phase, classId, callback) {
     // Convert phase parameter: 'final' becomes 0, otherwise parseInt
     const phaseNum = phase === 'final' || phase === 0 ? 0 : parseInt(phase);
 
-    // First, check if this student has an individual extension for this phase
-    db.get(`
-      SELECT extended_due_date
+    // Check for individual extension - first for this phase, then cascade to later phases
+    // This mirrors how class due dates cascade (earlier phases inherit from later phases)
+    db.all(`
+      SELECT phase, extended_due_date
       FROM student_extensions
-      WHERE class_id = ? AND user_id = ? AND phase = ?
-    `, [classInfo.id, userId, phaseNum], (err, extension) => {
+      WHERE class_id = ? AND user_id = ?
+      ORDER BY phase DESC
+    `, [classInfo.id, userId], (err, extensions) => {
       if (err) {
         return callback(err, null, null);
       }
 
+      // Find applicable extension using cascade logic (like due dates)
+      // For a given phase, use its extension OR the next later phase's extension
+      let extension = null;
+      if (extensions && extensions.length > 0) {
+        // First check for exact phase match
+        const exactMatch = extensions.find(e => e.phase === phaseNum);
+        if (exactMatch) {
+          extension = exactMatch;
+        } else if (phaseNum > 0) {
+          // For numbered phases, look for extension on later phases
+          for (const ext of extensions) {
+            if (ext.phase > phaseNum || ext.phase === 0) {
+              extension = ext;
+              break;
+            }
+          }
+        }
+      }
+
       // Debug logging
-      console.log('Extension check:', { classId: classInfo.id, userId, phaseNum, extension });
+      console.log('Extension check:', { classId: classInfo.id, userId, phaseNum, extension, allExtensions: extensions });
 
       // Get phase due dates for this class
       db.all(`
