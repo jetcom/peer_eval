@@ -315,8 +315,9 @@ function AdminDashboard() {
 
   const openEditClassModal = async (classItem) => {
     try {
-      // Fetch instructors and enrolled users for this class
-      const [instructorsRes, studentsRes] = await Promise.all([
+      // Fetch full class details (including phase_due_dates), instructors, and enrolled users
+      const [classRes, instructorsRes, studentsRes] = await Promise.all([
+        axios.get(`/api/classes/${classItem.id}`),
         axios.get(`/api/classes/${classItem.id}/instructors`),
         axios.get(`/api/classes/${classItem.id}/students`)
       ]);
@@ -325,14 +326,14 @@ function AdminDashboard() {
       const enrolledTeachers = studentsRes.data.filter(u => u.role === 'teacher' || u.role === 'admin');
 
       setEditingClass({
-        ...classItem,
-        has_final_evaluation: classItem.has_final_evaluation === 1 || classItem.has_final_evaluation === true,
+        ...classRes.data,
+        has_final_evaluation: classRes.data.has_final_evaluation === 1 || classRes.data.has_final_evaluation === true,
         instructor_ids: instructorsRes.data.map(i => i.id),
         enrolledTeachers: enrolledTeachers
       });
       setShowEditClassModal(true);
     } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to load class instructors' });
+      setMessage({ type: 'error', text: 'Failed to load class data' });
     }
   };
 
