@@ -6,6 +6,50 @@ import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import CustomDropdown from '../components/CustomDropdown';
 
+// Helper function to calculate effective due date for a phase using cascading logic
+function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates) {
+  if (!phaseDueDates) return null;
+
+  // If this phase has a due date, use it
+  if (phaseDueDates[phase]) {
+    return phaseDueDates[phase];
+  }
+
+  // Otherwise, look forward to find the next set date
+  if (phase > 0) {
+    for (let p = phase + 1; p <= numPhases; p++) {
+      if (phaseDueDates[p]) {
+        return phaseDueDates[p];
+      }
+    }
+    // If still no date and there's a final evaluation, check phase 0
+    if (hasFinalEvaluation && phaseDueDates[0]) {
+      return phaseDueDates[0];
+    }
+  }
+
+  return null;
+}
+
+// Helper to check if a phase is past due
+function isPhasePastDue(phase, numPhases, hasFinalEvaluation, phaseDueDates, timezone) {
+  const effectiveDate = getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates);
+  if (!effectiveDate) return false;
+
+  const tz = timezone || 'America/New_York';
+  const now = new Date();
+  const nowParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).formatToParts(now);
+
+  const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
+  const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+
+  return nowInTz > effectiveDate;
+}
+
 function Dashboard() {
   const { user, logout, mustChangePassword } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -208,22 +252,58 @@ function Dashboard() {
                   ) : (
                     <>Instructor: {currentClass.teacher_name}</>
                   )}
-                  {currentClass.due_date && (
-                    <>
-                      <br />
-                      <span style={{ color: darkMode ? '#f39c12' : '#d68910', fontWeight: '500' }}>
-                        Peer Evaluation Due: {new Date(currentClass.due_date).toLocaleString('en-US', {
-                          timeZone: currentClass.due_date_timezone || 'America/New_York',
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                          hour: 'numeric',
-                          minute: '2-digit',
-                          hour12: true
-                        })} ({currentClass.due_date_timezone || 'ET'})
-                      </span>
-                    </>
-                  )}
+                  {/* Show next upcoming due date */}
+                  {currentClass.phase_due_dates && Object.keys(currentClass.phase_due_dates).length > 0 && (() => {
+                    // Find the first phase that isn't past due to show its deadline
+                    const numPhases = currentClass.num_phases || 3;
+                    const hasFinalEval = currentClass.has_final_evaluation === 1 || currentClass.has_final_evaluation === true;
+                    const timezone = currentClass.due_date_timezone || 'America/New_York';
+
+                    for (let p = 1; p <= numPhases; p++) {
+                      const effectiveDate = getEffectiveDueDate(p, numPhases, hasFinalEval, currentClass.phase_due_dates);
+                      if (effectiveDate && !isPhasePastDue(p, numPhases, hasFinalEval, currentClass.phase_due_dates, timezone)) {
+                        return (
+                          <>
+                            <br />
+                            <span style={{ color: darkMode ? '#f39c12' : '#d68910', fontWeight: '500' }}>
+                              Phase {p} Due: {new Date(effectiveDate).toLocaleString('en-US', {
+                                timeZone: timezone,
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true
+                              })} ({timezone.split('/')[1]?.replace('_', ' ') || timezone})
+                            </span>
+                          </>
+                        );
+                      }
+                    }
+                    // Check final evaluation
+                    if (hasFinalEval) {
+                      const effectiveDate = getEffectiveDueDate(0, numPhases, hasFinalEval, currentClass.phase_due_dates);
+                      if (effectiveDate && !isPhasePastDue(0, numPhases, hasFinalEval, currentClass.phase_due_dates, timezone)) {
+                        return (
+                          <>
+                            <br />
+                            <span style={{ color: darkMode ? '#f39c12' : '#d68910', fontWeight: '500' }}>
+                              Final Evaluation Due: {new Date(effectiveDate).toLocaleString('en-US', {
+                                timeZone: timezone,
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                                hour12: true
+                              })} ({timezone.split('/')[1]?.replace('_', ' ') || timezone})
+                            </span>
+                          </>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
                 </p>
               </div>
             )}
@@ -281,28 +361,44 @@ function Dashboard() {
                   <div className="phase-tabs">
                     {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => {
                       const status = getPhaseStatus(phase);
+                      const numPhases = currentClass?.num_phases || 3;
+                      const hasFinalEval = currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true;
+                      const timezone = currentClass?.due_date_timezone || 'America/New_York';
+                      const pastDue = isPhasePastDue(phase, numPhases, hasFinalEval, currentClass?.phase_due_dates, timezone);
+                      const effectiveDate = getEffectiveDueDate(phase, numPhases, hasFinalEval, currentClass?.phase_due_dates);
+
                       return (
                         <button
                           key={phase}
-                          className={`phase-tab ${status === 'completed' ? 'completed' : ''}`}
+                          className={`phase-tab ${status === 'completed' ? 'completed' : ''} ${pastDue ? 'past-due' : ''}`}
                           onClick={() => navigate(`/evaluate/${phase}?class_id=${selectedClass}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
+                          title={pastDue ? 'Past due - read only' : effectiveDate ? `Due: ${new Date(effectiveDate).toLocaleString('en-US', { timeZone: timezone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
                         >
-                          Phase {phase}
+                          {pastDue && '🔒 '}Phase {phase}
                           {status === 'completed' && ' ✓'}
-                          {status === 'in-progress' && ' (In Progress)'}
+                          {status === 'in-progress' && !pastDue && ' (In Progress)'}
                         </button>
                       );
                     })}
-                    {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
-                      <button
-                        className={`phase-tab final-eval ${getPhaseStatus(4) === 'completed' ? 'completed' : ''}`}
-                        onClick={() => navigate(`/evaluate/final?class_id=${selectedClass}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
-                      >
-                        Final Evaluation
-                        {getPhaseStatus(4) === 'completed' && ' ✓'}
-                        {getPhaseStatus(4) === 'in-progress' && ' (In Progress)'}
-                      </button>
-                    )}
+                    {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (() => {
+                      const numPhases = currentClass?.num_phases || 3;
+                      const hasFinalEval = true;
+                      const timezone = currentClass?.due_date_timezone || 'America/New_York';
+                      const pastDue = isPhasePastDue(0, numPhases, hasFinalEval, currentClass?.phase_due_dates, timezone);
+                      const effectiveDate = getEffectiveDueDate(0, numPhases, hasFinalEval, currentClass?.phase_due_dates);
+
+                      return (
+                        <button
+                          className={`phase-tab final-eval ${getPhaseStatus(4) === 'completed' ? 'completed' : ''} ${pastDue ? 'past-due' : ''}`}
+                          onClick={() => navigate(`/evaluate/final?class_id=${selectedClass}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
+                          title={pastDue ? 'Past due - read only' : effectiveDate ? `Due: ${new Date(effectiveDate).toLocaleString('en-US', { timeZone: timezone, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : ''}
+                        >
+                          {pastDue && '🔒 '}Final Evaluation
+                          {getPhaseStatus(4) === 'completed' && ' ✓'}
+                          {getPhaseStatus(4) === 'in-progress' && !pastDue && ' (In Progress)'}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
 

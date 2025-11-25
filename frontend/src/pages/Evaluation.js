@@ -57,10 +57,12 @@ function Evaluation() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Check if evaluations are past due and get due date info (only for non-masquerade views)
+        // Check if this specific phase is past due and get due date info (only for non-masquerade views)
         if (!masqueradeUserId) {
           try {
-            const readOnlyRes = await axios.get('/api/evaluations/is-read-only');
+            // Pass the phase and class_id to get phase-specific read-only status
+            const phaseParam = isFinalEvaluation ? 'final' : phase;
+            const readOnlyRes = await axios.get(`/api/evaluations/is-read-only?phase=${phaseParam}${classId ? `&class_id=${classId}` : ''}`);
             setIsPastDue(readOnlyRes.data.isReadOnly);
             if (readOnlyRes.data.dueDate) {
               setDueDate({
@@ -163,7 +165,8 @@ function Evaluation() {
           axios.post('/api/evaluations/final-comments', {
             evaluatee_id: member.id,
             comments: finalComments[member.id] || '',
-            final_points: finalPoints[member.id] || 0
+            final_points: finalPoints[member.id] || 0,
+            class_id: classId ? parseInt(classId) : undefined
           })
         );
         await Promise.all(promises);
@@ -172,6 +175,7 @@ function Evaluation() {
           axios.post('/api/evaluations', {
             evaluatee_id: member.id,
             phase: parseInt(phase),
+            class_id: classId ? parseInt(classId) : undefined,
             ...evaluations[member.id]
           })
         );
@@ -191,7 +195,7 @@ function Evaluation() {
       setAutoSaveStatus('error');
       return false;
     }
-  }, [isReadOnly, group, isFinalEvaluation, totalPoints, finalComments, finalPoints, evaluations, phase]);
+  }, [isReadOnly, group, isFinalEvaluation, totalPoints, finalComments, finalPoints, evaluations, phase, classId]);
 
   // Debounced auto-save when data changes
   useEffect(() => {
@@ -345,7 +349,8 @@ function Evaluation() {
           axios.post('/api/evaluations/final-comments', {
             evaluatee_id: member.id,
             comments: finalComments[member.id],
-            final_points: finalPoints[member.id] || 0
+            final_points: finalPoints[member.id] || 0,
+            class_id: classId ? parseInt(classId) : undefined
           })
         );
         await Promise.all(promises);
@@ -356,6 +361,7 @@ function Evaluation() {
           axios.post('/api/evaluations', {
             evaluatee_id: member.id,
             phase: parseInt(phase),
+            class_id: classId ? parseInt(classId) : undefined,
             ...evaluations[member.id]
           })
         );

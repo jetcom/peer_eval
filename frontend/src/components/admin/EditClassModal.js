@@ -1,9 +1,81 @@
 import React from 'react';
 
+// Helper function to calculate effective due date for a phase using cascading logic
+function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates) {
+  // If this phase has a due date, use it
+  if (phaseDueDates[phase]) {
+    return phaseDueDates[phase];
+  }
+
+  // Otherwise, look forward to find the next set date
+  if (phase > 0) {
+    for (let p = phase + 1; p <= numPhases; p++) {
+      if (phaseDueDates[p]) {
+        return phaseDueDates[p];
+      }
+    }
+    // If still no date and there's a final evaluation, check phase 0
+    if (hasFinalEvaluation && phaseDueDates[0]) {
+      return phaseDueDates[0];
+    }
+  }
+
+  return null;
+}
+
 function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onClose }) {
   if (!editingClass) return null;
 
   const availableInstructors = editingClass.enrolledTeachers || [];
+
+  // Helper to format date for display
+  const formatDueDate = (dateStr, timezone) => {
+    if (!dateStr) return null;
+    try {
+      return new Date(dateStr).toLocaleString('en-US', {
+        timeZone: timezone || 'America/New_York',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Get list of phases including final evaluation
+  const getPhases = () => {
+    const phases = [];
+    for (let i = 1; i <= (editingClass.num_phases || 3); i++) {
+      phases.push({ phase: i, label: `Phase ${i}` });
+    }
+    if (editingClass.has_final_evaluation) {
+      phases.push({ phase: 0, label: 'Final Evaluation' });
+    }
+    return phases;
+  };
+
+  // Determine the last required phase
+  const getLastRequiredPhase = () => {
+    if (editingClass.has_final_evaluation) {
+      return 0; // Final evaluation
+    }
+    return editingClass.num_phases || 3; // Last numbered phase
+  };
+
+  // Handle phase due date change
+  const handlePhaseDueDateChange = (phase, value) => {
+    setEditingClass({
+      ...editingClass,
+      phase_due_dates: {
+        ...editingClass.phase_due_dates,
+        [phase]: value || null
+      }
+    });
+  };
 
   return (
     <div style={{
@@ -126,17 +198,6 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
             </label>
           </div>
           <div className="form-group">
-            <label>Peer Evaluation Due Date (optional)</label>
-            <input
-              type="datetime-local"
-              value={editingClass.due_date || ''}
-              onChange={(e) => setEditingClass({ ...editingClass, due_date: e.target.value })}
-            />
-            <small style={{ display: 'block', marginTop: '5px', opacity: 0.8 }}>
-              After this time, peer evaluations will be read-only
-            </small>
-          </div>
-          <div className="form-group">
             <label>Due Date Timezone</label>
             <select
               value={editingClass.due_date_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -151,6 +212,64 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
               <option value="Pacific/Honolulu">Hawaii Time (HST)</option>
               <option value="UTC">UTC (Coordinated Universal Time)</option>
             </select>
+          </div>
+          <div className="form-group">
+            <label>Phase Due Dates</label>
+            <small style={{ display: 'block', marginBottom: '10px', opacity: 0.8 }}>
+              Set a due date for each phase. Empty phases will use the next set date.
+              The last phase ({editingClass.has_final_evaluation ? 'Final Evaluation' : `Phase ${editingClass.num_phases || 3}`}) is required.
+            </small>
+            <div style={{
+              border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
+              borderRadius: '4px',
+              padding: '15px',
+              backgroundColor: darkMode ? '#001e27' : '#f9f9f9'
+            }}>
+              {getPhases().map(({ phase, label }) => {
+                const phaseDueDates = editingClass.phase_due_dates || {};
+                const effectiveDate = getEffectiveDueDate(
+                  phase,
+                  editingClass.num_phases || 3,
+                  editingClass.has_final_evaluation,
+                  phaseDueDates
+                );
+                const hasOwnDate = !!phaseDueDates[phase];
+                const isLastPhase = phase === getLastRequiredPhase();
+
+                return (
+                  <div key={phase} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    marginBottom: phase === getPhases()[getPhases().length - 1].phase ? 0 : '10px',
+                    flexWrap: 'wrap'
+                  }}>
+                    <span style={{
+                      minWidth: '120px',
+                      fontWeight: isLastPhase ? 'bold' : 'normal'
+                    }}>
+                      {label}{isLastPhase ? ' *' : ''}:
+                    </span>
+                    <input
+                      type="datetime-local"
+                      value={phaseDueDates[phase] || ''}
+                      onChange={(e) => handlePhaseDueDateChange(phase, e.target.value)}
+                      required={isLastPhase}
+                      style={{ flex: 1, minWidth: '200px' }}
+                    />
+                    {!hasOwnDate && effectiveDate && (
+                      <span style={{
+                        color: darkMode ? '#839496' : '#666',
+                        fontSize: '0.85rem',
+                        fontStyle: 'italic'
+                      }}>
+                        uses {formatDueDate(effectiveDate, editingClass.due_date_timezone)}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
             <button type="submit" className="btn btn-primary">Save Changes</button>

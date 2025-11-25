@@ -255,6 +255,39 @@ async function initializeDatabase() {
         // Column may already exist
       }
 
+      // Phase due dates table (for per-phase due dates)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS phase_due_dates (
+          id SERIAL PRIMARY KEY,
+          class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+          phase INTEGER NOT NULL,
+          due_date TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(class_id, phase)
+        )
+      `);
+
+      // Migrate existing due_date from classes to phase_due_dates
+      // Apply old due_date to the last phase (final if enabled, otherwise last numbered phase)
+      try {
+        const classesWithDueDates = await pool.query(`
+          SELECT id, due_date, num_phases, has_final_evaluation
+          FROM classes
+          WHERE due_date IS NOT NULL
+        `);
+        for (const cls of classesWithDueDates.rows) {
+          // Determine the last phase: if has_final_evaluation, use 0 (representing 'final'), otherwise num_phases
+          const lastPhase = cls.has_final_evaluation ? 0 : cls.num_phases;
+          await pool.query(`
+            INSERT INTO phase_due_dates (class_id, phase, due_date)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (class_id, phase) DO NOTHING
+          `, [cls.id, lastPhase, cls.due_date]);
+        }
+      } catch (e) {
+        console.log('Migration of due dates may have already been done or no data to migrate');
+      }
+
       // Create protected admin users (using ON CONFLICT for PostgreSQL)
       await pool.query(`
         INSERT INTO users (email, password, first_name, last_name, role, must_change_password, protected)
@@ -418,6 +451,37 @@ async function initializeDatabase() {
 
       // Add final_points column if it doesn't exist (for existing databases)
       db.run(`ALTER TABLE final_comments ADD COLUMN final_points INTEGER DEFAULT 0`, () => {});
+
+      // Phase due dates table (for per-phase due dates)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS phase_due_dates (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          class_id INTEGER NOT NULL,
+          phase INTEGER NOT NULL,
+          due_date TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+          UNIQUE(class_id, phase)
+        )
+      `);
+
+      // Migrate existing due_date from classes to phase_due_dates
+      db.all(`
+        SELECT id, due_date, num_phases, has_final_evaluation
+        FROM classes
+        WHERE due_date IS NOT NULL
+      `, [], (err, rows) => {
+        if (!err && rows) {
+          rows.forEach(cls => {
+            // Determine the last phase: if has_final_evaluation, use 0 (representing 'final'), otherwise num_phases
+            const lastPhase = cls.has_final_evaluation ? 0 : (cls.num_phases || 3);
+            db.run(`
+              INSERT OR IGNORE INTO phase_due_dates (class_id, phase, due_date)
+              VALUES (?, ?, ?)
+            `, [cls.id, lastPhase, cls.due_date]);
+          });
+        }
+      });
 
       // Create protected admin users
       db.run(`

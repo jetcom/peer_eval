@@ -4,74 +4,154 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Helper function to check if evaluations are past due for a user
-function checkIfPastDue(userId, callback) {
-  // Get the user's class and check the due date
-  db.get(`
-    SELECT c.due_date, c.due_date_timezone
-    FROM classes c
-    JOIN class_enrollments ce ON c.id = ce.class_id
-    WHERE ce.user_id = ?
-    LIMIT 1
-  `, [userId], (err, classInfo) => {
+// Helper function to get effective due date for a specific phase
+// Uses cascading logic: if no due date for this phase, use the next phase's due date
+function getEffectiveDueDate(classId, phase, numPhases, hasFinalEvaluation, phaseDueDates, timezone) {
+  // phase is 1-N for regular phases, 0 for final evaluation
+  // phaseDueDates is an object { phase: due_date }
+
+  // If this phase has a due date, use it
+  if (phaseDueDates[phase]) {
+    return phaseDueDates[phase];
+  }
+
+  // Otherwise, look forward to find the next set date
+  // For regular phases (1 to numPhases), look at higher phases
+  if (phase > 0) {
+    for (let p = phase + 1; p <= numPhases; p++) {
+      if (phaseDueDates[p]) {
+        return phaseDueDates[p];
+      }
+    }
+    // If still no date and there's a final evaluation, check phase 0
+    if (hasFinalEvaluation && phaseDueDates[0]) {
+      return phaseDueDates[0];
+    }
+  }
+
+  // No due date found in cascade
+  return null;
+}
+
+// Helper function to check if a specific phase is past due for a user
+function checkIfPhasePastDue(userId, phase, classId, callback) {
+  // Get the user's class info and phase due dates
+  const classQuery = classId
+    ? 'SELECT c.id, c.num_phases, c.has_final_evaluation, c.due_date_timezone FROM classes c WHERE c.id = ?'
+    : `SELECT c.id, c.num_phases, c.has_final_evaluation, c.due_date_timezone
+       FROM classes c
+       JOIN class_enrollments ce ON c.id = ce.class_id
+       WHERE ce.user_id = ?
+       LIMIT 1`;
+  const classParams = classId ? [classId] : [userId];
+
+  db.get(classQuery, classParams, (err, classInfo) => {
     if (err) {
-      return callback(err, null);
+      return callback(err, null, null);
     }
 
-    if (!classInfo || !classInfo.due_date) {
-      // No due date set, evaluations are open
-      return callback(null, false);
+    if (!classInfo) {
+      return callback(null, false, null);
     }
 
-    // Parse the due date with timezone
-    // The due_date is stored as 'YYYY-MM-DDTHH:mm' without timezone
-    // We need to interpret it in the specified timezone (default: America/New_York)
-    const timezone = classInfo.due_date_timezone || 'America/New_York';
-    const dueDateStr = classInfo.due_date;
+    // Get phase due dates for this class
+    db.all(`
+      SELECT phase, due_date
+      FROM phase_due_dates
+      WHERE class_id = ?
+    `, [classInfo.id], (err, phaseDueDatesRows) => {
+      if (err) {
+        return callback(err, null, null);
+      }
 
-    // Get current time formatted in the target timezone
-    const now = new Date();
-    const nowParts = new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    }).formatToParts(now);
+      // Convert to object
+      const phaseDueDates = {};
+      if (phaseDueDatesRows) {
+        phaseDueDatesRows.forEach(pd => {
+          phaseDueDates[pd.phase] = pd.due_date;
+        });
+      }
 
-    const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
-    const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+      const timezone = classInfo.due_date_timezone || 'America/New_York';
+      const numPhases = classInfo.num_phases || 3;
+      const hasFinalEvaluation = classInfo.has_final_evaluation;
 
-    // Compare as strings (both in the same timezone context)
-    const isPastDue = nowInTz > dueDateStr;
-    callback(null, isPastDue);
+      // Convert phase parameter: 'final' becomes 0, otherwise parseInt
+      const phaseNum = phase === 'final' || phase === 0 ? 0 : parseInt(phase);
+
+      // Get effective due date for this phase
+      const effectiveDueDate = getEffectiveDueDate(
+        classInfo.id,
+        phaseNum,
+        numPhases,
+        hasFinalEvaluation,
+        phaseDueDates,
+        timezone
+      );
+
+      if (!effectiveDueDate) {
+        // No due date set for this phase (or any subsequent phase)
+        return callback(null, false, null);
+      }
+
+      // Get current time formatted in the target timezone
+      const now = new Date();
+      const nowParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      }).formatToParts(now);
+
+      const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
+      const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+
+      // Compare as strings (both in the same timezone context)
+      const isPastDue = nowInTz > effectiveDueDate;
+      callback(null, isPastDue, effectiveDueDate);
+    });
   });
 }
 
-// Check if evaluations are past due (read-only)
+// Legacy helper function for backwards compatibility (checks any phase)
+function checkIfPastDue(userId, callback) {
+  checkIfPhasePastDue(userId, 1, null, (err, isPastDue) => {
+    callback(err, isPastDue);
+  });
+}
+
+// Check if evaluations are past due (read-only) for a specific phase
 router.get('/is-read-only', authenticateToken, (req, res) => {
+  const { phase, class_id } = req.query;
+
   // Teachers and admins can always edit
   if (req.user.role === 'teacher' || req.user.role === 'admin') {
     return res.json({ isReadOnly: false });
   }
 
-  // Get the user's class due date info
-  db.get(`
-    SELECT c.due_date, c.due_date_timezone
-    FROM classes c
-    JOIN class_enrollments ce ON c.id = ce.class_id
-    WHERE ce.user_id = ?
-    LIMIT 1
-  `, [req.user.id], (err, classInfo) => {
+  // Use phase 1 as default if not specified (backwards compatibility)
+  const targetPhase = phase || 1;
+
+  checkIfPhasePastDue(req.user.id, targetPhase, class_id, (err, isPastDue, effectiveDueDate) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
 
-    checkIfPastDue(req.user.id, (checkErr, isPastDue) => {
-      if (checkErr) {
+    // Get timezone from class
+    const classQuery = class_id
+      ? 'SELECT due_date_timezone FROM classes WHERE id = ?'
+      : `SELECT c.due_date_timezone FROM classes c
+         JOIN class_enrollments ce ON c.id = ce.class_id
+         WHERE ce.user_id = ? LIMIT 1`;
+    const classParams = class_id ? [class_id] : [req.user.id];
+
+    db.get(classQuery, classParams, (err, classInfo) => {
+      if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
+
       res.json({
         isReadOnly: isPastDue,
-        dueDate: classInfo?.due_date || null,
+        dueDate: effectiveDueDate,
         timezone: classInfo?.due_date_timezone || 'America/New_York'
       });
     });
@@ -129,6 +209,7 @@ router.post('/', authenticateToken, (req, res) => {
   const {
     evaluatee_id,
     phase,
+    class_id,
     contribution,
     communication,
     reliability,
@@ -139,8 +220,8 @@ router.post('/', authenticateToken, (req, res) => {
   } = req.body;
 
   // Validate phase
-  if (phase < 1 || phase > 3) {
-    return res.status(400).json({ error: 'Phase must be 1, 2, or 3' });
+  if (phase < 1 || phase > 5) {
+    return res.status(400).json({ error: 'Phase must be between 1 and 5' });
   }
 
   // Validate score
@@ -148,14 +229,14 @@ router.post('/', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Score must be between 0 and 100' });
   }
 
-  // Check if evaluations are past due (only for students)
+  // Check if this specific phase is past due (only for students)
   if (req.user.role === 'student') {
-    checkIfPastDue(req.user.id, (err, isPastDue) => {
+    checkIfPhasePastDue(req.user.id, phase, class_id, (err, isPastDue) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
       if (isPastDue) {
-        return res.status(403).json({ error: 'Evaluations are past due and can no longer be submitted or modified' });
+        return res.status(403).json({ error: `Phase ${phase} is past due and can no longer be submitted or modified` });
       }
       submitEvaluation();
     });
@@ -216,16 +297,17 @@ router.post('/', authenticateToken, (req, res) => {
 
 // Submit or update final comments
 router.post('/final-comments', authenticateToken, (req, res) => {
-  const { evaluatee_id, comments, final_points } = req.body;
+  const { evaluatee_id, comments, final_points, class_id } = req.body;
 
-  // Check if evaluations are past due (only for students)
+  // Check if final evaluation phase is past due (only for students)
+  // Final evaluation is represented as phase 0 (or 'final')
   if (req.user.role === 'student') {
-    checkIfPastDue(req.user.id, (err, isPastDue) => {
+    checkIfPhasePastDue(req.user.id, 'final', class_id, (err, isPastDue) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
       }
       if (isPastDue) {
-        return res.status(403).json({ error: 'Evaluations are past due and can no longer be submitted or modified' });
+        return res.status(403).json({ error: 'Final evaluation is past due and can no longer be submitted or modified' });
       }
       submitFinalComments();
     });

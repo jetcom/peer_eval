@@ -99,21 +99,42 @@ router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
         return res.status(500).json({ error: 'Database error' });
       }
       classData.instructors = instructors;
-      res.json(classData);
+
+      // Get phase due dates for this class
+      db.all(`
+        SELECT phase, due_date
+        FROM phase_due_dates
+        WHERE class_id = ?
+      `, [id], (err, phaseDueDates) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+
+        // Convert to object format { phase: due_date }
+        const phaseDueDatesObj = {};
+        if (phaseDueDates) {
+          phaseDueDates.forEach(pd => {
+            phaseDueDatesObj[pd.phase] = pd.due_date;
+          });
+        }
+        classData.phase_due_dates = phaseDueDatesObj;
+
+        res.json(classData);
+      });
     });
   });
 });
 
 // Create class
 router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { name, section, semester, num_phases, has_final_evaluation, due_date, due_date_timezone, instructor_ids } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates } = req.body;
   const teacher_id = req.user.role === 'admin' && req.body.teacher_id
     ? req.body.teacher_id
     : req.user.id;
 
   db.run(
-    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation, due_date, due_date_timezone) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date || null, due_date_timezone || null],
+    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation, due_date_timezone) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null],
     function(err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to create class' });
@@ -121,36 +142,74 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 
       const classId = this.lastID;
 
+      // Save phase due dates if provided
+      const savePhaseDueDates = (callback) => {
+        if (!phase_due_dates || typeof phase_due_dates !== 'object') {
+          callback();
+          return;
+        }
+
+        const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
+        if (phases.length === 0) {
+          callback();
+          return;
+        }
+
+        let savedCount = 0;
+        phases.forEach(phase => {
+          const dueDate = phase_due_dates[phase];
+          if (dueDate) {
+            db.run(
+              'INSERT OR REPLACE INTO phase_due_dates (class_id, phase, due_date) VALUES (?, ?, ?)',
+              [classId, parseInt(phase), dueDate],
+              () => {
+                savedCount++;
+                if (savedCount === phases.length) callback();
+              }
+            );
+          } else {
+            savedCount++;
+            if (savedCount === phases.length) callback();
+          }
+        });
+      };
+
       // Add instructors to class_instructors table
       const instructorList = instructor_ids && Array.isArray(instructor_ids) ? instructor_ids : (teacher_id ? [teacher_id] : []);
 
-      if (instructorList.length > 0) {
-        let insertedInstructors = 0;
-        instructorList.forEach(instructorId => {
-          db.run(
-            'INSERT OR IGNORE INTO class_instructors (class_id, user_id) VALUES (?, ?)',
-            [classId, instructorId],
-            (err) => {
-              insertedInstructors++;
-              if (insertedInstructors === instructorList.length) {
-                res.json({
-                  id: classId,
-                  name,
-                  section,
-                  semester,
-                  teacher_id,
-                  num_phases: num_phases || 3,
-                  has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
-                  due_date: due_date || null,
-                  due_date_timezone: due_date_timezone || null
-                });
-              }
-            }
-          );
+      const sendResponse = () => {
+        res.json({
+          id: classId,
+          name,
+          section,
+          semester,
+          teacher_id,
+          num_phases: num_phases || 3,
+          has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+          due_date_timezone: due_date_timezone || null,
+          phase_due_dates: phase_due_dates || {}
         });
-      } else {
-        res.json({ id: classId, name, section, semester, teacher_id, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
-      }
+      };
+
+      savePhaseDueDates(() => {
+        if (instructorList.length > 0) {
+          let insertedInstructors = 0;
+          instructorList.forEach(instructorId => {
+            db.run(
+              'INSERT OR IGNORE INTO class_instructors (class_id, user_id) VALUES (?, ?)',
+              [classId, instructorId],
+              () => {
+                insertedInstructors++;
+                if (insertedInstructors === instructorList.length) {
+                  sendResponse();
+                }
+              }
+            );
+          });
+        } else {
+          sendResponse();
+        }
+      });
     }
   );
 });
@@ -158,7 +217,7 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 // Update class
 router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
   const { id } = req.params;
-  const { name, section, semester, num_phases, has_final_evaluation, due_date, due_date_timezone, instructor_ids } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates } = req.body;
 
   // Check ownership if not admin
   const checkQuery = req.user.role === 'admin'
@@ -175,43 +234,98 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
     }
 
     db.run(
-      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ?, due_date = ?, due_date_timezone = ? WHERE id = ?',
-      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date || null, due_date_timezone || null, id],
+      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ?, due_date_timezone = ? WHERE id = ?',
+      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null, id],
       function(err) {
         if (err) {
           return res.status(500).json({ error: 'Failed to update class' });
         }
 
-        // Update instructors if provided
-        if (instructor_ids && Array.isArray(instructor_ids)) {
-          // Delete existing instructors
-          db.run('DELETE FROM class_instructors WHERE class_id = ?', [id], (err) => {
+        // Update phase due dates
+        const updatePhaseDueDates = (callback) => {
+          if (!phase_due_dates || typeof phase_due_dates !== 'object') {
+            callback();
+            return;
+          }
+
+          // Delete existing phase due dates for this class
+          db.run('DELETE FROM phase_due_dates WHERE class_id = ?', [id], (err) => {
             if (err) {
-              return res.status(500).json({ error: 'Failed to update instructors' });
+              callback();
+              return;
             }
 
-            // Add new instructors
-            if (instructor_ids.length > 0) {
-              let insertedInstructors = 0;
-              instructor_ids.forEach(instructorId => {
+            const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
+            if (phases.length === 0) {
+              callback();
+              return;
+            }
+
+            let savedCount = 0;
+            phases.forEach(phase => {
+              const dueDate = phase_due_dates[phase];
+              if (dueDate) {
                 db.run(
-                  'INSERT INTO class_instructors (class_id, user_id) VALUES (?, ?)',
-                  [id, instructorId],
-                  (err) => {
-                    insertedInstructors++;
-                    if (insertedInstructors === instructor_ids.length) {
-                      res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
-                    }
+                  'INSERT INTO phase_due_dates (class_id, phase, due_date) VALUES (?, ?, ?)',
+                  [id, parseInt(phase), dueDate],
+                  () => {
+                    savedCount++;
+                    if (savedCount === phases.length) callback();
                   }
                 );
-              });
-            } else {
-              res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
-            }
+              } else {
+                savedCount++;
+                if (savedCount === phases.length) callback();
+              }
+            });
           });
-        } else {
-          res.json({ id: parseInt(id), name, section, semester, num_phases: num_phases || 3, has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date: due_date || null, due_date_timezone: due_date_timezone || null });
-        }
+        };
+
+        const sendResponse = () => {
+          res.json({
+            id: parseInt(id),
+            name,
+            section,
+            semester,
+            num_phases: num_phases || 3,
+            has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+            due_date_timezone: due_date_timezone || null,
+            phase_due_dates: phase_due_dates || {}
+          });
+        };
+
+        updatePhaseDueDates(() => {
+          // Update instructors if provided
+          if (instructor_ids && Array.isArray(instructor_ids)) {
+            // Delete existing instructors
+            db.run('DELETE FROM class_instructors WHERE class_id = ?', [id], (err) => {
+              if (err) {
+                return res.status(500).json({ error: 'Failed to update instructors' });
+              }
+
+              // Add new instructors
+              if (instructor_ids.length > 0) {
+                let insertedInstructors = 0;
+                instructor_ids.forEach(instructorId => {
+                  db.run(
+                    'INSERT INTO class_instructors (class_id, user_id) VALUES (?, ?)',
+                    [id, instructorId],
+                    () => {
+                      insertedInstructors++;
+                      if (insertedInstructors === instructor_ids.length) {
+                        sendResponse();
+                      }
+                    }
+                  );
+                });
+              } else {
+                sendResponse();
+              }
+            });
+          } else {
+            sendResponse();
+          }
+        });
       }
     );
   });
@@ -623,9 +737,10 @@ router.get('/my/enrolled', authenticateToken, (req, res) => {
       return res.json([]);
     }
 
-    // Fetch instructors for each class
+    // Fetch instructors and phase due dates for each class
     let completedClasses = 0;
     classes.forEach((classItem, index) => {
+      // Get instructors
       db.all(`
         SELECT u.id, u.first_name, u.last_name, u.email
         FROM users u
@@ -639,10 +754,25 @@ router.get('/my/enrolled', authenticateToken, (req, res) => {
           classes[index].instructors = [];
         }
 
-        completedClasses++;
-        if (completedClasses === classes.length) {
-          res.json(classes);
-        }
+        // Get phase due dates
+        db.all(`
+          SELECT phase, due_date
+          FROM phase_due_dates
+          WHERE class_id = ?
+        `, [classItem.id], (err, phaseDueDates) => {
+          const phaseDueDatesObj = {};
+          if (!err && phaseDueDates) {
+            phaseDueDates.forEach(pd => {
+              phaseDueDatesObj[pd.phase] = pd.due_date;
+            });
+          }
+          classes[index].phase_due_dates = phaseDueDatesObj;
+
+          completedClasses++;
+          if (completedClasses === classes.length) {
+            res.json(classes);
+          }
+        });
       });
     });
   });
