@@ -4,7 +4,8 @@ function EvaluationsTab({
   selectedClass,
   classes,
   classStudents,
-  evaluations
+  evaluations,
+  onManageExtensions
 }) {
   if (!selectedClass) {
     return (
@@ -21,9 +22,20 @@ function EvaluationsTab({
     classStudentIds.has(e.evaluator_id) || classStudentIds.has(e.evaluatee_id)
   );
 
+  const currentClass = classes.find(c => c.id === parseInt(selectedClass));
+
   return (
     <div className="card">
-      <h2>Evaluations for {classes.find(c => c.id === parseInt(selectedClass))?.name}</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+        <h2 style={{ margin: 0 }}>Evaluations for {currentClass?.name}</h2>
+        <button
+          className="btn btn-secondary"
+          onClick={onManageExtensions}
+          title="Manage individual student deadline extensions"
+        >
+          Extensions
+        </button>
+      </div>
       {classEvaluations.length === 0 ? (
         <p>No evaluations submitted yet for this class.</p>
       ) : (

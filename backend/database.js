@@ -288,6 +288,19 @@ async function initializeDatabase() {
         console.log('Migration of due dates may have already been done or no data to migrate');
       }
 
+      // Student extensions table (for individual student deadline extensions)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS student_extensions (
+          id SERIAL PRIMARY KEY,
+          class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          phase INTEGER NOT NULL,
+          extended_due_date TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(class_id, user_id, phase)
+        )
+      `);
+
       // Create protected admin users (using ON CONFLICT for PostgreSQL)
       await pool.query(`
         INSERT INTO users (email, password, first_name, last_name, role, must_change_password, protected)
@@ -482,6 +495,21 @@ async function initializeDatabase() {
           });
         }
       });
+
+      // Student extensions table (for individual student deadline extensions)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS student_extensions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          class_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          phase INTEGER NOT NULL,
+          extended_due_date TEXT NOT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          UNIQUE(class_id, user_id, phase)
+        )
+      `);
 
       // Create protected admin users
       db.run(`

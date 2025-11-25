@@ -817,4 +817,114 @@ router.post('/:id/students/:userId/reset-password', authenticateToken, requireTe
   });
 });
 
+// Get all extensions for a class
+router.get('/:id/extensions', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const { id } = req.params;
+
+  db.all(`
+    SELECT se.*, u.first_name, u.last_name, u.email
+    FROM student_extensions se
+    JOIN users u ON se.user_id = u.id
+    WHERE se.class_id = ?
+    ORDER BY u.last_name, u.first_name, se.phase
+  `, [id], (err, extensions) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(extensions || []);
+  });
+});
+
+// Create or update an extension
+router.post('/:id/extensions', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const { id } = req.params;
+  const { user_id, phase, extended_due_date } = req.body;
+
+  if (!user_id || phase === undefined || !extended_due_date) {
+    return res.status(400).json({ error: 'Missing required fields: user_id, phase, extended_due_date' });
+  }
+
+  // Use INSERT OR REPLACE for SQLite, ON CONFLICT for PostgreSQL
+  db.run(`
+    INSERT INTO student_extensions (class_id, user_id, phase, extended_due_date)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(class_id, user_id, phase) DO UPDATE SET extended_due_date = ?
+  `, [id, user_id, phase, extended_due_date, extended_due_date], function(err) {
+    if (err) {
+      // Fallback for SQLite
+      db.run(`
+        INSERT OR REPLACE INTO student_extensions (class_id, user_id, phase, extended_due_date)
+        VALUES (?, ?, ?, ?)
+      `, [id, user_id, phase, extended_due_date], function(err2) {
+        if (err2) {
+          return res.status(500).json({ error: 'Failed to save extension' });
+        }
+        res.json({ message: 'Extension saved', id: this.lastID });
+      });
+      return;
+    }
+    res.json({ message: 'Extension saved', id: this.lastID });
+  });
+});
+
+// Delete an extension
+router.delete('/:id/extensions/:userId/:phase', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const { id, userId, phase } = req.params;
+
+  db.run(
+    'DELETE FROM student_extensions WHERE class_id = ? AND user_id = ? AND phase = ?',
+    [id, userId, phase],
+    function(err) {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to delete extension' });
+      }
+      res.json({ message: 'Extension deleted' });
+    }
+  );
+});
+
+// Bulk update extensions (for efficient saving from modal)
+router.put('/:id/extensions', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const { id } = req.params;
+  const { extensions } = req.body; // Array of { user_id, phase, extended_due_date }
+
+  if (!Array.isArray(extensions)) {
+    return res.status(400).json({ error: 'extensions must be an array' });
+  }
+
+  // First, delete all existing extensions for this class
+  db.run('DELETE FROM student_extensions WHERE class_id = ?', [id], (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to clear existing extensions' });
+    }
+
+    // Filter out entries with no due date
+    const validExtensions = extensions.filter(e => e.extended_due_date);
+
+    if (validExtensions.length === 0) {
+      return res.json({ message: 'Extensions updated', count: 0 });
+    }
+
+    let savedCount = 0;
+    let hasError = false;
+
+    validExtensions.forEach(ext => {
+      db.run(
+        'INSERT INTO student_extensions (class_id, user_id, phase, extended_due_date) VALUES (?, ?, ?, ?)',
+        [id, ext.user_id, ext.phase, ext.extended_due_date],
+        (err) => {
+          if (err && !hasError) {
+            hasError = true;
+            return res.status(500).json({ error: 'Failed to save some extensions' });
+          }
+          savedCount++;
+          if (savedCount === validExtensions.length && !hasError) {
+            res.json({ message: 'Extensions updated', count: savedCount });
+          }
+        }
+      );
+    });
+  });
+});
+
 module.exports = router;

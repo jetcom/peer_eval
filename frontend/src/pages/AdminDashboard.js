@@ -7,6 +7,7 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
 import CreateClassModal from '../components/admin/CreateClassModal';
 import EditClassModal from '../components/admin/EditClassModal';
 import ManageMembersModal from '../components/admin/ManageMembersModal';
+import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import UsersTab from '../components/admin/UsersTab';
 import GroupsTab from '../components/admin/GroupsTab';
 import EvaluationsTab from '../components/admin/EvaluationsTab';
@@ -42,6 +43,7 @@ function AdminDashboard() {
   const [showEditClassModal, setShowEditClassModal] = useState(false);
   const [editingClass, setEditingClass] = useState(null);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
+  const [showExtensionsModal, setShowExtensionsModal] = useState(false);
   const [finalCommentsData, setFinalCommentsData] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userSearchResults, setUserSearchResults] = useState([]);
@@ -580,6 +582,19 @@ function AdminDashboard() {
         />
       )}
 
+      {showExtensionsModal && selectedClass && (
+        <ManageExtensionsModal
+          darkMode={darkMode}
+          classId={selectedClass}
+          classData={classes.find(c => c.id.toString() === selectedClass)}
+          classStudents={classStudents}
+          onClose={() => setShowExtensionsModal(false)}
+          onSave={() => {
+            setMessage({ type: 'success', text: 'Extensions saved successfully' });
+          }}
+        />
+      )}
+
       <div className="container">
         {message.text && (
           <div className={`message ${message.type}`}>{message.text}</div>
@@ -656,6 +671,7 @@ function AdminDashboard() {
             classes={classes}
             classStudents={classStudents}
             evaluations={evaluations}
+            onManageExtensions={() => setShowExtensionsModal(true)}
           />
         )}
 

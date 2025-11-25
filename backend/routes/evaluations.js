@@ -34,6 +34,7 @@ function getEffectiveDueDate(classId, phase, numPhases, hasFinalEvaluation, phas
 }
 
 // Helper function to check if a specific phase is past due for a user
+// Also checks for individual student extensions
 function checkIfPhasePastDue(userId, phase, classId, callback) {
   // Get the user's class info and phase due dates
   const classQuery = classId
@@ -54,60 +55,78 @@ function checkIfPhasePastDue(userId, phase, classId, callback) {
       return callback(null, false, null);
     }
 
-    // Get phase due dates for this class
-    db.all(`
-      SELECT phase, due_date
-      FROM phase_due_dates
-      WHERE class_id = ?
-    `, [classInfo.id], (err, phaseDueDatesRows) => {
+    // Convert phase parameter: 'final' becomes 0, otherwise parseInt
+    const phaseNum = phase === 'final' || phase === 0 ? 0 : parseInt(phase);
+
+    // First, check if this student has an individual extension for this phase
+    db.get(`
+      SELECT extended_due_date
+      FROM student_extensions
+      WHERE class_id = ? AND user_id = ? AND phase = ?
+    `, [classInfo.id, userId, phaseNum], (err, extension) => {
       if (err) {
         return callback(err, null, null);
       }
 
-      // Convert to object
-      const phaseDueDates = {};
-      if (phaseDueDatesRows) {
-        phaseDueDatesRows.forEach(pd => {
-          phaseDueDates[pd.phase] = pd.due_date;
-        });
-      }
+      // Get phase due dates for this class
+      db.all(`
+        SELECT phase, due_date
+        FROM phase_due_dates
+        WHERE class_id = ?
+      `, [classInfo.id], (err, phaseDueDatesRows) => {
+        if (err) {
+          return callback(err, null, null);
+        }
 
-      const timezone = classInfo.due_date_timezone || 'America/New_York';
-      const numPhases = classInfo.num_phases || 3;
-      const hasFinalEvaluation = classInfo.has_final_evaluation;
+        // Convert to object
+        const phaseDueDates = {};
+        if (phaseDueDatesRows) {
+          phaseDueDatesRows.forEach(pd => {
+            phaseDueDates[pd.phase] = pd.due_date;
+          });
+        }
 
-      // Convert phase parameter: 'final' becomes 0, otherwise parseInt
-      const phaseNum = phase === 'final' || phase === 0 ? 0 : parseInt(phase);
+        const timezone = classInfo.due_date_timezone || 'America/New_York';
+        const numPhases = classInfo.num_phases || 3;
+        const hasFinalEvaluation = classInfo.has_final_evaluation;
 
-      // Get effective due date for this phase
-      const effectiveDueDate = getEffectiveDueDate(
-        classInfo.id,
-        phaseNum,
-        numPhases,
-        hasFinalEvaluation,
-        phaseDueDates,
-        timezone
-      );
+        // Determine the effective due date:
+        // 1. If student has an extension, use that
+        // 2. Otherwise, use the class phase due date (with cascading)
+        let effectiveDueDate;
+        if (extension && extension.extended_due_date) {
+          effectiveDueDate = extension.extended_due_date;
+        } else {
+          effectiveDueDate = getEffectiveDueDate(
+            classInfo.id,
+            phaseNum,
+            numPhases,
+            hasFinalEvaluation,
+            phaseDueDates,
+            timezone
+          );
+        }
 
-      if (!effectiveDueDate) {
-        // No due date set for this phase (or any subsequent phase)
-        return callback(null, false, null);
-      }
+        if (!effectiveDueDate) {
+          // No due date set for this phase (or any subsequent phase)
+          return callback(null, false, null);
+        }
 
-      // Get current time formatted in the target timezone
-      const now = new Date();
-      const nowParts = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false
-      }).formatToParts(now);
+        // Get current time formatted in the target timezone
+        const now = new Date();
+        const nowParts = new Intl.DateTimeFormat('en-US', {
+          timeZone: timezone,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', hour12: false
+        }).formatToParts(now);
 
-      const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
-      const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+        const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
+        const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
 
-      // Compare as strings (both in the same timezone context)
-      const isPastDue = nowInTz > effectiveDueDate;
-      callback(null, isPastDue, effectiveDueDate);
+        // Compare as strings (both in the same timezone context)
+        const isPastDue = nowInTz > effectiveDueDate;
+        callback(null, isPastDue, effectiveDueDate);
+      });
     });
   });
 }
