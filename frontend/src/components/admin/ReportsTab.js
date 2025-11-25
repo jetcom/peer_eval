@@ -31,11 +31,25 @@ function ReportsTab({
     return selectedGroupData.members;
   };
 
+  // Get class config for number of phases
+  const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+  const numPhases = selectedClassData?.num_phases || 3;
+  const phaseNumbers = Array.from({ length: numPhases }, (_, i) => i + 1);
+
   // Calculate summaries per student
   const students = getStudentsInGroup();
   const studentSummaries = students.map(student => {
+    // Check what this student has SUBMITTED (as evaluator)
+    const submittedEvals = evaluations.filter(e => e.evaluator_id === student.id);
+    const submittedPhases = {};
+    phaseNumbers.forEach(phase => {
+      submittedPhases[phase] = submittedEvals.some(e => e.phase === phase);
+    });
+    // Check if submitted final evaluation
+    const submittedFinal = evaluations.some(e => e.evaluator_id === student.id && e.phase === 0);
+
     const studentEvals = evaluations.filter(e => e.evaluatee_id === student.id);
-    const phases = [1, 2, 3].map(phase => {
+    const phases = phaseNumbers.map(phase => {
       const phaseEvals = studentEvals.filter(e => e.phase === phase);
       if (phaseEvals.length === 0) return null;
 
@@ -70,7 +84,7 @@ function ReportsTab({
       points: fc.final_points || 0
     })).filter(c => c.text || c.points > 0);
 
-    return { ...student, phases, totalFinalPoints, finalComments: finalCommentsList };
+    return { ...student, phases, totalFinalPoints, finalComments: finalCommentsList, submittedPhases, submittedFinal };
   });
 
   const criteriaLabels = {
@@ -107,6 +121,9 @@ function ReportsTab({
 
       <div className="card">
         <h2>Student Comparison - Average Scores by Phase</h2>
+        <p className="report-muted-text" style={{ marginBottom: '10px', fontSize: '0.85rem' }}>
+          ✓ = student submitted their evaluations for that phase
+        </p>
         {students.length === 0 ? (
           <p>No students found.</p>
         ) : (
@@ -115,20 +132,21 @@ function ReportsTab({
               <thead>
                 <tr>
                   <th>Student</th>
-                  <th>Phase 1 Score</th>
-                  <th>Phase 1 Likert</th>
-                  <th>Phase 2 Score</th>
-                  <th>Phase 2 Likert</th>
-                  <th>Phase 3 Score</th>
-                  <th>Phase 3 Likert</th>
-                  <th>Final Points</th>
+                  {phaseNumbers.map(p => (
+                    <React.Fragment key={p}>
+                      <th>P{p} Score</th>
+                      <th>P{p} Likert</th>
+                    </React.Fragment>
+                  ))}
+                  <th>Final Pts</th>
+                  <th style={{ borderLeft: '2px solid #586e75' }}>Submitted</th>
                 </tr>
               </thead>
               <tbody>
                 {studentSummaries.map(student => (
                   <tr key={student.id}>
                     <td><strong>{student.last_name}, {student.first_name}</strong></td>
-                    {[0, 1, 2].map(i => {
+                    {phaseNumbers.map((phaseNum, i) => {
                       const phase = student.phases[i];
                       return phase ? (
                         <React.Fragment key={i}>
@@ -145,6 +163,31 @@ function ReportsTab({
                     <td style={{ fontWeight: 'bold', color: '#9b59b6' }}>
                       {student.totalFinalPoints || 0}
                     </td>
+                    <td style={{ borderLeft: '2px solid #586e75', whiteSpace: 'nowrap' }}>
+                      {phaseNumbers.map(p => (
+                        <span
+                          key={p}
+                          title={`Phase ${p}: ${student.submittedPhases[p] ? 'Submitted' : 'Not submitted'}`}
+                          style={{
+                            color: student.submittedPhases[p] ? '#27ae60' : '#e74c3c',
+                            marginRight: '4px'
+                          }}
+                        >
+                          {student.submittedPhases[p] ? '✓' : '✗'}
+                        </span>
+                      ))}
+                      {selectedClassData?.has_final_evaluation && (
+                        <span
+                          title={`Final: ${student.submittedFinal ? 'Submitted' : 'Not submitted'}`}
+                          style={{
+                            color: student.submittedFinal ? '#27ae60' : '#e74c3c',
+                            marginLeft: '4px'
+                          }}
+                        >
+                          F:{student.submittedFinal ? '✓' : '✗'}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -159,7 +202,7 @@ function ReportsTab({
           {studentSummaries.map(student => (
             <div key={student.id} className="report-student-card">
               <h3>{student.last_name}, {student.first_name}</h3>
-              {[1, 2, 3].map(phaseNum => {
+              {phaseNumbers.map(phaseNum => {
                 const phase = student.phases[phaseNum - 1];
                 const percentage = phase ? (phase.avgLikert / 5) * 100 : 0;
                 return (
@@ -195,7 +238,7 @@ function ReportsTab({
         <h2>Detailed Criteria Breakdown by Phase</h2>
         <p className="report-muted-text" style={{ marginBottom: '20px' }}>Compare individual criteria scores across all students for each phase.</p>
 
-        {[1, 2, 3].map(phaseNum => (
+        {phaseNumbers.map(phaseNum => (
           <div key={phaseNum} style={{ marginBottom: '40px' }}>
             <h3 className="report-phase-header">
               Phase {phaseNum}
@@ -242,7 +285,7 @@ function ReportsTab({
 
       <div className="card">
         <h2>All Comments by Phase</h2>
-        {[1, 2, 3].map(phaseNum => (
+        {phaseNumbers.map(phaseNum => (
           <div key={phaseNum} style={{ marginBottom: '30px' }}>
             <h3 className="report-phase-header" style={{ marginBottom: '15px' }}>Phase {phaseNum}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
