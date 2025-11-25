@@ -284,10 +284,9 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                         {!hasOwnDate && effectiveDate && (
                           <span style={{
                             color: darkMode ? '#839496' : '#888',
-                            fontSize: '0.7rem',
-                            fontStyle: 'italic'
+                            fontSize: '0.75rem'
                           }}>
-                            ← {formatDueDate(effectiveDate, editingClass.due_date_timezone)}
+                            ({formatDueDate(effectiveDate, editingClass.due_date_timezone)})
                           </span>
                         )}
                       </div>

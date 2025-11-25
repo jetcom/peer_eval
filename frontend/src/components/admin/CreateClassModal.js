@@ -287,7 +287,6 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
                       <span style={{
                         color: darkMode ? '#839496' : '#888',
                         fontSize: '0.75rem',
-                        fontStyle: 'italic',
                         whiteSpace: 'nowrap'
                       }}>
                         ({formatDueDate(effectiveDate, newClass.due_date_timezone)})
