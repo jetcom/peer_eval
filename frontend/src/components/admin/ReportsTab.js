@@ -45,8 +45,8 @@ function ReportsTab({
     phaseNumbers.forEach(phase => {
       submittedPhases[phase] = submittedEvals.some(e => e.phase === phase);
     });
-    // Check if submitted final evaluation
-    const submittedFinal = evaluations.some(e => e.evaluator_id === student.id && e.phase === 0);
+    // Check if submitted final evaluation (stored in finalCommentsData, not evaluations)
+    const submittedFinal = finalCommentsData.some(fc => fc.evaluator_id === student.id);
 
     const studentEvals = evaluations.filter(e => e.evaluatee_id === student.id);
     const phases = phaseNumbers.map(phase => {
