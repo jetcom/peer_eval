@@ -12,6 +12,7 @@ import UsersTab from '../components/admin/UsersTab';
 import GroupsTab from '../components/admin/GroupsTab';
 import EvaluationsTab from '../components/admin/EvaluationsTab';
 import ReportsTab from '../components/admin/ReportsTab';
+import ProgressTab from '../components/admin/ProgressTab';
 
 function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -740,6 +741,12 @@ function AdminDashboard() {
             Evaluations
           </button>
           <button
+            className={`tab ${activeTab === 'progress' ? 'active' : ''}`}
+            onClick={() => setActiveTab('progress')}
+          >
+            Progress
+          </button>
+          <button
             className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
             onClick={() => setActiveTab('reports')}
           >
@@ -794,6 +801,17 @@ function AdminDashboard() {
             classStudents={classStudents}
             evaluations={evaluations}
             onManageExtensions={() => setShowExtensionsModal(true)}
+          />
+        )}
+
+        {activeTab === 'progress' && (
+          <ProgressTab
+            selectedClass={selectedClass}
+            classes={classes}
+            classStudents={classStudents}
+            classGroups={classGroups}
+            evaluations={evaluations}
+            finalCommentsData={finalCommentsData}
           />
         )}
 
