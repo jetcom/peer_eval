@@ -30,7 +30,7 @@ function AdminDashboard() {
   // Form states
   const [newUser, setNewUser] = useState({ email: '', password: '', first_name: '', last_name: '', role: 'student' });
   const [newGroup, setNewGroup] = useState({ name: '' });
-  const [newClass, setNewClass] = useState({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [] });
+  const [newClass, setNewClass] = useState({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [], phase_due_dates: {}, min_comment_words: 0 });
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [groupMembers, setGroupMembers] = useState([]);
   const [reportGroup, setReportGroup] = useState('all');
@@ -317,16 +317,17 @@ function AdminDashboard() {
         semester: newClass.semester || null,
         num_phases: newClass.num_phases || 3,
         has_final_evaluation: newClass.has_final_evaluation ? 1 : 0,
-        due_date: newClass.due_date || null,
         due_date_timezone: newClass.due_date_timezone || null,
-        instructor_ids: newClass.instructor_ids && newClass.instructor_ids.length > 0 ? newClass.instructor_ids : null
+        instructor_ids: newClass.instructor_ids && newClass.instructor_ids.length > 0 ? newClass.instructor_ids : null,
+        phase_due_dates: newClass.phase_due_dates || {},
+        min_comment_words: newClass.min_comment_words || 0
       };
       // If teacher_id is specified and not empty, include it
       if (newClass.teacher_id) {
         classData.teacher_id = parseInt(newClass.teacher_id);
       }
       const res = await axios.post('/api/classes', classData);
-      setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [] });
+      setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [], phase_due_dates: {}, min_comment_words: 0 });
       setMessage({ type: 'success', text: 'Class created successfully' });
       setShowCreateClassModal(false);
       fetchData();
@@ -667,7 +668,7 @@ function AdminDashboard() {
           onSubmit={handleCreateClass}
           onClose={() => {
             setShowCreateClassModal(false);
-            setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [] });
+            setNewClass({ name: '', section: '', semester: '', teacher_id: '', num_phases: 3, has_final_evaluation: true, instructor_ids: [], phase_due_dates: {}, min_comment_words: 0 });
           }}
         />
       )}
