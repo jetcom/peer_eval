@@ -743,7 +743,7 @@ router.get('/:id/groups', authenticateToken, requireTeacherOrAdmin, (req, res) =
 
     groups.forEach(group => {
       db.all(`
-        SELECT u.id, u.email, u.first_name, u.last_name
+        SELECT u.id, u.email, u.first_name, u.last_name, u.role
         FROM users u
         JOIN group_members gm ON u.id = gm.user_id
         WHERE gm.group_id = ?
