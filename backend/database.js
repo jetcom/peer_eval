@@ -279,6 +279,14 @@ async function initializeDatabase() {
         // Column may already exist
       }
 
+      // One-time migration: set class_id = 1 for existing evaluations/final_comments without class_id
+      try {
+        await pool.query(`UPDATE evaluations SET class_id = 1 WHERE class_id IS NULL`);
+        await pool.query(`UPDATE final_comments SET class_id = 1 WHERE class_id IS NULL`);
+      } catch (e) {
+        // Ignore errors (e.g., if class 1 doesn't exist)
+      }
+
       // Phase due dates table (for per-phase due dates)
       await pool.query(`
         CREATE TABLE IF NOT EXISTS phase_due_dates (
@@ -496,6 +504,10 @@ async function initializeDatabase() {
 
       // Add class_id to final_comments for filtering by class
       db.run(`ALTER TABLE final_comments ADD COLUMN class_id INTEGER`, () => {});
+
+      // One-time migration: set class_id = 1 for existing evaluations/final_comments without class_id
+      db.run(`UPDATE evaluations SET class_id = 1 WHERE class_id IS NULL`, () => {});
+      db.run(`UPDATE final_comments SET class_id = 1 WHERE class_id IS NULL`, () => {});
 
       // Phase due dates table (for per-phase due dates)
       db.run(`
