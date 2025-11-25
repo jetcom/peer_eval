@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 
 function ProgressTab({
   darkMode,
@@ -10,15 +11,8 @@ function ProgressTab({
   finalCommentsData
 }) {
   const [filterGroup, setFilterGroup] = useState('all');
-
-  if (!selectedClass) {
-    return (
-      <div className="card">
-        <h2>Select a Class</h2>
-        <p>Please select a class from the header dropdown to view progress.</p>
-      </div>
-    );
-  }
+  const [heatmapPhase, setHeatmapPhase] = useState(1);
+  const confettiFired = useRef(false);
 
   // Filter to students only
   const studentsOnly = classStudents.filter(s => s.role === 'student');
@@ -152,6 +146,32 @@ function ProgressTab({
     }));
   };
 
+  // Check if evaluator has evaluated evaluatee for a phase
+  const hasEvaluated = (evaluatorId, evaluateeId, phase) => {
+    if (phase === 'final') {
+      return classFinalComments.some(
+        fc => fc.evaluator_id === evaluatorId && fc.evaluatee_id === evaluateeId
+      );
+    }
+    return classEvaluations.some(
+      e => e.evaluator_id === evaluatorId && e.evaluatee_id === evaluateeId && e.phase === phase
+    );
+  };
+
+  // Get students for heatmap (grouped by their group)
+  const getHeatmapStudents = () => {
+    if (filterGroup === 'all') {
+      // Show all groups, but each group separately
+      return classGroups.flatMap(g =>
+        (g.members || []).filter(m => m.role === 'student')
+      );
+    }
+    const groupId = parseInt(filterGroup);
+    const group = classGroups.find(g => g.id === groupId);
+    if (!group || !group.members) return [];
+    return group.members.filter(m => m.role === 'student');
+  };
+
   // Overall completion
   const allPhaseStats = phaseNumbers.map(p => getPhaseStats(p));
   const finalStats = hasFinalEvaluation ? getFinalStats() : null;
@@ -159,6 +179,43 @@ function ProgressTab({
   const totalComplete = allPhaseStats.reduce((sum, s) => sum + s.complete, 0) + (finalStats?.complete || 0);
   const totalExpected = allPhaseStats.reduce((sum, s) => sum + s.total, 0) + (finalStats?.total || 0);
   const overallPercentage = totalExpected > 0 ? Math.round((totalComplete / totalExpected) * 100) : 0;
+
+  // Confetti effect when 100% complete
+  useEffect(() => {
+    if (overallPercentage === 100 && !confettiFired.current && totalExpected > 0) {
+      confettiFired.current = true;
+      // Fire confetti from both sides
+      const duration = 3000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.6 },
+          colors: ['#27ae60', '#3498db', '#f39c12', '#9b59b6']
+        });
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.6 },
+          colors: ['#27ae60', '#3498db', '#f39c12', '#9b59b6']
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      frame();
+    }
+  }, [overallPercentage, totalExpected]);
+
+  // Reset confetti flag when switching classes
+  useEffect(() => {
+    confettiFired.current = false;
+  }, [selectedClass]);
 
   const statusColors = {
     'complete': '#27ae60',
@@ -173,6 +230,17 @@ function ProgressTab({
     'not-started': 'Not Started',
     'no-group': 'No Group'
   };
+
+  if (!selectedClass) {
+    return (
+      <div className="card">
+        <h2>Select a Class</h2>
+        <p>Please select a class from the header dropdown to view progress.</p>
+      </div>
+    );
+  }
+
+  const heatmapStudents = getHeatmapStudents();
 
   return (
     <>
@@ -197,7 +265,12 @@ function ProgressTab({
 
       {/* Overall Progress */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Overall Completion</h3>
+        <h3 style={{ marginTop: 0 }}>
+          Overall Completion
+          {overallPercentage === 100 && totalExpected > 0 && (
+            <span style={{ marginLeft: '10px', fontSize: '1.2rem' }}>🎉</span>
+          )}
+        </h3>
         <div style={{
           background: darkMode ? '#2d2d2d' : '#ecf0f1',
           borderRadius: '8px',
@@ -276,7 +349,7 @@ function ProgressTab({
                 </span>
               </div>
               <div style={{
-                background: '#ecf0f1',
+                background: darkMode ? '#2d2d2d' : '#ecf0f1',
                 borderRadius: '4px',
                 height: '20px',
                 overflow: 'hidden',
@@ -298,6 +371,160 @@ function ProgressTab({
             </div>
           )}
         </div>
+      </div>
+
+      {/* Evaluation Heat Map */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>Evaluation Heat Map</h3>
+          <select
+            value={heatmapPhase}
+            onChange={(e) => setHeatmapPhase(e.target.value)}
+            style={{ padding: '8px', fontSize: '1rem' }}
+          >
+            {phaseNumbers.map(p => (
+              <option key={p} value={p}>Phase {p}</option>
+            ))}
+            {hasFinalEvaluation && (
+              <option value="final">Final Evaluation</option>
+            )}
+          </select>
+        </div>
+
+        {heatmapStudents.length === 0 ? (
+          <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>No students in selected group.</p>
+        ) : heatmapStudents.length > 30 ? (
+          <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>
+            Select a specific group to view the heat map (too many students to display).
+          </p>
+        ) : (
+          <>
+            <div style={{
+              display: 'flex',
+              gap: '15px',
+              marginBottom: '15px',
+              fontSize: '0.85rem',
+              color: darkMode ? '#a0a0a0' : '#666'
+            }}>
+              <span><span style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                background: '#27ae60',
+                borderRadius: '2px',
+                marginRight: '5px',
+                verticalAlign: 'middle'
+              }}></span> Submitted</span>
+              <span><span style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                background: '#e74c3c',
+                borderRadius: '2px',
+                marginRight: '5px',
+                verticalAlign: 'middle'
+              }}></span> Missing</span>
+              <span><span style={{
+                display: 'inline-block',
+                width: '12px',
+                height: '12px',
+                background: darkMode ? '#3d3d3d' : '#ddd',
+                borderRadius: '2px',
+                marginRight: '5px',
+                verticalAlign: 'middle'
+              }}></span> Self / Different Group</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{
+                borderCollapse: 'collapse',
+                fontSize: '0.8rem',
+                width: '100%'
+              }}>
+                <thead>
+                  <tr>
+                    <th style={{
+                      padding: '8px',
+                      textAlign: 'left',
+                      borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}`,
+                      position: 'sticky',
+                      left: 0,
+                      background: darkMode ? '#1a1a1a' : '#fff',
+                      zIndex: 1
+                    }}>
+                      Evaluator ↓ / Evaluatee →
+                    </th>
+                    {heatmapStudents.map(student => (
+                      <th key={student.id} style={{
+                        padding: '8px',
+                        textAlign: 'center',
+                        borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}`,
+                        whiteSpace: 'nowrap',
+                        fontWeight: '500'
+                      }}>
+                        {student.first_name.charAt(0)}. {student.last_name.substring(0, 8)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {heatmapStudents.map(evaluator => {
+                    const evaluatorGroup = getStudentGroup(evaluator.id);
+                    return (
+                      <tr key={evaluator.id}>
+                        <td style={{
+                          padding: '8px',
+                          borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`,
+                          fontWeight: '500',
+                          whiteSpace: 'nowrap',
+                          position: 'sticky',
+                          left: 0,
+                          background: darkMode ? '#1a1a1a' : '#fff'
+                        }}>
+                          {evaluator.first_name} {evaluator.last_name.charAt(0)}.
+                        </td>
+                        {heatmapStudents.map(evaluatee => {
+                          const evaluateeGroup = getStudentGroup(evaluatee.id);
+                          const isSelf = evaluator.id === evaluatee.id;
+                          const sameGroup = evaluatorGroup?.id === evaluateeGroup?.id;
+
+                          let bgColor;
+                          let symbol = '';
+
+                          if (isSelf) {
+                            bgColor = darkMode ? '#3d3d3d' : '#ddd';
+                            symbol = '—';
+                          } else if (!sameGroup) {
+                            bgColor = darkMode ? '#3d3d3d' : '#ddd';
+                            symbol = '';
+                          } else if (hasEvaluated(evaluator.id, evaluatee.id, heatmapPhase)) {
+                            bgColor = '#27ae60';
+                            symbol = '✓';
+                          } else {
+                            bgColor = '#e74c3c';
+                            symbol = '✗';
+                          }
+
+                          return (
+                            <td key={evaluatee.id} style={{
+                              padding: '8px',
+                              textAlign: 'center',
+                              borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`,
+                              background: bgColor,
+                              color: (bgColor === '#27ae60' || bgColor === '#e74c3c') ? 'white' : (darkMode ? '#666' : '#999'),
+                              fontWeight: 'bold'
+                            }}>
+                              {symbol}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Who Needs a Nudge */}
@@ -387,7 +614,7 @@ function ProgressTab({
         {phaseNumbers.every(p => getIncompleteStudents(p).length === 0) &&
          (!hasFinalEvaluation || getIncompleteStudents('final').length === 0) && (
           <p style={{ color: '#27ae60', fontWeight: '500' }}>
-            All students have completed their evaluations!
+            🎉 All students have completed their evaluations!
           </p>
         )}
       </div>
