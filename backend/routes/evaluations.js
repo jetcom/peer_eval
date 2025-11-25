@@ -23,12 +23,25 @@ function checkIfPastDue(userId, callback) {
       return callback(null, false);
     }
 
-    // Parse the due date and timezone
-    const dueDate = new Date(classInfo.due_date);
-    const now = new Date();
+    // Parse the due date with timezone
+    // The due_date is stored as 'YYYY-MM-DDTHH:mm' without timezone
+    // We need to interpret it in the specified timezone (default: America/New_York)
+    const timezone = classInfo.due_date_timezone || 'America/New_York';
+    const dueDateStr = classInfo.due_date;
 
-    // Check if current time is past the due date
-    const isPastDue = now > dueDate;
+    // Get current time formatted in the target timezone
+    const now = new Date();
+    const nowParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).formatToParts(now);
+
+    const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
+    const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+
+    // Compare as strings (both in the same timezone context)
+    const isPastDue = nowInTz > dueDateStr;
     callback(null, isPastDue);
   });
 }
