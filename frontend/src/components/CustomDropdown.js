@@ -38,7 +38,7 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          minWidth: '200px',
+          minWidth: '250px',
           userSelect: 'none'
         }}
       >
