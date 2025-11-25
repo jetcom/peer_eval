@@ -44,6 +44,8 @@ function Evaluation() {
   const [dueDate, setDueDate] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [minCommentWords, setMinCommentWords] = useState(0);
+  const [previousEvaluations, setPreviousEvaluations] = useState({});
+  const [expandedPrevious, setExpandedPrevious] = useState({});
 
   const autoSaveTimeoutRef = useRef(null);
   const deadlineTimeoutRef = useRef(null);
@@ -100,10 +102,11 @@ function Evaluation() {
           : `/api/groups/my/group?${userIdParam.substring(1)}`;
 
         if (isFinalEvaluation) {
-          // For final evaluation, only fetch group and final comments
-          const [groupRes, finalCommentsRes] = await Promise.all([
+          // For final evaluation, fetch group, final comments, AND all previous phase evaluations
+          const [groupRes, finalCommentsRes, evalRes] = await Promise.all([
             axios.get(groupUrl),
-            axios.get(`/api/evaluations/my-final-comments?${userIdParam.substring(1)}`)
+            axios.get(`/api/evaluations/my-final-comments?${userIdParam.substring(1)}`),
+            axios.get(`/api/evaluations/my-evaluations?${userIdParam.substring(1)}`)
           ]);
 
           // If masquerading, store student info for display
@@ -124,6 +127,18 @@ function Evaluation() {
           });
           setFinalComments(fcMap);
           setFinalPoints(fpMap);
+
+          // Build previous evaluations map for Final Evaluation (all phases)
+          const prevEvalsMap = {};
+          groupRes.data.members.forEach(member => {
+            const memberPrevEvals = evalRes.data
+              .filter(e => e.evaluatee_id === member.id)
+              .sort((a, b) => a.phase - b.phase);
+            if (memberPrevEvals.length > 0) {
+              prevEvalsMap[member.id] = memberPrevEvals;
+            }
+          });
+          setPreviousEvaluations(prevEvalsMap);
         } else {
           // Regular phase evaluation
           const [groupRes, evalRes] = await Promise.all([
@@ -156,6 +171,21 @@ function Evaluation() {
             };
           });
           setEvaluations(evalMap);
+
+          // Build previous evaluations map for Phase 2+
+          const currentPhase = parseInt(phase);
+          if (currentPhase > 1) {
+            const prevEvalsMap = {};
+            groupRes.data.members.forEach(member => {
+              const memberPrevEvals = evalRes.data
+                .filter(e => e.evaluatee_id === member.id && e.phase < currentPhase)
+                .sort((a, b) => a.phase - b.phase);
+              if (memberPrevEvals.length > 0) {
+                prevEvalsMap[member.id] = memberPrevEvals;
+              }
+            });
+            setPreviousEvaluations(prevEvalsMap);
+          }
         }
       } catch (err) {
         setMessage({ type: 'error', text: 'Failed to load data' });
@@ -346,6 +376,13 @@ function Evaluation() {
     setFinalPoints(prev => ({
       ...prev,
       [memberId]: points
+    }));
+  };
+
+  const togglePreviousComments = (memberId) => {
+    setExpandedPrevious(prev => ({
+      ...prev,
+      [memberId]: !prev[memberId]
     }));
   };
 
@@ -596,6 +633,77 @@ function Evaluation() {
                     {countWords(finalComments[member.id]) >= minCommentWords ? ' ✓' : ''}
                   </div>
                 )}
+
+                {/* Previous phase comments reference for Final Evaluation */}
+                {previousEvaluations[member.id] && previousEvaluations[member.id].length > 0 && (
+                  <div style={{ marginTop: '12px' }}>
+                    <button
+                      type="button"
+                      onClick={() => togglePreviousComments(member.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '4px 0',
+                        cursor: 'pointer',
+                        color: darkMode ? '#7eb8da' : '#3498db',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <span style={{
+                        transform: expandedPrevious[member.id] ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s',
+                        display: 'inline-block'
+                      }}>▶</span>
+                      View your phase comments for {member.first_name}
+                    </button>
+
+                    {expandedPrevious[member.id] && (
+                      <div style={{
+                        marginTop: '8px',
+                        padding: '12px',
+                        background: darkMode ? '#2a2a2a' : '#f8f9fa',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#444' : '#e0e0e0'}`,
+                        fontSize: '0.9rem'
+                      }}>
+                        <div style={{
+                          fontWeight: '500',
+                          marginBottom: '10px',
+                          color: darkMode ? '#a0a0a0' : '#666'
+                        }}>
+                          📝 Your Comments from Each Phase
+                        </div>
+                        {previousEvaluations[member.id].map((prevEval, idx) => (
+                          <div key={prevEval.phase} style={{
+                            marginBottom: idx < previousEvaluations[member.id].length - 1 ? '12px' : 0,
+                            paddingBottom: idx < previousEvaluations[member.id].length - 1 ? '12px' : 0,
+                            borderBottom: idx < previousEvaluations[member.id].length - 1
+                              ? `1px solid ${darkMode ? '#444' : '#e0e0e0'}`
+                              : 'none'
+                          }}>
+                            <div style={{
+                              fontWeight: '500',
+                              marginBottom: '4px',
+                              color: darkMode ? '#e0e0e0' : '#333'
+                            }}>
+                              Phase {prevEval.phase}:
+                            </div>
+                            <div style={{
+                              color: darkMode ? '#b0b0b0' : '#555',
+                              fontStyle: prevEval.comments ? 'normal' : 'italic',
+                              whiteSpace: 'pre-wrap'
+                            }}>
+                              {prevEval.comments || '(No comments written)'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -668,6 +776,77 @@ function Evaluation() {
                   }}>
                     {countWords(evaluations[member.id]?.comments)} / {minCommentWords} words minimum
                     {countWords(evaluations[member.id]?.comments) >= minCommentWords ? ' ✓' : ''}
+                  </div>
+                )}
+
+                {/* Previous phase comments reference */}
+                {previousEvaluations[member.id] && previousEvaluations[member.id].length > 0 && (
+                  <div style={{ marginTop: '12px' }}>
+                    <button
+                      type="button"
+                      onClick={() => togglePreviousComments(member.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '4px 0',
+                        cursor: 'pointer',
+                        color: darkMode ? '#7eb8da' : '#3498db',
+                        fontSize: '0.9rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}
+                    >
+                      <span style={{
+                        transform: expandedPrevious[member.id] ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s',
+                        display: 'inline-block'
+                      }}>▶</span>
+                      View your previous comments for {member.first_name}
+                    </button>
+
+                    {expandedPrevious[member.id] && (
+                      <div style={{
+                        marginTop: '8px',
+                        padding: '12px',
+                        background: darkMode ? '#2a2a2a' : '#f8f9fa',
+                        borderRadius: '6px',
+                        border: `1px solid ${darkMode ? '#444' : '#e0e0e0'}`,
+                        fontSize: '0.9rem'
+                      }}>
+                        <div style={{
+                          fontWeight: '500',
+                          marginBottom: '10px',
+                          color: darkMode ? '#a0a0a0' : '#666'
+                        }}>
+                          📝 Your Previous Comments
+                        </div>
+                        {previousEvaluations[member.id].map((prevEval, idx) => (
+                          <div key={prevEval.phase} style={{
+                            marginBottom: idx < previousEvaluations[member.id].length - 1 ? '12px' : 0,
+                            paddingBottom: idx < previousEvaluations[member.id].length - 1 ? '12px' : 0,
+                            borderBottom: idx < previousEvaluations[member.id].length - 1
+                              ? `1px solid ${darkMode ? '#444' : '#e0e0e0'}`
+                              : 'none'
+                          }}>
+                            <div style={{
+                              fontWeight: '500',
+                              marginBottom: '4px',
+                              color: darkMode ? '#e0e0e0' : '#333'
+                            }}>
+                              Phase {prevEval.phase}:
+                            </div>
+                            <div style={{
+                              color: darkMode ? '#b0b0b0' : '#555',
+                              fontStyle: prevEval.comments ? 'normal' : 'italic',
+                              whiteSpace: 'pre-wrap'
+                            }}>
+                              {prevEval.comments || '(No comments written)'}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
