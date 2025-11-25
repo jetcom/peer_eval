@@ -43,6 +43,7 @@ function Evaluation() {
   const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved', 'error'
   const [dueDate, setDueDate] = useState(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [minCommentWords, setMinCommentWords] = useState(0);
 
   const autoSaveTimeoutRef = useRef(null);
   const deadlineTimeoutRef = useRef(null);
@@ -50,6 +51,12 @@ function Evaluation() {
 
   // Check if viewing as another user (read-only mode) OR if evaluations are past due
   const isReadOnly = !!masqueradeUserId || isPastDue;
+
+  // Word count helper
+  const countWords = (text) => {
+    if (!text || !text.trim()) return 0;
+    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+  };
 
   // Calculate total points allocated (moved up for use in auto-save)
   const totalPoints = Object.values(finalPoints).reduce((sum, p) => sum + (p || 0), 0);
@@ -72,6 +79,17 @@ function Evaluation() {
             }
           } catch (err) {
             console.error('Failed to check read-only status:', err);
+          }
+        }
+
+        // Fetch class config to get min_comment_words
+        if (classId) {
+          try {
+            const classRes = await axios.get(`/api/classes/${classId}/config`);
+            setMinCommentWords(classRes.data.min_comment_words || 0);
+          } catch (err) {
+            // If endpoint doesn't exist or fails, default to 0
+            console.error('Failed to fetch class config:', err);
           }
         }
 
@@ -342,6 +360,34 @@ function Evaluation() {
       return;
     }
 
+    // Validate minimum word count for comments
+    if (minCommentWords > 0 && group?.members) {
+      const membersWithInsufficientWords = [];
+      if (isFinalEvaluation) {
+        group.members.forEach(member => {
+          const wordCount = countWords(finalComments[member.id]);
+          if (wordCount < minCommentWords) {
+            membersWithInsufficientWords.push(`${member.first_name} ${member.last_name} (${wordCount} words)`);
+          }
+        });
+      } else {
+        group.members.forEach(member => {
+          const wordCount = countWords(evaluations[member.id]?.comments);
+          if (wordCount < minCommentWords) {
+            membersWithInsufficientWords.push(`${member.first_name} ${member.last_name} (${wordCount} words)`);
+          }
+        });
+      }
+      if (membersWithInsufficientWords.length > 0) {
+        setMessage({
+          type: 'error',
+          text: `Comments must be at least ${minCommentWords} words. Need more words for: ${membersWithInsufficientWords.join(', ')}`
+        });
+        setSaving(false);
+        return;
+      }
+    }
+
     try {
       if (isFinalEvaluation) {
         // Save only final comments and points
@@ -540,6 +586,16 @@ function Evaluation() {
                   placeholder={`Enter your final overall comments about ${member.first_name}'s contribution to the entire project...`}
                   disabled={isReadOnly}
                 />
+                {minCommentWords > 0 && (
+                  <div style={{
+                    fontSize: '0.85rem',
+                    marginTop: '4px',
+                    color: countWords(finalComments[member.id]) >= minCommentWords ? '#27ae60' : '#e74c3c'
+                  }}>
+                    {countWords(finalComments[member.id])} / {minCommentWords} words minimum
+                    {countWords(finalComments[member.id]) >= minCommentWords ? ' ✓' : ''}
+                  </div>
+                )}
               </div>
             </div>
           ))
@@ -604,6 +660,16 @@ function Evaluation() {
                   placeholder={`Enter your comments about ${member.first_name}'s performance in Phase ${phase}...`}
                   disabled={isReadOnly}
                 />
+                {minCommentWords > 0 && (
+                  <div style={{
+                    fontSize: '0.85rem',
+                    marginTop: '4px',
+                    color: countWords(evaluations[member.id]?.comments) >= minCommentWords ? '#27ae60' : '#e74c3c'
+                  }}>
+                    {countWords(evaluations[member.id]?.comments)} / {minCommentWords} words minimum
+                    {countWords(evaluations[member.id]?.comments) >= minCommentWords ? ' ✓' : ''}
+                  </div>
+                )}
               </div>
             </div>
           ))

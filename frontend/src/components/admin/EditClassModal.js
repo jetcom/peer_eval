@@ -203,6 +203,22 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                 </select>
               </div>
 
+              {/* Min Comment Words */}
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Min Comment Words</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={editingClass.min_comment_words || 0}
+                  onChange={(e) => setEditingClass({ ...editingClass, min_comment_words: parseInt(e.target.value) || 0 })}
+                  placeholder="0 = no minimum"
+                  style={{ width: '100px' }}
+                />
+                <small style={{ display: 'block', marginTop: '4px', opacity: 0.7, fontSize: '0.8rem' }}>
+                  0 = no minimum
+                </small>
+              </div>
+
               {/* Phase Due Dates */}
               <div className="form-group" style={{ marginBottom: '12px' }}>
                 <label>Phase Due Dates</label>

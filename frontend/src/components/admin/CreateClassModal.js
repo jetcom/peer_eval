@@ -129,8 +129,8 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
             </div>
           </div>
 
-          {/* Row 3: Final Eval checkbox and Timezone (2 columns) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '12px' }}>
+          {/* Row 3: Final Eval checkbox, Timezone, Min Words (3 columns) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '12px' }}>
             <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: 0 }}>
                 <input
@@ -157,6 +157,16 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
                 <option value="Pacific/Honolulu">Hawaii (HST)</option>
                 <option value="UTC">UTC</option>
               </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Min Comment Words</label>
+              <input
+                type="number"
+                min="0"
+                value={newClass.min_comment_words || 0}
+                onChange={(e) => setNewClass({ ...newClass, min_comment_words: parseInt(e.target.value) || 0 })}
+                placeholder="0 = no minimum"
+              />
             </div>
           </div>
 

@@ -72,6 +72,31 @@ router.get('/:id/instructors', authenticateToken, (req, res) => {
   });
 });
 
+// Get class config (accessible by any authenticated user enrolled in the class)
+router.get('/:id/config', authenticateToken, (req, res) => {
+  const { id } = req.params;
+
+  // Check if user is enrolled in this class or is teacher/admin
+  const checkQuery = (req.user.role === 'admin' || req.user.role === 'teacher')
+    ? 'SELECT min_comment_words FROM classes WHERE id = ?'
+    : `SELECT c.min_comment_words FROM classes c
+       JOIN class_enrollments ce ON c.id = ce.class_id
+       WHERE c.id = ? AND ce.user_id = ?`;
+  const checkParams = (req.user.role === 'admin' || req.user.role === 'teacher')
+    ? [id]
+    : [id, req.user.id];
+
+  db.get(checkQuery, checkParams, (err, classData) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found or not enrolled' });
+    }
+    res.json({ min_comment_words: classData.min_comment_words || 0 });
+  });
+});
+
 // Get single class with details
 router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
   const { id } = req.params;
@@ -130,14 +155,14 @@ router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 
 // Create class
 router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates, min_comment_words } = req.body;
   const teacher_id = req.user.role === 'admin' && req.body.teacher_id
     ? req.body.teacher_id
     : req.user.id;
 
   db.run(
-    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation, due_date_timezone) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null],
+    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation, due_date_timezone, min_comment_words) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null, min_comment_words || 0],
     function(err) {
       if (err) {
         return res.status(500).json({ error: 'Failed to create class' });
@@ -220,7 +245,7 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
 // Update class
 router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
   const { id } = req.params;
-  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates } = req.body;
+  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates, min_comment_words } = req.body;
 
   // Check ownership if not admin
   const checkQuery = req.user.role === 'admin'
@@ -237,8 +262,8 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
     }
 
     db.run(
-      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ?, due_date_timezone = ? WHERE id = ?',
-      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null, id],
+      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ?, due_date_timezone = ?, min_comment_words = ? WHERE id = ?',
+      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null, min_comment_words || 0, id],
       function(err) {
         if (err) {
           return res.status(500).json({ error: 'Failed to update class' });

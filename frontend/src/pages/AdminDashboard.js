@@ -348,7 +348,8 @@ function AdminDashboard() {
         has_final_evaluation: editingClass.has_final_evaluation ? 1 : 0,
         due_date: editingClass.due_date || null,
         due_date_timezone: editingClass.due_date_timezone || null,
-        instructor_ids: editingClass.instructor_ids || []
+        instructor_ids: editingClass.instructor_ids || [],
+        min_comment_words: editingClass.min_comment_words || 0
       };
       await axios.put(`/api/classes/${editingClass.id}`, classData);
       setMessage({ type: 'success', text: 'Class updated successfully' });
