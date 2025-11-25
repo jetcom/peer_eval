@@ -4,18 +4,34 @@ A web application for students to submit peer evaluations for semester-long grou
 
 ## Features
 
+### Core Evaluation
 - **Configurable Phases**: Support for 1-5 evaluation phases per class
 - **Optional Final Evaluation**: 23-point distribution among teammates
-- **Per-Phase Due Dates**: Set deadlines for each phase with cascading defaults
-- **Timezone Support**: Configure due dates in your local timezone
-- **Multiple Instructors**: Assign multiple instructors per class
 - **Likert Scale Ratings**: 5-point scale for Contribution, Communication, Reliability, Quality of Work, and Collaboration
 - **Scores & Comments**: Score out of 100 and comments per phase, plus final overall comments
-- **Auto-Save**: Evaluations auto-save as you type (with deadline protection)
-- **CSV Import**: Bulk import users and groups via CSV files
-- **Admin Dashboard**: Manage users, groups, classes, and view all evaluations
 - **Self-Evaluation**: Students evaluate all group members including themselves
+- **Auto-Save**: Evaluations auto-save as you type (with deadline protection)
+- **Minimum Word Count**: Optional minimum word requirement for comments
+
+### Due Dates & Deadlines
+- **Per-Phase Due Dates**: Set deadlines for each phase with cascading defaults
+- **Timezone Support**: Configure due dates in your local timezone
+- **Deadline Enforcement**: Past-due phases are locked with visual indicators
+
+### Administration
+- **Admin Dashboard**: Manage users, groups, classes, and view all evaluations
+- **Progress Dashboard**: Visual overview of class completion status
+- **Evaluation Heat Map**: See exactly who has evaluated whom at a glance
+- **Reports Tab**: Generate and export evaluation reports
+- **CSV Import**: Bulk import users and groups via CSV files
+- **Multiple Instructors**: Assign multiple instructors per class
+- **View as Student**: Admins/teachers can preview any student's dashboard
+
+### User Experience
 - **Dark Mode**: Toggle between light and dark themes
+- **Confetti Celebrations**: Fun animations when completing all evaluations
+- **Class Selection Memory**: Remembers your last selected class
+- **Responsive Design**: Works on desktop and mobile devices
 
 ## Due Date System
 
@@ -135,4 +151,44 @@ When creating or editing a class, you can configure:
 - **Final Evaluation**: Enable/disable the 23-point distribution
 - **Due Date Timezone**: Select from common US timezones or UTC
 - **Phase Due Dates**: Set individual deadlines per phase
+- **Minimum Comment Words**: Optional minimum word count for evaluation comments
 - **Instructors**: Assign one or more instructors
+
+## Admin Dashboard Tabs
+
+The admin dashboard is organized into tabs (ordered by frequency of use):
+
+1. **Progress** - Monitor evaluation completion across the class
+   - Overall completion percentage with progress bar
+   - Per-phase completion breakdown
+   - **Evaluation Heat Map**: Visual matrix showing who evaluated whom
+   - "Who Needs a Nudge?" section listing incomplete students
+   - Filter by group
+   - Confetti celebration when class reaches 100% completion
+
+2. **Reports** - View and analyze evaluation results
+   - Summary statistics per student
+   - Detailed evaluation breakdowns
+   - Export capabilities
+
+3. **Evaluations** - Browse all submitted evaluations
+   - Filter by phase, student, or group
+   - View individual evaluation details
+
+4. **Groups** - Manage student groups
+   - Create/edit/delete groups
+   - CSV bulk import
+   - View group membership
+
+5. **Users** - Manage system users
+   - Create/edit/delete users
+   - CSV bulk import
+   - Role management (admin, teacher, student)
+   - Password reset
+
+## Security
+
+- Passwords are hashed using bcrypt with 10 salt rounds
+- JWT-based authentication
+- Set `JWT_SECRET` environment variable in production
+- Role-based access control (admin, teacher, student)
