@@ -347,9 +347,9 @@ function AdminDashboard() {
         semester: editingClass.semester || null,
         num_phases: editingClass.num_phases || 3,
         has_final_evaluation: editingClass.has_final_evaluation ? 1 : 0,
-        due_date: editingClass.due_date || null,
         due_date_timezone: editingClass.due_date_timezone || null,
         instructor_ids: editingClass.instructor_ids || [],
+        phase_due_dates: editingClass.phase_due_dates || {},
         min_comment_words: editingClass.min_comment_words || 0
       };
       await axios.put(`/api/classes/${editingClass.id}`, classData);
