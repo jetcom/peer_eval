@@ -19,6 +19,20 @@ function ReportsTab({
     );
   }
 
+  // Filter evaluations and final comments by class
+  // Use class_id if available (new data), otherwise check if BOTH evaluator and evaluatee are in this class
+  const classStudentIds = new Set(classStudents.map(s => s.id));
+  const classEvaluations = evaluations.filter(e =>
+    e.class_id
+      ? e.class_id === parseInt(selectedClass)
+      : (classStudentIds.has(e.evaluator_id) && classStudentIds.has(e.evaluatee_id))
+  );
+  const classFinalComments = finalCommentsData.filter(fc =>
+    fc.class_id
+      ? fc.class_id === parseInt(selectedClass)
+      : (classStudentIds.has(fc.evaluator_id) && classStudentIds.has(fc.evaluatee_id))
+  );
+
   // Get students in selected group (filtered to class)
   const getStudentsInGroup = () => {
     if (reportGroup === 'all') return classStudents;
@@ -47,7 +61,7 @@ function ReportsTab({
   const students = getStudentsInGroup();
   const studentSummaries = students.map(student => {
     // Check what this student has SUBMITTED (as evaluator)
-    const submittedEvals = evaluations.filter(e => e.evaluator_id === student.id);
+    const submittedEvals = classEvaluations.filter(e => e.evaluator_id === student.id);
 
     // Track submission status and word count compliance per phase
     // Status: 'none' | 'incomplete' (below word count) | 'complete'
@@ -66,7 +80,7 @@ function ReportsTab({
     });
 
     // Check final evaluation status
-    const studentFinalEvals = finalCommentsData.filter(fc => fc.evaluator_id === student.id);
+    const studentFinalEvals = classFinalComments.filter(fc => fc.evaluator_id === student.id);
     let finalStatus = 'none';
     if (studentFinalEvals.length > 0) {
       if (minCommentWords > 0) {
@@ -84,7 +98,7 @@ function ReportsTab({
     });
     const submittedFinal = finalStatus !== 'none';
 
-    const studentEvals = evaluations.filter(e => e.evaluatee_id === student.id);
+    const studentEvals = classEvaluations.filter(e => e.evaluatee_id === student.id);
     const phases = phaseNumbers.map(phase => {
       const phaseEvals = studentEvals.filter(e => e.phase === phase);
       if (phaseEvals.length === 0) return null;
@@ -112,7 +126,7 @@ function ReportsTab({
     });
 
     // Get final comments and points for this student
-    const studentFinalComments = finalCommentsData.filter(fc => fc.evaluatee_id === student.id);
+    const studentFinalComments = classFinalComments.filter(fc => fc.evaluatee_id === student.id);
     const totalFinalPoints = studentFinalComments.reduce((sum, fc) => sum + (fc.final_points || 0), 0);
     const finalCommentsList = studentFinalComments.map(fc => ({
       from: fc.evaluator_name,

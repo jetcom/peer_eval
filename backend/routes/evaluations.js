@@ -309,9 +309,10 @@ router.post('/', authenticateToken, (req, res) => {
               collaboration = ?,
               score = ?,
               comments = ?,
+              class_id = COALESCE(class_id, ?),
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-          `, [contribution, communication, reliability, quality_of_work, collaboration, score, comments, existing.id],
+          `, [contribution, communication, reliability, quality_of_work, collaboration, score, comments, class_id, existing.id],
           function(err) {
             if (err) {
               return res.status(500).json({ error: 'Failed to update evaluation' });
@@ -322,11 +323,11 @@ router.post('/', authenticateToken, (req, res) => {
           // Create new evaluation
           db.run(`
             INSERT INTO evaluations (
-              evaluator_id, evaluatee_id, phase,
+              evaluator_id, evaluatee_id, phase, class_id,
               contribution, communication, reliability,
               quality_of_work, collaboration, score, comments
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `, [req.user.id, evaluatee_id, phase, contribution, communication, reliability, quality_of_work, collaboration, score, comments],
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [req.user.id, evaluatee_id, phase, class_id, contribution, communication, reliability, quality_of_work, collaboration, score, comments],
           function(err) {
             if (err) {
               return res.status(500).json({ error: 'Failed to create evaluation' });
@@ -373,9 +374,10 @@ router.post('/final-comments', authenticateToken, (req, res) => {
             UPDATE final_comments SET
               comments = ?,
               final_points = ?,
+              class_id = COALESCE(class_id, ?),
               updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-          `, [comments, final_points || 0, existing.id],
+          `, [comments, final_points || 0, class_id, existing.id],
           function(err) {
             if (err) {
               return res.status(500).json({ error: 'Failed to update final comments' });
@@ -384,9 +386,9 @@ router.post('/final-comments', authenticateToken, (req, res) => {
           });
         } else {
           db.run(`
-            INSERT INTO final_comments (evaluator_id, evaluatee_id, comments, final_points)
-            VALUES (?, ?, ?, ?)
-          `, [req.user.id, evaluatee_id, comments, final_points || 0],
+            INSERT INTO final_comments (evaluator_id, evaluatee_id, comments, final_points, class_id)
+            VALUES (?, ?, ?, ?, ?)
+          `, [req.user.id, evaluatee_id, comments, final_points || 0, class_id],
           function(err) {
             if (err) {
               return res.status(500).json({ error: 'Failed to create final comments' });

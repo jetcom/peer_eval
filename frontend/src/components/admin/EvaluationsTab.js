@@ -16,10 +16,13 @@ function EvaluationsTab({
     );
   }
 
-  // Filter evaluations to only show those from students in this class
+  // Filter evaluations to only show those from this class
+  // Use class_id if available (new evaluations), otherwise check if BOTH evaluator and evaluatee are in this class
   const classStudentIds = new Set(classStudents.map(s => s.id));
   const classEvaluations = evaluations.filter(e =>
-    classStudentIds.has(e.evaluator_id) || classStudentIds.has(e.evaluatee_id)
+    e.class_id
+      ? e.class_id === parseInt(selectedClass)
+      : (classStudentIds.has(e.evaluator_id) && classStudentIds.has(e.evaluatee_id))
   );
 
   const currentClass = classes.find(c => c.id === parseInt(selectedClass));

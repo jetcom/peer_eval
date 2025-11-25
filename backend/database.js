@@ -265,6 +265,20 @@ async function initializeDatabase() {
         // Column may already exist
       }
 
+      // Add class_id to evaluations for filtering by class
+      try {
+        await pool.query(`ALTER TABLE evaluations ADD COLUMN class_id INTEGER REFERENCES classes(id)`);
+      } catch (e) {
+        // Column may already exist
+      }
+
+      // Add class_id to final_comments for filtering by class
+      try {
+        await pool.query(`ALTER TABLE final_comments ADD COLUMN class_id INTEGER REFERENCES classes(id)`);
+      } catch (e) {
+        // Column may already exist
+      }
+
       // Phase due dates table (for per-phase due dates)
       await pool.query(`
         CREATE TABLE IF NOT EXISTS phase_due_dates (
@@ -476,6 +490,12 @@ async function initializeDatabase() {
 
       // Add final_points column if it doesn't exist (for existing databases)
       db.run(`ALTER TABLE final_comments ADD COLUMN final_points INTEGER DEFAULT 0`, () => {});
+
+      // Add class_id to evaluations for filtering by class
+      db.run(`ALTER TABLE evaluations ADD COLUMN class_id INTEGER`, () => {});
+
+      // Add class_id to final_comments for filtering by class
+      db.run(`ALTER TABLE final_comments ADD COLUMN class_id INTEGER`, () => {});
 
       // Phase due dates table (for per-phase due dates)
       db.run(`
