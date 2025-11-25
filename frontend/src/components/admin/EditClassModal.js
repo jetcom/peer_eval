@@ -264,6 +264,23 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                           required={isLastPhase}
                           style={{ flex: 1, fontSize: '0.8rem', padding: '3px 5px' }}
                         />
+                        {hasOwnDate && !isLastPhase && (
+                          <button
+                            type="button"
+                            onClick={() => handlePhaseDueDateChange(phase, null)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              cursor: 'pointer',
+                              padding: '2px 6px',
+                              fontSize: '1rem',
+                              color: darkMode ? '#839496' : '#666'
+                            }}
+                            title="Clear date"
+                          >
+                            ×
+                          </button>
+                        )}
                         {!hasOwnDate && effectiveDate && (
                           <span style={{
                             color: darkMode ? '#839496' : '#888',

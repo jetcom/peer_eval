@@ -266,6 +266,23 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
                       required={isLastPhase}
                       style={{ flex: 1, fontSize: '0.85rem', padding: '4px 6px' }}
                     />
+                    {hasOwnDate && !isLastPhase && (
+                      <button
+                        type="button"
+                        onClick={() => handlePhaseDueDateChange(phase, null)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          padding: '2px 6px',
+                          fontSize: '1rem',
+                          color: darkMode ? '#839496' : '#666'
+                        }}
+                        title="Clear date"
+                      >
+                        ×
+                      </button>
+                    )}
                     {!hasOwnDate && effectiveDate && (
                       <span style={{
                         color: darkMode ? '#839496' : '#888',
