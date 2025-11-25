@@ -23,7 +23,7 @@ function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates
   return null;
 }
 
-function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onClose }) {
+function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onClose, onArchive }) {
   if (!editingClass) return null;
 
   const availableInstructors = editingClass.enrolledTeachers || [];
@@ -278,11 +278,34 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', marginTop: '15px' }}>
-            <button type="submit" className="btn btn-primary">Save Changes</button>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '15px', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button type="submit" className="btn btn-primary">Save Changes</button>
+              <button type="button" className="btn btn-secondary" onClick={onClose}>
+                Cancel
+              </button>
+            </div>
+            {onArchive && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Are you sure you want to archive "${editingClass.name}"? It will be hidden from the class dropdown but can be restored later.`)) {
+                    onArchive(editingClass.id);
+                  }
+                }}
+                style={{
+                  background: 'none',
+                  border: `1px solid ${darkMode ? '#839496' : '#999'}`,
+                  color: darkMode ? '#839496' : '#666',
+                  padding: '8px 12px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.9rem'
+                }}
+              >
+                Archive Class
+              </button>
+            )}
           </div>
         </form>
       </div>

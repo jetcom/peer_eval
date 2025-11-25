@@ -17,7 +17,9 @@ const requireTeacherOrAdmin = (req, res, next) => {
 };
 
 // Get all classes (admin sees all, teacher sees their own)
+// Pass ?include_archived=true to include archived classes
 router.get('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const includeArchived = req.query.include_archived === 'true';
   let query, params;
 
   if (req.user.role === 'admin') {
@@ -27,7 +29,8 @@ router.get('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
         (SELECT COUNT(*) FROM groups WHERE class_id = c.id) as group_count
       FROM classes c
       JOIN users u ON c.teacher_id = u.id
-      ORDER BY c.created_at DESC
+      ${includeArchived ? '' : 'WHERE (c.archived IS NULL OR c.archived = 0)'}
+      ORDER BY c.archived ASC, c.created_at DESC
     `;
     params = [];
   } else {
@@ -37,8 +40,8 @@ router.get('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
         (SELECT COUNT(*) FROM groups WHERE class_id = c.id) as group_count
       FROM classes c
       JOIN users u ON c.teacher_id = u.id
-      WHERE c.teacher_id = ?
-      ORDER BY c.created_at DESC
+      WHERE c.teacher_id = ? ${includeArchived ? '' : 'AND (c.archived IS NULL OR c.archived = 0)'}
+      ORDER BY c.archived ASC, c.created_at DESC
     `;
     params = [req.user.id];
   }
@@ -360,6 +363,34 @@ router.delete('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
         }
         res.json({ message: 'Class deleted' });
       });
+    });
+  });
+});
+
+// Archive/unarchive a class
+router.put('/:id/archive', authenticateToken, requireTeacherOrAdmin, (req, res) => {
+  const { id } = req.params;
+  const { archived } = req.body;
+
+  // Check ownership if not admin
+  const checkQuery = req.user.role === 'admin'
+    ? 'SELECT * FROM classes WHERE id = ?'
+    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
+  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
+
+  db.get(checkQuery, checkParams, (err, classData) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    db.run('UPDATE classes SET archived = ? WHERE id = ?', [archived ? 1 : 0, id], function(err) {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to update class' });
+      }
+      res.json({ message: archived ? 'Class archived' : 'Class restored', archived: archived ? 1 : 0 });
     });
   });
 });

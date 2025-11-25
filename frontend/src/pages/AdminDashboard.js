@@ -46,6 +46,8 @@ function AdminDashboard() {
   const [editingClass, setEditingClass] = useState(null);
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
+  const [showArchivedClasses, setShowArchivedClasses] = useState(false);
+  const [archivedClasses, setArchivedClasses] = useState([]);
   const [finalCommentsData, setFinalCommentsData] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userSearchResults, setUserSearchResults] = useState([]);
@@ -265,6 +267,44 @@ function AdminDashboard() {
       setClassStudents(studentsRes.data);
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove from class' });
+    }
+  };
+
+  const fetchArchivedClasses = async () => {
+    try {
+      const res = await axios.get('/api/classes?include_archived=true');
+      const archived = res.data.filter(c => c.archived === 1);
+      setArchivedClasses(archived);
+    } catch (err) {
+      console.error('Failed to fetch archived classes:', err);
+    }
+  };
+
+  const handleArchiveClass = async (classId) => {
+    try {
+      await axios.put(`/api/classes/${classId}/archive`, { archived: true });
+      setMessage({ type: 'success', text: 'Class archived successfully' });
+      setShowEditClassModal(false);
+      setEditingClass(null);
+      // If the archived class was selected, clear the selection
+      if (selectedClass === classId.toString()) {
+        setSelectedClass('');
+      }
+      fetchData();
+      fetchArchivedClasses();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to archive class' });
+    }
+  };
+
+  const handleRestoreClass = async (classId) => {
+    try {
+      await axios.put(`/api/classes/${classId}/archive`, { archived: false });
+      setMessage({ type: 'success', text: 'Class restored successfully' });
+      fetchData();
+      fetchArchivedClasses();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to restore class' });
     }
   };
 
@@ -530,6 +570,76 @@ function AdminDashboard() {
                 >
                   + Create New Class
                 </div>
+                <div
+                  onClick={() => {
+                    if (!showArchivedClasses) {
+                      fetchArchivedClasses();
+                    }
+                    setShowArchivedClasses(!showArchivedClasses);
+                  }}
+                  style={{
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    borderTop: '1px solid #ccc',
+                    color: darkMode ? '#839496' : '#666',
+                    fontSize: '0.9rem'
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = darkMode ? '#3a4a6a' : '#f5f5f5'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  {showArchivedClasses ? '▼' : '▶'} Archived Classes ({archivedClasses.length})
+                </div>
+                {showArchivedClasses && archivedClasses.length > 0 && (
+                  <div style={{
+                    background: darkMode ? '#1a2a4a' : '#f9f9f9',
+                    borderTop: '1px solid #ccc'
+                  }}>
+                    {archivedClasses.map(c => (
+                      <div
+                        key={c.id}
+                        style={{
+                          padding: '6px 12px 6px 24px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          color: darkMode ? '#93a1a1' : '#666',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <span style={{ opacity: 0.8 }}>
+                          {c.name} {c.section ? `(${c.section})` : ''} {c.semester ? `- ${c.semester}` : ''}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRestoreClass(c.id);
+                          }}
+                          style={{
+                            background: 'none',
+                            border: `1px solid ${darkMode ? '#586e75' : '#ccc'}`,
+                            color: darkMode ? '#93a1a1' : '#666',
+                            padding: '2px 8px',
+                            borderRadius: '3px',
+                            cursor: 'pointer',
+                            fontSize: '0.8rem'
+                          }}
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {showArchivedClasses && archivedClasses.length === 0 && (
+                  <div style={{
+                    padding: '8px 12px 8px 24px',
+                    color: darkMode ? '#839496' : '#999',
+                    fontSize: '0.85rem',
+                    fontStyle: 'italic'
+                  }}>
+                    No archived classes
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -571,6 +681,7 @@ function AdminDashboard() {
             setShowEditClassModal(false);
             setEditingClass(null);
           }}
+          onArchive={handleArchiveClass}
         />
       )}
 

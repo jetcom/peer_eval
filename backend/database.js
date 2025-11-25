@@ -171,6 +171,11 @@ async function initializeDatabase() {
       } catch (e) {
         // Column may already exist
       }
+      try {
+        await pool.query(`ALTER TABLE classes ADD COLUMN archived INTEGER DEFAULT 0`);
+      } catch (e) {
+        // Column may already exist
+      }
 
       // Class instructors table (for multiple instructors per class)
       await pool.query(`
@@ -372,6 +377,7 @@ async function initializeDatabase() {
       db.run(`ALTER TABLE classes ADD COLUMN has_final_evaluation INTEGER DEFAULT 1`, () => {});
       db.run(`ALTER TABLE classes ADD COLUMN due_date TEXT`, () => {});
       db.run(`ALTER TABLE classes ADD COLUMN due_date_timezone TEXT`, () => {});
+      db.run(`ALTER TABLE classes ADD COLUMN archived INTEGER DEFAULT 0`, () => {});
 
       // Class instructors table (for multiple instructors per class)
       db.run(`
