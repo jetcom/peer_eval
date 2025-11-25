@@ -101,7 +101,7 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
         <h2 style={{ marginTop: 0, marginBottom: '15px' }}>Edit Class</h2>
         <form onSubmit={onSubmit}>
           <div style={{ display: 'flex', gap: '30px' }}>
-            {/* Left column: Class info and phases */}
+            {/* Left column: Class info and instructors */}
             <div style={{ flex: 1 }}>
               <div className="form-group" style={{ marginBottom: '12px' }}>
                 <label>Class Name</label>
@@ -131,40 +131,12 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                   placeholder="e.g., Fall 2024"
                 />
               </div>
-              <div className="form-group" style={{ marginBottom: '12px' }}>
-                <label>Number of Phases</label>
-                <select
-                  value={editingClass.num_phases || 3}
-                  onChange={(e) => setEditingClass({ ...editingClass, num_phases: parseInt(e.target.value) })}
-                >
-                  <option value={1}>1 Phase</option>
-                  <option value={2}>2 Phases</option>
-                  <option value={3}>3 Phases</option>
-                  <option value={4}>4 Phases</option>
-                  <option value={5}>5 Phases</option>
-                </select>
-              </div>
-              <div className="form-group" style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={editingClass.has_final_evaluation}
-                    onChange={(e) => setEditingClass({ ...editingClass, has_final_evaluation: e.target.checked })}
-                    style={{ width: '18px', height: '18px' }}
-                  />
-                  Final Evaluation (23-pt)
-                </label>
-              </div>
-            </div>
-
-            {/* Right column: Instructors and due dates */}
-            <div style={{ flex: 1 }}>
               {/* Instructors */}
               {availableInstructors.length > 0 && (
                 <div className="form-group" style={{ marginBottom: '12px' }}>
                   <label>Instructors ({(editingClass.instructor_ids || []).length} selected)</label>
                   <div style={{
-                    maxHeight: '80px',
+                    maxHeight: '120px',
                     overflowY: 'auto',
                     border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
                     borderRadius: '4px',
@@ -201,6 +173,34 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Right column: Phases and due dates */}
+            <div style={{ flex: 1 }}>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Number of Phases</label>
+                <select
+                  value={editingClass.num_phases || 3}
+                  onChange={(e) => setEditingClass({ ...editingClass, num_phases: parseInt(e.target.value) })}
+                >
+                  <option value={1}>1 Phase</option>
+                  <option value={2}>2 Phases</option>
+                  <option value={3}>3 Phases</option>
+                  <option value={4}>4 Phases</option>
+                  <option value={5}>5 Phases</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={editingClass.has_final_evaluation}
+                    onChange={(e) => setEditingClass({ ...editingClass, has_final_evaluation: e.target.checked })}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  Final Evaluation (23-pt)
+                </label>
+              </div>
 
               {/* Timezone */}
               <div className="form-group" style={{ marginBottom: '12px' }}>
