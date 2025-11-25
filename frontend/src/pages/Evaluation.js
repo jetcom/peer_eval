@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -40,18 +40,34 @@ function Evaluation() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [masqueradeStudent, setMasqueradeStudent] = useState(null);
   const [isPastDue, setIsPastDue] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState(''); // '', 'saving', 'saved', 'error'
+  const [dueDate, setDueDate] = useState(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
+  const autoSaveTimeoutRef = useRef(null);
+  const deadlineTimeoutRef = useRef(null);
+  const lastSavedDataRef = useRef(null);
 
   // Check if viewing as another user (read-only mode) OR if evaluations are past due
   const isReadOnly = !!masqueradeUserId || isPastDue;
 
+  // Calculate total points allocated (moved up for use in auto-save)
+  const totalPoints = Object.values(finalPoints).reduce((sum, p) => sum + (p || 0), 0);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Check if evaluations are past due (only for non-masquerade views)
+        // Check if evaluations are past due and get due date info (only for non-masquerade views)
         if (!masqueradeUserId) {
           try {
             const readOnlyRes = await axios.get('/api/evaluations/is-read-only');
             setIsPastDue(readOnlyRes.data.isReadOnly);
+            if (readOnlyRes.data.dueDate) {
+              setDueDate({
+                date: readOnlyRes.data.dueDate,
+                timezone: readOnlyRes.data.timezone || 'America/New_York'
+              });
+            }
           } catch (err) {
             console.error('Failed to check read-only status:', err);
           }
@@ -131,6 +147,140 @@ function Evaluation() {
     fetchData();
   }, [phase, classId, masqueradeUserId, isFinalEvaluation]);
 
+  // Auto-save function (doesn't validate total points - just saves current state)
+  const performAutoSave = useCallback(async (skipValidation = true) => {
+    if (isReadOnly || !group) return false;
+
+    // For final evaluation, skip auto-save if points validation would fail (unless forced)
+    if (isFinalEvaluation && !skipValidation && totalPoints !== 23) {
+      return false;
+    }
+
+    setAutoSaveStatus('saving');
+    try {
+      if (isFinalEvaluation) {
+        const promises = group.members.map(member =>
+          axios.post('/api/evaluations/final-comments', {
+            evaluatee_id: member.id,
+            comments: finalComments[member.id] || '',
+            final_points: finalPoints[member.id] || 0
+          })
+        );
+        await Promise.all(promises);
+      } else {
+        const promises = group.members.map(member =>
+          axios.post('/api/evaluations', {
+            evaluatee_id: member.id,
+            phase: parseInt(phase),
+            ...evaluations[member.id]
+          })
+        );
+        await Promise.all(promises);
+      }
+      setAutoSaveStatus('saved');
+      setHasUnsavedChanges(false);
+      lastSavedDataRef.current = isFinalEvaluation
+        ? JSON.stringify({ finalComments, finalPoints })
+        : JSON.stringify(evaluations);
+
+      // Clear "saved" status after 3 seconds
+      setTimeout(() => setAutoSaveStatus(''), 3000);
+      return true;
+    } catch (err) {
+      console.error('Auto-save failed:', err);
+      setAutoSaveStatus('error');
+      return false;
+    }
+  }, [isReadOnly, group, isFinalEvaluation, totalPoints, finalComments, finalPoints, evaluations, phase]);
+
+  // Debounced auto-save when data changes
+  useEffect(() => {
+    if (isReadOnly || loading || !group) return;
+
+    const currentData = isFinalEvaluation
+      ? JSON.stringify({ finalComments, finalPoints })
+      : JSON.stringify(evaluations);
+
+    // Skip if data hasn't actually changed from last save
+    if (currentData === lastSavedDataRef.current) return;
+
+    setHasUnsavedChanges(true);
+
+    // Clear existing timeout
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    // Set new timeout for auto-save (3 seconds after last change)
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      performAutoSave(true);
+    }, 3000);
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [evaluations, finalComments, finalPoints, isReadOnly, loading, group, isFinalEvaluation, performAutoSave]);
+
+  // Deadline auto-save timer
+  useEffect(() => {
+    if (!dueDate || isReadOnly || isPastDue) return;
+
+    const checkDeadline = () => {
+      const timezone = dueDate.timezone;
+      const now = new Date();
+      const nowParts = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      }).formatToParts(now);
+
+      const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
+      const nowStr = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+
+      // Parse due date time components
+      const [dueHour, dueMin] = dueDate.date.split('T')[1].split(':').map(Number);
+
+      // Calculate seconds until deadline
+      const [nowHour, nowMin, nowSec] = [
+        parseInt(getPart(nowParts, 'hour')),
+        parseInt(getPart(nowParts, 'minute')),
+        parseInt(getPart(nowParts, 'second'))
+      ];
+
+      // If we're on the same day as deadline
+      if (nowStr.substring(0, 10) === dueDate.date.substring(0, 10)) {
+        const dueTotalSec = dueHour * 3600 + dueMin * 60;
+        const nowTotalSec = nowHour * 3600 + nowMin * 60 + nowSec;
+        const secsUntilDeadline = dueTotalSec - nowTotalSec;
+
+        // Auto-save 30 seconds before deadline
+        if (secsUntilDeadline > 0 && secsUntilDeadline <= 30) {
+          console.log('Deadline approaching! Auto-saving...');
+          performAutoSave(true);
+          setMessage({ type: 'info', text: 'Deadline approaching - your work has been auto-saved!' });
+        }
+      }
+    };
+
+    // Check every 10 seconds
+    const intervalId = setInterval(checkDeadline, 10000);
+    checkDeadline(); // Check immediately
+
+    return () => clearInterval(intervalId);
+  }, [dueDate, isReadOnly, isPastDue, performAutoSave]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    const autoSaveTimeout = autoSaveTimeoutRef.current;
+    const deadlineTimeout = deadlineTimeoutRef.current;
+    return () => {
+      if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+      if (deadlineTimeout) clearTimeout(deadlineTimeout);
+    };
+  }, []);
+
   const handleCriteriaChange = (memberId, criterion, value) => {
     setEvaluations(prev => ({
       ...prev,
@@ -176,9 +326,6 @@ function Evaluation() {
       [memberId]: points
     }));
   };
-
-  // Calculate total points allocated
-  const totalPoints = Object.values(finalPoints).reduce((sum, p) => sum + (p || 0), 0);
 
   const handleSave = async () => {
     setSaving(true);
@@ -458,6 +605,24 @@ function Evaluation() {
 
         {!isReadOnly && (
           <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            {autoSaveStatus && (
+              <div style={{
+                marginBottom: '10px',
+                fontSize: '0.9rem',
+                color: autoSaveStatus === 'saved' ? '#27ae60' :
+                       autoSaveStatus === 'saving' ? '#f39c12' :
+                       autoSaveStatus === 'error' ? '#e74c3c' : darkMode ? '#a0a0a0' : '#666'
+              }}>
+                {autoSaveStatus === 'saving' && '⏳ Auto-saving...'}
+                {autoSaveStatus === 'saved' && '✓ Auto-saved'}
+                {autoSaveStatus === 'error' && '⚠ Auto-save failed - please save manually'}
+              </div>
+            )}
+            {hasUnsavedChanges && !autoSaveStatus && (
+              <div style={{ marginBottom: '10px', fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
+                Unsaved changes...
+              </div>
+            )}
             <button
               className="btn btn-success"
               onClick={handleSave}

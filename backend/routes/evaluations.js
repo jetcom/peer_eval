@@ -53,11 +53,28 @@ router.get('/is-read-only', authenticateToken, (req, res) => {
     return res.json({ isReadOnly: false });
   }
 
-  checkIfPastDue(req.user.id, (err, isPastDue) => {
+  // Get the user's class due date info
+  db.get(`
+    SELECT c.due_date, c.due_date_timezone
+    FROM classes c
+    JOIN class_enrollments ce ON c.id = ce.class_id
+    WHERE ce.user_id = ?
+    LIMIT 1
+  `, [req.user.id], (err, classInfo) => {
     if (err) {
       return res.status(500).json({ error: 'Database error' });
     }
-    res.json({ isReadOnly: isPastDue });
+
+    checkIfPastDue(req.user.id, (checkErr, isPastDue) => {
+      if (checkErr) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      res.json({
+        isReadOnly: isPastDue,
+        dueDate: classInfo?.due_date || null,
+        timezone: classInfo?.due_date_timezone || 'America/New_York'
+      });
+    });
   });
 });
 
