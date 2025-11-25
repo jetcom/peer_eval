@@ -19,7 +19,7 @@ function AdminDashboard() {
   const { darkMode, toggleDarkMode } = useTheme();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(() => {
-    return localStorage.getItem('adminActiveTab') || 'users';
+    return localStorage.getItem('adminActiveTab') || 'progress';
   });
   const [users, setUsers] = useState([]);
   const [, setGroups] = useState([]);
@@ -723,24 +723,6 @@ function AdminDashboard() {
 
         <div className="tabs">
           <button
-            className={`tab ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => setActiveTab('users')}
-          >
-            Users
-          </button>
-          <button
-            className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
-            onClick={() => setActiveTab('groups')}
-          >
-            Groups
-          </button>
-          <button
-            className={`tab ${activeTab === 'evaluations' ? 'active' : ''}`}
-            onClick={() => setActiveTab('evaluations')}
-          >
-            Evaluations
-          </button>
-          <button
             className={`tab ${activeTab === 'progress' ? 'active' : ''}`}
             onClick={() => setActiveTab('progress')}
           >
@@ -751,6 +733,24 @@ function AdminDashboard() {
             onClick={() => setActiveTab('reports')}
           >
             Reports
+          </button>
+          <button
+            className={`tab ${activeTab === 'evaluations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('evaluations')}
+          >
+            Evaluations
+          </button>
+          <button
+            className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
+            onClick={() => setActiveTab('groups')}
+          >
+            Groups
+          </button>
+          <button
+            className={`tab ${activeTab === 'users' ? 'active' : ''}`}
+            onClick={() => setActiveTab('users')}
+          >
+            Users
           </button>
         </div>
 
