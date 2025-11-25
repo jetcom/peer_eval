@@ -68,6 +68,9 @@ function checkIfPhasePastDue(userId, phase, classId, callback) {
         return callback(err, null, null);
       }
 
+      // Debug logging
+      console.log('Extension check:', { classId: classInfo.id, userId, phaseNum, extension });
+
       // Get phase due dates for this class
       db.all(`
         SELECT phase, due_date
@@ -125,6 +128,7 @@ function checkIfPhasePastDue(userId, phase, classId, callback) {
 
         // Compare as strings (both in the same timezone context)
         const isPastDue = nowInTz > effectiveDueDate;
+        console.log('Due date comparison:', { nowInTz, effectiveDueDate, isPastDue, hasExtension: !!extension });
         callback(null, isPastDue, effectiveDueDate);
       });
     });
