@@ -94,192 +94,190 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
         padding: '25px',
         borderRadius: '8px',
         width: '100%',
-        maxWidth: '750px',
+        maxWidth: '850px',
         maxHeight: '90vh',
         overflow: 'auto'
       }}>
         <h2 style={{ marginTop: 0, marginBottom: '15px' }}>Edit Class</h2>
         <form onSubmit={onSubmit}>
-          {/* Row 1: Class Name (full width) */}
-          <div className="form-group" style={{ marginBottom: '12px' }}>
-            <label>Class Name</label>
-            <input
-              type="text"
-              value={editingClass.name}
-              onChange={(e) => setEditingClass({ ...editingClass, name: e.target.value })}
-              required
-              placeholder="e.g., Software Engineering"
-            />
-          </div>
-
-          {/* Row 2: Section, Semester, Phases (3 columns) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '12px' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Section</label>
-              <input
-                type="text"
-                value={editingClass.section || ''}
-                onChange={(e) => setEditingClass({ ...editingClass, section: e.target.value })}
-                placeholder="e.g., 001"
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Semester</label>
-              <input
-                type="text"
-                value={editingClass.semester || ''}
-                onChange={(e) => setEditingClass({ ...editingClass, semester: e.target.value })}
-                placeholder="e.g., Fall 2024"
-              />
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Phases</label>
-              <select
-                value={editingClass.num_phases || 3}
-                onChange={(e) => setEditingClass({ ...editingClass, num_phases: parseInt(e.target.value) })}
-              >
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-                <option value={3}>3</option>
-                <option value={4}>4</option>
-                <option value={5}>5</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Row 3: Final Eval checkbox and Timezone (2 columns) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '12px' }}>
-            <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: 0 }}>
+          <div style={{ display: 'flex', gap: '30px' }}>
+            {/* Left column: Class info and phases */}
+            <div style={{ flex: 1 }}>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Class Name</label>
                 <input
-                  type="checkbox"
-                  checked={editingClass.has_final_evaluation}
-                  onChange={(e) => setEditingClass({ ...editingClass, has_final_evaluation: e.target.checked })}
-                  style={{ width: '18px', height: '18px' }}
+                  type="text"
+                  value={editingClass.name}
+                  onChange={(e) => setEditingClass({ ...editingClass, name: e.target.value })}
+                  required
+                  placeholder="e.g., Software Engineering"
                 />
-                Final Evaluation (23-pt)
-              </label>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Timezone</label>
-              <select
-                value={editingClass.due_date_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
-                onChange={(e) => setEditingClass({ ...editingClass, due_date_timezone: e.target.value })}
-              >
-                <option value="America/New_York">Eastern (ET)</option>
-                <option value="America/Chicago">Central (CT)</option>
-                <option value="America/Denver">Mountain (MT)</option>
-                <option value="America/Phoenix">Arizona (MST)</option>
-                <option value="America/Los_Angeles">Pacific (PT)</option>
-                <option value="America/Anchorage">Alaska (AKT)</option>
-                <option value="Pacific/Honolulu">Hawaii (HST)</option>
-                <option value="UTC">UTC</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Instructors (compact) */}
-          {availableInstructors.length > 0 && (
-            <div className="form-group" style={{ marginBottom: '12px' }}>
-              <label>Instructors ({(editingClass.instructor_ids || []).length} selected)</label>
-              <div style={{
-                maxHeight: '80px',
-                overflowY: 'auto',
-                border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
-                borderRadius: '4px',
-                padding: '8px',
-                backgroundColor: darkMode ? '#001e27' : '#fff'
-              }}>
-                {availableInstructors.map(u => (
-                  <label
-                    key={u.id}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      marginRight: '15px',
-                      cursor: 'pointer',
-                      color: darkMode ? '#93a1a1' : '#333',
-                      fontSize: '0.9rem'
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={(editingClass.instructor_ids || []).includes(u.id)}
-                      onChange={() => {
-                        const currentIds = editingClass.instructor_ids || [];
-                        const newIds = currentIds.includes(u.id)
-                          ? currentIds.filter(id => id !== u.id)
-                          : [...currentIds, u.id];
-                        setEditingClass({ ...editingClass, instructor_ids: newIds });
-                      }}
-                      style={{ marginRight: '5px', width: 'auto' }}
-                    />
-                    {u.last_name}, {u.first_name}
-                  </label>
-                ))}
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Section</label>
+                <input
+                  type="text"
+                  value={editingClass.section || ''}
+                  onChange={(e) => setEditingClass({ ...editingClass, section: e.target.value })}
+                  placeholder="e.g., 001"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Semester</label>
+                <input
+                  type="text"
+                  value={editingClass.semester || ''}
+                  onChange={(e) => setEditingClass({ ...editingClass, semester: e.target.value })}
+                  placeholder="e.g., Fall 2024"
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Number of Phases</label>
+                <select
+                  value={editingClass.num_phases || 3}
+                  onChange={(e) => setEditingClass({ ...editingClass, num_phases: parseInt(e.target.value) })}
+                >
+                  <option value={1}>1 Phase</option>
+                  <option value={2}>2 Phases</option>
+                  <option value={3}>3 Phases</option>
+                  <option value={4}>4 Phases</option>
+                  <option value={5}>5 Phases</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={editingClass.has_final_evaluation}
+                    onChange={(e) => setEditingClass({ ...editingClass, has_final_evaluation: e.target.checked })}
+                    style={{ width: '18px', height: '18px' }}
+                  />
+                  Final Evaluation (23-pt)
+                </label>
               </div>
             </div>
-          )}
 
-          {/* Phase Due Dates (compact grid) */}
-          <div className="form-group" style={{ marginBottom: '15px' }}>
-            <label>Phase Due Dates</label>
-            <small style={{ display: 'block', marginBottom: '8px', opacity: 0.8, fontSize: '0.8rem' }}>
-              Empty phases inherit from next set date. Last phase required.
-            </small>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-              gap: '8px',
-              border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
-              borderRadius: '4px',
-              padding: '10px',
-              backgroundColor: darkMode ? '#001e27' : '#f9f9f9'
-            }}>
-              {getPhases().map(({ phase, label }) => {
-                const phaseDueDates = editingClass.phase_due_dates || {};
-                const effectiveDate = getEffectiveDueDate(
-                  phase,
-                  editingClass.num_phases || 3,
-                  editingClass.has_final_evaluation,
-                  phaseDueDates
-                );
-                const hasOwnDate = !!phaseDueDates[phase];
-                const isLastPhase = phase === getLastRequiredPhase();
-
-                return (
-                  <div key={phase} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px'
+            {/* Right column: Instructors and due dates */}
+            <div style={{ flex: 1 }}>
+              {/* Instructors */}
+              {availableInstructors.length > 0 && (
+                <div className="form-group" style={{ marginBottom: '12px' }}>
+                  <label>Instructors ({(editingClass.instructor_ids || []).length} selected)</label>
+                  <div style={{
+                    maxHeight: '80px',
+                    overflowY: 'auto',
+                    border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
+                    borderRadius: '4px',
+                    padding: '8px',
+                    backgroundColor: darkMode ? '#001e27' : '#fff'
                   }}>
-                    <span style={{
-                      minWidth: '85px',
-                      fontWeight: isLastPhase ? 'bold' : 'normal',
-                      fontSize: '0.9rem'
-                    }}>
-                      {label}{isLastPhase ? '*' : ''}:
-                    </span>
-                    <input
-                      type="datetime-local"
-                      value={phaseDueDates[phase] || ''}
-                      onChange={(e) => handlePhaseDueDateChange(phase, e.target.value)}
-                      required={isLastPhase}
-                      style={{ flex: 1, fontSize: '0.85rem', padding: '4px 6px' }}
-                    />
-                    {!hasOwnDate && effectiveDate && (
-                      <span style={{
-                        color: darkMode ? '#839496' : '#888',
-                        fontSize: '0.75rem',
-                        fontStyle: 'italic',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        ({formatDueDate(effectiveDate, editingClass.due_date_timezone)})
-                      </span>
-                    )}
+                    {availableInstructors.map(u => (
+                      <label
+                        key={u.id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          cursor: 'pointer',
+                          color: darkMode ? '#93a1a1' : '#333',
+                          fontSize: '0.9rem',
+                          padding: '2px 0'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={(editingClass.instructor_ids || []).includes(u.id)}
+                          onChange={() => {
+                            const currentIds = editingClass.instructor_ids || [];
+                            const newIds = currentIds.includes(u.id)
+                              ? currentIds.filter(id => id !== u.id)
+                              : [...currentIds, u.id];
+                            setEditingClass({ ...editingClass, instructor_ids: newIds });
+                          }}
+                          style={{ marginRight: '5px', width: 'auto' }}
+                        />
+                        {u.last_name}, {u.first_name}
+                      </label>
+                    ))}
                   </div>
-                );
-              })}
+                </div>
+              )}
+
+              {/* Timezone */}
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Timezone</label>
+                <select
+                  value={editingClass.due_date_timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
+                  onChange={(e) => setEditingClass({ ...editingClass, due_date_timezone: e.target.value })}
+                >
+                  <option value="America/New_York">Eastern (ET)</option>
+                  <option value="America/Chicago">Central (CT)</option>
+                  <option value="America/Denver">Mountain (MT)</option>
+                  <option value="America/Phoenix">Arizona (MST)</option>
+                  <option value="America/Los_Angeles">Pacific (PT)</option>
+                  <option value="America/Anchorage">Alaska (AKT)</option>
+                  <option value="Pacific/Honolulu">Hawaii (HST)</option>
+                  <option value="UTC">UTC</option>
+                </select>
+              </div>
+
+              {/* Phase Due Dates */}
+              <div className="form-group" style={{ marginBottom: '12px' }}>
+                <label>Phase Due Dates</label>
+                <small style={{ display: 'block', marginBottom: '6px', opacity: 0.8, fontSize: '0.8rem' }}>
+                  Empty phases inherit from next set date
+                </small>
+                <div style={{
+                  border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
+                  borderRadius: '4px',
+                  padding: '8px',
+                  backgroundColor: darkMode ? '#001e27' : '#f9f9f9'
+                }}>
+                  {getPhases().map(({ phase, label }) => {
+                    const phaseDueDates = editingClass.phase_due_dates || {};
+                    const effectiveDate = getEffectiveDueDate(
+                      phase,
+                      editingClass.num_phases || 3,
+                      editingClass.has_final_evaluation,
+                      phaseDueDates
+                    );
+                    const hasOwnDate = !!phaseDueDates[phase];
+                    const isLastPhase = phase === getLastRequiredPhase();
+
+                    return (
+                      <div key={phase} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        marginBottom: '6px'
+                      }}>
+                        <span style={{
+                          minWidth: '75px',
+                          fontWeight: isLastPhase ? 'bold' : 'normal',
+                          fontSize: '0.85rem'
+                        }}>
+                          {label}{isLastPhase ? '*' : ''}:
+                        </span>
+                        <input
+                          type="datetime-local"
+                          value={phaseDueDates[phase] || ''}
+                          onChange={(e) => handlePhaseDueDateChange(phase, e.target.value)}
+                          required={isLastPhase}
+                          style={{ flex: 1, fontSize: '0.8rem', padding: '3px 5px' }}
+                        />
+                        {!hasOwnDate && effectiveDate && (
+                          <span style={{
+                            color: darkMode ? '#839496' : '#888',
+                            fontSize: '0.7rem',
+                            fontStyle: 'italic'
+                          }}>
+                            ← {formatDueDate(effectiveDate, editingClass.due_date_timezone)}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
 
