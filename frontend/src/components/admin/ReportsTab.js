@@ -19,9 +19,12 @@ function ReportsTab({
     );
   }
 
+  // Filter out teachers and admins - only show students in reports
+  const studentsOnly = classStudents.filter(s => s.role === 'student');
+
   // Filter evaluations and final comments by class
   // Use class_id if available (new data), otherwise check if BOTH evaluator and evaluatee are in this class
-  const classStudentIds = new Set(classStudents.map(s => s.id));
+  const classStudentIds = new Set(studentsOnly.map(s => s.id));
   const classEvaluations = evaluations.filter(e =>
     e.class_id
       ? e.class_id === parseInt(selectedClass)
@@ -33,16 +36,17 @@ function ReportsTab({
       : (classStudentIds.has(fc.evaluator_id) && classStudentIds.has(fc.evaluatee_id))
   );
 
-  // Get students in selected group (filtered to class)
+  // Get students in selected group (filtered to class, excluding teachers/admins)
   const getStudentsInGroup = () => {
-    if (reportGroup === 'all') return classStudents;
+    if (reportGroup === 'all') return studentsOnly;
 
     // Find students in the selected group
     const groupId = parseInt(reportGroup);
     const selectedGroupData = classGroups.find(g => g.id === groupId);
     if (!selectedGroupData || !selectedGroupData.members) return [];
 
-    return selectedGroupData.members;
+    // Filter out non-students from group members
+    return selectedGroupData.members.filter(m => m.role === 'student');
   };
 
   // Get class config for number of phases and min word count
