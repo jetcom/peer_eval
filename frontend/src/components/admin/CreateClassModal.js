@@ -27,23 +27,6 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
   // For new classes, only show the current user as an instructor option
   const availableInstructors = currentUser ? [currentUser] : [];
 
-  // Helper to format date for display
-  const formatDueDate = (dateStr, timezone) => {
-    if (!dateStr) return null;
-    try {
-      return new Date(dateStr).toLocaleString('en-US', {
-        timeZone: timezone || 'America/New_York',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return dateStr;
-    }
-  };
-
   // Get list of phases including final evaluation
   const getPhases = () => {
     const phases = [];

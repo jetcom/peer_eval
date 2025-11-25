@@ -28,23 +28,6 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
 
   const availableInstructors = editingClass.enrolledTeachers || [];
 
-  // Helper to format date for display
-  const formatDueDate = (dateStr, timezone) => {
-    if (!dateStr) return null;
-    try {
-      return new Date(dateStr).toLocaleString('en-US', {
-        timeZone: timezone || 'America/New_York',
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return dateStr;
-    }
-  };
-
   // Get list of phases including final evaluation
   const getPhases = () => {
     const phases = [];
