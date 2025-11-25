@@ -436,10 +436,10 @@ function AdminDashboard() {
             >
               <span>
                 {selectedClass
-                  ? classes.find(c => c.id.toString() === selectedClass)?.name +
-                    (classes.find(c => c.id.toString() === selectedClass)?.section
-                      ? ` (${classes.find(c => c.id.toString() === selectedClass)?.section})`
-                      : '')
+                  ? (() => {
+                      const cls = classes.find(c => c.id.toString() === selectedClass);
+                      return cls ? `${cls.name}${cls.section ? ` (${cls.section})` : ''}${cls.semester ? ` - ${cls.semester}` : ''}` : '';
+                    })()
                   : '-- Select Class --'}
               </span>
               <span>▼</span>
