@@ -31,22 +31,58 @@ function ReportsTab({
     return selectedGroupData.members;
   };
 
-  // Get class config for number of phases
+  // Get class config for number of phases and min word count
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
   const numPhases = selectedClassData?.num_phases || 3;
+  const minCommentWords = selectedClassData?.min_comment_words || 0;
   const phaseNumbers = Array.from({ length: numPhases }, (_, i) => i + 1);
+
+  // Word count helper
+  const countWords = (text) => {
+    if (!text || !text.trim()) return 0;
+    return text.trim().split(/\s+/).filter(word => word.length > 0).length;
+  };
 
   // Calculate summaries per student
   const students = getStudentsInGroup();
   const studentSummaries = students.map(student => {
     // Check what this student has SUBMITTED (as evaluator)
     const submittedEvals = evaluations.filter(e => e.evaluator_id === student.id);
+
+    // Track submission status and word count compliance per phase
+    // Status: 'none' | 'incomplete' (below word count) | 'complete'
+    const phaseStatus = {};
+    phaseNumbers.forEach(phase => {
+      const phaseEvals = submittedEvals.filter(e => e.phase === phase);
+      if (phaseEvals.length === 0) {
+        phaseStatus[phase] = 'none';
+      } else if (minCommentWords > 0) {
+        // Check if ALL comments for this phase meet the minimum
+        const allMeetMinimum = phaseEvals.every(e => countWords(e.comments) >= minCommentWords);
+        phaseStatus[phase] = allMeetMinimum ? 'complete' : 'incomplete';
+      } else {
+        phaseStatus[phase] = 'complete';
+      }
+    });
+
+    // Check final evaluation status
+    const studentFinalEvals = finalCommentsData.filter(fc => fc.evaluator_id === student.id);
+    let finalStatus = 'none';
+    if (studentFinalEvals.length > 0) {
+      if (minCommentWords > 0) {
+        const allMeetMinimum = studentFinalEvals.every(fc => countWords(fc.comments) >= minCommentWords);
+        finalStatus = allMeetMinimum ? 'complete' : 'incomplete';
+      } else {
+        finalStatus = 'complete';
+      }
+    }
+
+    // Legacy compatibility
     const submittedPhases = {};
     phaseNumbers.forEach(phase => {
-      submittedPhases[phase] = submittedEvals.some(e => e.phase === phase);
+      submittedPhases[phase] = phaseStatus[phase] !== 'none';
     });
-    // Check if submitted final evaluation (stored in finalCommentsData, not evaluations)
-    const submittedFinal = finalCommentsData.some(fc => fc.evaluator_id === student.id);
+    const submittedFinal = finalStatus !== 'none';
 
     const studentEvals = evaluations.filter(e => e.evaluatee_id === student.id);
     const phases = phaseNumbers.map(phase => {
@@ -84,7 +120,7 @@ function ReportsTab({
       points: fc.final_points || 0
     })).filter(c => c.text || c.points > 0);
 
-    return { ...student, phases, totalFinalPoints, finalComments: finalCommentsList, submittedPhases, submittedFinal };
+    return { ...student, phases, totalFinalPoints, finalComments: finalCommentsList, submittedPhases, submittedFinal, phaseStatus, finalStatus };
   });
 
   const criteriaLabels = {
@@ -122,7 +158,9 @@ function ReportsTab({
       <div className="card">
         <h2>Student Comparison - Average Scores by Phase</h2>
         <p className="report-muted-text" style={{ marginBottom: '10px', fontSize: '0.85rem' }}>
-          ✓ = student submitted their evaluations for that phase
+          <span style={{ color: '#27ae60' }}>✓</span> = submitted{minCommentWords > 0 && ' & meets word count'} |
+          {minCommentWords > 0 && <><span style={{ color: '#f39c12' }}> ✗</span> = submitted but below {minCommentWords} words | </>}
+          <span style={{ color: '#e74c3c' }}>✗</span> = not submitted
         </p>
         {students.length === 0 ? (
           <p>No students found.</p>
@@ -164,27 +202,30 @@ function ReportsTab({
                       {student.totalFinalPoints || 0}
                     </td>
                     <td style={{ borderLeft: '2px solid #586e75', whiteSpace: 'nowrap' }}>
-                      {phaseNumbers.map(p => (
-                        <span
-                          key={p}
-                          title={`Phase ${p}: ${student.submittedPhases[p] ? 'Submitted' : 'Not submitted'}`}
-                          style={{
-                            color: student.submittedPhases[p] ? '#27ae60' : '#e74c3c',
-                            marginRight: '4px'
-                          }}
-                        >
-                          {student.submittedPhases[p] ? '✓' : '✗'}
-                        </span>
-                      ))}
+                      {phaseNumbers.map(p => {
+                        const status = student.phaseStatus[p];
+                        const color = status === 'complete' ? '#27ae60' : status === 'incomplete' ? '#f39c12' : '#e74c3c';
+                        const symbol = status === 'complete' ? '✓' : '✗';
+                        const title = status === 'complete' ? 'Submitted' : status === 'incomplete' ? 'Submitted but below word count' : 'Not submitted';
+                        return (
+                          <span
+                            key={p}
+                            title={`Phase ${p}: ${title}`}
+                            style={{ color, marginRight: '4px' }}
+                          >
+                            {symbol}
+                          </span>
+                        );
+                      })}
                       {selectedClassData?.has_final_evaluation && (
                         <span
-                          title={`Final: ${student.submittedFinal ? 'Submitted' : 'Not submitted'}`}
+                          title={`Final: ${student.finalStatus === 'complete' ? 'Submitted' : student.finalStatus === 'incomplete' ? 'Submitted but below word count' : 'Not submitted'}`}
                           style={{
-                            color: student.submittedFinal ? '#27ae60' : '#e74c3c',
+                            color: student.finalStatus === 'complete' ? '#27ae60' : student.finalStatus === 'incomplete' ? '#f39c12' : '#e74c3c',
                             marginLeft: '4px'
                           }}
                         >
-                          F:{student.submittedFinal ? '✓' : '✗'}
+                          F:{student.finalStatus === 'complete' ? '✓' : '✗'}
                         </span>
                       )}
                     </td>
