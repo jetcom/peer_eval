@@ -48,7 +48,6 @@ function ManageExtensionsModal({
   const numPhases = classDetails?.num_phases || 3;
   const hasFinalEval = classDetails?.has_final_evaluation;
   const phaseDueDates = classDetails?.phase_due_dates || {};
-  const timezone = classDetails?.due_date_timezone || 'America/New_York';
 
   // Build list of phases
   const phases = [];
@@ -69,23 +68,6 @@ function ManageExtensionsModal({
       if (hasFinalEval && phaseDueDates[0]) return phaseDueDates[0];
     }
     return null;
-  };
-
-  // Format due date for display
-  const formatDueDate = (dateStr) => {
-    if (!dateStr) return null;
-    try {
-      return new Date(dateStr).toLocaleString('en-US', {
-        timeZone: timezone,
-        month: 'short',
-        day: 'numeric',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return dateStr;
-    }
   };
 
   const handleExtensionChange = (userId, phase, value) => {
@@ -215,24 +197,11 @@ function ManageExtensionsModal({
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '8px', minWidth: '200px' }}>Student</th>
-                  {phases.map(p => {
-                    const dueDate = getEffectiveDueDate(p.phase);
-                    return (
-                      <th key={p.phase} style={{ textAlign: 'center', padding: '8px', minWidth: '180px' }}>
-                        <div>{p.label}</div>
-                        {dueDate && (
-                          <div style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 'normal',
-                            opacity: 0.7,
-                            marginTop: '2px'
-                          }}>
-                            Due: {formatDueDate(dueDate)}
-                          </div>
-                        )}
-                      </th>
-                    );
-                  })}
+                  {phases.map(p => (
+                    <th key={p.phase} style={{ textAlign: 'center', padding: '8px', minWidth: '180px' }}>
+                      {p.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -243,13 +212,16 @@ function ManageExtensionsModal({
                     </td>
                     {phases.map(p => {
                       const key = `${student.id}-${p.phase}`;
-                      const value = extensions[key] || '';
+                      const extensionValue = extensions[key] || '';
+                      const classDueDate = getEffectiveDueDate(p.phase);
+                      const displayValue = extensionValue || classDueDate || '';
+                      const hasExtension = !!extensionValue;
                       return (
                         <td key={p.phase} style={{ padding: '4px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <input
                               type="datetime-local"
-                              value={value}
+                              value={displayValue}
                               onChange={(e) => handleExtensionChange(student.id, p.phase, e.target.value)}
                               style={{
                                 flex: 1,
@@ -258,10 +230,12 @@ function ManageExtensionsModal({
                                 backgroundColor: darkMode ? '#001e27' : '#fff',
                                 color: darkMode ? '#93a1a1' : '#333',
                                 border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
-                                borderRadius: '3px'
+                                borderRadius: '3px',
+                                opacity: hasExtension ? 1 : 0.6
                               }}
+                              title={!hasExtension && classDueDate ? 'Class due date (no extension)' : ''}
                             />
-                            {value && (
+                            {hasExtension && (
                               <button
                                 onClick={() => clearExtension(student.id, p.phase)}
                                 style={{
@@ -272,7 +246,7 @@ function ManageExtensionsModal({
                                   fontSize: '1rem',
                                   color: darkMode ? '#839496' : '#666'
                                 }}
-                                title="Clear extension"
+                                title="Clear extension (use class due date)"
                               >
                                 ×
                               </button>
