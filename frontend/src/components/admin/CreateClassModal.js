@@ -261,10 +261,16 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
                     </span>
                     <input
                       type="datetime-local"
-                      value={phaseDueDates[phase] || ''}
+                      value={phaseDueDates[phase] || effectiveDate || ''}
                       onChange={(e) => handlePhaseDueDateChange(phase, e.target.value)}
                       required={isLastPhase}
-                      style={{ flex: 1, fontSize: '0.85rem', padding: '4px 6px' }}
+                      style={{
+                        flex: 1,
+                        fontSize: '0.85rem',
+                        padding: '4px 6px',
+                        opacity: hasOwnDate ? 1 : 0.6
+                      }}
+                      title={!hasOwnDate && effectiveDate ? 'Inherited from later phase' : ''}
                     />
                     {hasOwnDate && !isLastPhase && (
                       <button
@@ -278,19 +284,10 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
                           fontSize: '1rem',
                           color: darkMode ? '#839496' : '#666'
                         }}
-                        title="Clear date"
+                        title="Clear date (inherit from later phase)"
                       >
                         ×
                       </button>
-                    )}
-                    {!hasOwnDate && effectiveDate && (
-                      <span style={{
-                        color: darkMode ? '#839496' : '#888',
-                        fontSize: '0.75rem',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        ({formatDueDate(effectiveDate, newClass.due_date_timezone)})
-                      </span>
                     )}
                   </div>
                 );
