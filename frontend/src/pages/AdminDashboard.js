@@ -17,7 +17,9 @@ function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('users');
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('adminActiveTab') || 'users';
+  });
   const [users, setUsers] = useState([]);
   const [, setGroups] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -62,6 +64,11 @@ function AdminDashboard() {
       localStorage.removeItem('adminSelectedClass');
     }
   }, [selectedClass]);
+
+  // Save activeTab to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('adminActiveTab', activeTab);
+  }, [activeTab]);
 
   // Fetch class-specific data when selectedClass changes
   useEffect(() => {
