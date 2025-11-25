@@ -587,7 +587,6 @@ function AdminDashboard() {
         <ManageExtensionsModal
           darkMode={darkMode}
           classId={selectedClass}
-          classData={classes.find(c => c.id.toString() === selectedClass)}
           classStudents={classStudents}
           onClose={() => setShowExtensionsModal(false)}
           onSave={() => {

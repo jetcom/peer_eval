@@ -4,19 +4,51 @@ import axios from 'axios';
 function ManageExtensionsModal({
   darkMode,
   classId,
-  classData,
   classStudents,
   onClose,
   onSave
 }) {
   const [extensions, setExtensions] = useState({});
+  const [classDetails, setClassDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  // Filter to only students (not teachers/admins)
+  const students = classStudents.filter(s => s.role === 'student');
+
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classId]);
+
+  const fetchData = async () => {
+    try {
+      const [classRes, extRes] = await Promise.all([
+        axios.get(`/api/classes/${classId}`),
+        axios.get(`/api/classes/${classId}/extensions`)
+      ]);
+
+      setClassDetails(classRes.data);
+
+      // Convert extensions array to object keyed by `userId-phase`
+      const extMap = {};
+      extRes.data.forEach(ext => {
+        extMap[`${ext.user_id}-${ext.phase}`] = ext.extended_due_date;
+      });
+      setExtensions(extMap);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'Failed to load data' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Get phases from class data
-  const numPhases = classData?.num_phases || 3;
-  const hasFinalEval = classData?.has_final_evaluation;
+  const numPhases = classDetails?.num_phases || 3;
+  const hasFinalEval = classDetails?.has_final_evaluation;
+  const phaseDueDates = classDetails?.phase_due_dates || {};
+  const timezone = classDetails?.due_date_timezone || 'America/New_York';
 
   // Build list of phases
   const phases = [];
@@ -27,27 +59,32 @@ function ManageExtensionsModal({
     phases.push({ phase: 0, label: 'Final' });
   }
 
-  // Filter to only students (not teachers/admins)
-  const students = classStudents.filter(s => s.role === 'student');
+  // Get effective due date for a phase (with cascading)
+  const getEffectiveDueDate = (phase) => {
+    if (phaseDueDates[phase]) return phaseDueDates[phase];
+    if (phase > 0) {
+      for (let p = phase + 1; p <= numPhases; p++) {
+        if (phaseDueDates[p]) return phaseDueDates[p];
+      }
+      if (hasFinalEval && phaseDueDates[0]) return phaseDueDates[0];
+    }
+    return null;
+  };
 
-  useEffect(() => {
-    fetchExtensions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [classId]);
-
-  const fetchExtensions = async () => {
+  // Format due date for display
+  const formatDueDate = (dateStr) => {
+    if (!dateStr) return null;
     try {
-      const res = await axios.get(`/api/classes/${classId}/extensions`);
-      // Convert array to object keyed by `userId-phase`
-      const extMap = {};
-      res.data.forEach(ext => {
-        extMap[`${ext.user_id}-${ext.phase}`] = ext.extended_due_date;
+      return new Date(dateStr).toLocaleString('en-US', {
+        timeZone: timezone,
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
       });
-      setExtensions(extMap);
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to load extensions' });
-    } finally {
-      setLoading(false);
+    } catch {
+      return dateStr;
     }
   };
 
@@ -178,11 +215,24 @@ function ManageExtensionsModal({
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left', padding: '8px', minWidth: '200px' }}>Student</th>
-                  {phases.map(p => (
-                    <th key={p.phase} style={{ textAlign: 'center', padding: '8px', minWidth: '180px' }}>
-                      {p.label}
-                    </th>
-                  ))}
+                  {phases.map(p => {
+                    const dueDate = getEffectiveDueDate(p.phase);
+                    return (
+                      <th key={p.phase} style={{ textAlign: 'center', padding: '8px', minWidth: '180px' }}>
+                        <div>{p.label}</div>
+                        {dueDate && (
+                          <div style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 'normal',
+                            opacity: 0.7,
+                            marginTop: '2px'
+                          }}>
+                            Due: {formatDueDate(dueDate)}
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
