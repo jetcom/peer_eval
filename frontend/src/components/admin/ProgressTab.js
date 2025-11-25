@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 
 function ProgressTab({
+  darkMode,
   selectedClass,
   classes,
   classStudents,
@@ -198,7 +199,7 @@ function ProgressTab({
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Overall Completion</h3>
         <div style={{
-          background: '#ecf0f1',
+          background: darkMode ? '#2d2d2d' : '#ecf0f1',
           borderRadius: '8px',
           height: '30px',
           overflow: 'hidden',
@@ -219,7 +220,7 @@ function ProgressTab({
             {overallPercentage > 10 && `${overallPercentage}%`}
           </div>
         </div>
-        <p style={{ margin: 0, color: '#666' }}>
+        <p style={{ margin: 0, color: darkMode ? '#a0a0a0' : '#666' }}>
           {totalComplete} of {totalExpected} phase submissions complete across all students
         </p>
       </div>
@@ -241,7 +242,7 @@ function ProgressTab({
                   </span>
                 </div>
                 <div style={{
-                  background: '#ecf0f1',
+                  background: darkMode ? '#2d2d2d' : '#ecf0f1',
                   borderRadius: '4px',
                   height: '20px',
                   overflow: 'hidden',
@@ -322,7 +323,9 @@ function ProgressTab({
                     key={student.id}
                     style={{
                       padding: '8px 12px',
-                      background: student.status === 'partial' ? '#fef9e7' : '#fdedec',
+                      background: student.status === 'partial'
+                        ? (darkMode ? '#3d3510' : '#fef9e7')
+                        : (darkMode ? '#3d1515' : '#fdedec'),
                       borderRadius: '4px',
                       borderLeft: `4px solid ${statusColors[student.status]}`,
                       fontSize: '0.9rem'
@@ -331,7 +334,7 @@ function ProgressTab({
                     <div style={{ fontWeight: '500' }}>
                       {student.last_name}, {student.first_name}
                     </div>
-                    <div style={{ color: '#666', fontSize: '0.8rem' }}>
+                    <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
                       {student.group?.name || 'No group'} · {statusLabels[student.status]}
                     </div>
                   </div>
@@ -360,7 +363,9 @@ function ProgressTab({
                     key={student.id}
                     style={{
                       padding: '8px 12px',
-                      background: student.status === 'partial' ? '#fef9e7' : '#fdedec',
+                      background: student.status === 'partial'
+                        ? (darkMode ? '#3d3510' : '#fef9e7')
+                        : (darkMode ? '#3d1515' : '#fdedec'),
                       borderRadius: '4px',
                       borderLeft: `4px solid ${statusColors[student.status]}`,
                       fontSize: '0.9rem'
@@ -369,7 +374,7 @@ function ProgressTab({
                     <div style={{ fontWeight: '500' }}>
                       {student.last_name}, {student.first_name}
                     </div>
-                    <div style={{ color: '#666', fontSize: '0.8rem' }}>
+                    <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
                       {student.group?.name || 'No group'} · {statusLabels[student.status]}
                     </div>
                   </div>
