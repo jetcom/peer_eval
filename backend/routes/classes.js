@@ -537,7 +537,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     // Pre-process: collect all unique group names and create them first
     const uniqueGroupNames = new Set();
     records.forEach(record => {
-      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project Groups', 'Project Group');
+      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
       if (group_name && group_name.trim()) {
         uniqueGroupNames.add(group_name.trim());
       }
@@ -584,7 +584,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
         const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
         const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
         const email = getField(record, 'email', 'Email', 'e-mail', 'EMAIL');
-        const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project Groups', 'Project Group');
+        const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
 
       if (!email || !first_name || !last_name) {
         errors.push({ email: email || 'unknown', error: 'Missing required fields (email, first_name, last_name)' });
@@ -607,6 +607,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
         }
 
         // Helper function to add user to group (uses pre-created groupMap)
+        // First removes user from any existing groups in this class, then adds to new group
         const addToGroup = (userId, groupName, callback) => {
           if (!groupName || !groupName.trim()) {
             callback();
@@ -615,7 +616,15 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
 
           const groupId = groupMap.get(groupName.trim());
           if (groupId) {
-            db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId], callback);
+            // Remove from any existing groups in this class first
+            db.run(`
+              DELETE FROM group_members
+              WHERE user_id = ?
+              AND group_id IN (SELECT id FROM groups WHERE class_id = ?)
+            `, [userId, id], (err) => {
+              // Then add to the new group
+              db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId], callback);
+            });
           } else {
             callback();
           }

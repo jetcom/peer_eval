@@ -104,10 +104,22 @@ function UsersTab({
           <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
             CSV columns: <code>university_id, last_name, first_name, email, group_name</code>
           </p>
-          <p style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
-            Lines can start/end with #. Existing users are enrolled without new password.<br />
-            Groups are created per-class (no duplicates).
-          </p>
+          <details style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
+            <summary style={{ cursor: 'pointer', marginBottom: '6px' }}>Column name options & notes</summary>
+            <div style={{ paddingLeft: '12px', lineHeight: '1.6' }}>
+              <strong>Accepted column names (case-insensitive):</strong><br />
+              • ID: <code>university_id</code>, <code>student_id</code>, <code>id</code>, <code>OrgDefinedId</code><br />
+              • Last: <code>last_name</code>, <code>lastname</code>, <code>Last</code>, <code>surname</code>, <code>Last Name</code><br />
+              • First: <code>first_name</code>, <code>firstname</code>, <code>First</code>, <code>First Name</code><br />
+              • Email: <code>email</code>, <code>Email</code>, <code>e-mail</code><br />
+              • Group: <code>group_name</code>, <code>group</code>, <code>team</code>, <code>Project</code>, <code>Project Groups</code><br />
+              <br />
+              <strong>Notes:</strong><br />
+              • Lines starting/ending with # are ignored<br />
+              • Existing users are enrolled without new password<br />
+              • Groups are created per-class (no duplicates)
+            </div>
+          </details>
           <label className="file-upload">
             <input type="file" accept=".csv" onChange={onUploadStudents} />
             <p>Click to upload CSV file</p>
