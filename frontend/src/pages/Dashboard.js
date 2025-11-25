@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import confetti from 'canvas-confetti';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
@@ -69,6 +70,7 @@ function Dashboard() {
   const [masqueradeUser, setMasqueradeUser] = useState(null);
   const [finalComments, setFinalComments] = useState([]);
   const isTeacherOrAdmin = user?.role === 'teacher' || user?.role === 'admin';
+  const confettiFired = useRef(false);
 
   useEffect(() => {
     fetchClasses();
@@ -188,6 +190,63 @@ function Dashboard() {
   };
 
   const currentClass = classes.find(c => c.id === selectedClass);
+
+  // Check if all evaluations are complete for confetti
+  const allEvaluationsComplete = (() => {
+    if (!group || !currentClass) return false;
+    const numPhases = currentClass.num_phases || 3;
+    const hasFinalEval = currentClass.has_final_evaluation === 1 ||
+                         currentClass.has_final_evaluation === true ||
+                         currentClass.has_final_evaluation === undefined;
+    const memberCount = group.members.length;
+
+    // Check all phase evaluations
+    for (let phase = 1; phase <= numPhases; phase++) {
+      const phaseEvals = evaluations.filter(e => e.phase === phase);
+      if (phaseEvals.length < memberCount) return false;
+    }
+
+    // Check final evaluation if applicable
+    if (hasFinalEval && finalComments.length < memberCount) return false;
+
+    return true;
+  })();
+
+  // Fire confetti when all evaluations are complete
+  useEffect(() => {
+    if (allEvaluationsComplete && !confettiFired.current && !masqueradeUser) {
+      confettiFired.current = true;
+      const duration = 3000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.6 },
+          colors: ['#27ae60', '#3498db', '#f39c12', '#9b59b6']
+        });
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.6 },
+          colors: ['#27ae60', '#3498db', '#f39c12', '#9b59b6']
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      frame();
+    }
+  }, [allEvaluationsComplete, masqueradeUser]);
+
+  // Reset confetti flag when switching classes
+  useEffect(() => {
+    confettiFired.current = false;
+  }, [selectedClass]);
 
   if (loading && classes.length === 0) {
     return <div className="loading">Loading...</div>;
@@ -403,7 +462,21 @@ function Dashboard() {
                 </div>
 
                 <div className="card">
-                  <h2>Evaluation Progress</h2>
+                  <h2>Evaluation Progress {allEvaluationsComplete && '🎉'}</h2>
+                  {allEvaluationsComplete && (
+                    <div style={{
+                      background: darkMode ? '#1a3d1a' : '#d4edda',
+                      border: `1px solid ${darkMode ? '#27ae60' : '#c3e6cb'}`,
+                      borderRadius: '8px',
+                      padding: '15px',
+                      marginBottom: '15px',
+                      textAlign: 'center'
+                    }}>
+                      <p style={{ margin: 0, color: darkMode ? '#7dcea0' : '#155724', fontWeight: '500', fontSize: '1.1rem' }}>
+                        🎉 Congratulations! You've completed all your peer evaluations!
+                      </p>
+                    </div>
+                  )}
                   <table>
                     <thead>
                       <tr>
