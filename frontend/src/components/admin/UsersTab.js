@@ -6,6 +6,7 @@ function UsersTab({
   classes,
   users,
   classStudents,
+  classGroups,
   newUser,
   setNewUser,
   uploadedCredentials,
@@ -20,8 +21,15 @@ function UsersTab({
   onResetPassword,
   onRemoveFromClass,
   onDeleteUser,
+  onViewGroup,
   currentUser
 }) {
+  // Find which group a student belongs to
+  const getStudentGroup = (studentId) => {
+    if (!classGroups) return null;
+    return classGroups.find(g => g.members?.some(m => m.id === studentId));
+  };
+
   if (!selectedClass) {
     return (
       <div className="card">
@@ -208,11 +216,14 @@ function UsersTab({
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>Group</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {classStudents.map(u => (
+              {classStudents.map(u => {
+                const studentGroup = getStudentGroup(u.id);
+                return (
                 <tr key={u.id}>
                   <td>
                     {u.last_name}, {u.first_name}
@@ -220,6 +231,23 @@ function UsersTab({
                   </td>
                   <td>{u.email}</td>
                   <td>{u.role}</td>
+                  <td>
+                    {studentGroup ? (
+                      <span
+                        onClick={() => onViewGroup && onViewGroup(studentGroup.id)}
+                        style={{
+                          color: '#3498db',
+                          cursor: 'pointer',
+                          textDecoration: 'underline'
+                        }}
+                        title="Click to view group members"
+                      >
+                        {studentGroup.name}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#999', fontStyle: 'italic' }}>—</span>
+                    )}
+                  </td>
                   <td>
                     <button
                       className="btn btn-secondary"
@@ -246,7 +274,8 @@ function UsersTab({
                     </button>
                   </td>
                 </tr>
-              ))}
+              );
+              })}
             </tbody>
           </table>
         )}

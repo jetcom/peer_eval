@@ -753,6 +753,7 @@ function AdminDashboard() {
             classes={classes}
             users={users}
             classStudents={classStudents}
+            classGroups={classGroups}
             newUser={newUser}
             setNewUser={setNewUser}
             uploadedCredentials={uploadedCredentials}
@@ -767,6 +768,7 @@ function AdminDashboard() {
             onResetPassword={handleResetPassword}
             onRemoveFromClass={handleRemoveFromClass}
             onDeleteUser={handleDeleteUser}
+            onViewGroup={handleSelectGroup}
             currentUser={user}
           />
         )}
