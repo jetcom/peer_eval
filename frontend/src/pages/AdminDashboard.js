@@ -806,6 +806,7 @@ function AdminDashboard() {
 
         {activeTab === 'progress' && (
           <ProgressTab
+            darkMode={darkMode}
             selectedClass={selectedClass}
             classes={classes}
             classStudents={classStudents}

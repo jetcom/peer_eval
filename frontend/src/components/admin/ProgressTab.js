@@ -52,12 +52,12 @@ function ProgressTab({
     return classGroups.find(g => g.members?.some(m => m.id === studentId));
   };
 
-  // Calculate how many teammates each student should evaluate
+  // Calculate how many teammates each student should evaluate (including self)
   const getExpectedEvaluations = (studentId) => {
     const group = getStudentGroup(studentId);
     if (!group || !group.members) return 0;
-    // Evaluate all group members except self
-    return group.members.filter(m => m.id !== studentId && m.role === 'student').length;
+    // Evaluate all group members including self
+    return group.members.filter(m => m.role === 'student').length;
   };
 
   // Check if a student has completed a phase
@@ -150,11 +150,11 @@ function ProgressTab({
   const hasEvaluated = (evaluatorId, evaluateeId, phase) => {
     if (phase === 'final') {
       return classFinalComments.some(
-        fc => fc.evaluator_id === evaluatorId && fc.evaluatee_id === evaluateeId
+        fc => fc.evaluator_id == evaluatorId && fc.evaluatee_id == evaluateeId
       );
     }
     return classEvaluations.some(
-      e => e.evaluator_id === evaluatorId && e.evaluatee_id === evaluateeId && e.phase === phase
+      e => e.evaluator_id == evaluatorId && e.evaluatee_id == evaluateeId && e.phase == phase
     );
   };
 
@@ -379,7 +379,7 @@ function ProgressTab({
           <h3 style={{ margin: 0 }}>Evaluation Heat Map</h3>
           <select
             value={heatmapPhase}
-            onChange={(e) => setHeatmapPhase(e.target.value)}
+            onChange={(e) => setHeatmapPhase(e.target.value === 'final' ? 'final' : parseInt(e.target.value))}
             style={{ padding: '8px', fontSize: '1rem' }}
           >
             {phaseNumbers.map(p => (
@@ -432,7 +432,7 @@ function ProgressTab({
                 borderRadius: '2px',
                 marginRight: '5px',
                 verticalAlign: 'middle'
-              }}></span> Self / Different Group</span>
+              }}></span> Different Group</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{
@@ -490,10 +490,7 @@ function ProgressTab({
                           let bgColor;
                           let symbol = '';
 
-                          if (isSelf) {
-                            bgColor = darkMode ? '#3d3d3d' : '#ddd';
-                            symbol = '—';
-                          } else if (!sameGroup) {
+                          if (!sameGroup) {
                             bgColor = darkMode ? '#3d3d3d' : '#ddd';
                             symbol = '';
                           } else if (hasEvaluated(evaluator.id, evaluatee.id, heatmapPhase)) {
@@ -510,7 +507,7 @@ function ProgressTab({
                               textAlign: 'center',
                               borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`,
                               background: bgColor,
-                              color: (bgColor === '#27ae60' || bgColor === '#e74c3c') ? 'white' : (darkMode ? '#666' : '#999'),
+                              color: (bgColor === '#27ae60' || bgColor === '#e74c3c') ? 'white' : (darkMode ? '#888' : '#999'),
                               fontWeight: 'bold'
                             }}>
                               {symbol}
