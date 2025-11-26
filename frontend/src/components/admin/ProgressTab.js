@@ -150,11 +150,11 @@ function ProgressTab({
   const hasEvaluated = (evaluatorId, evaluateeId, phase) => {
     if (phase === 'final') {
       return classFinalComments.some(
-        fc => fc.evaluator_id == evaluatorId && fc.evaluatee_id == evaluateeId
+        fc => Number(fc.evaluator_id) === Number(evaluatorId) && Number(fc.evaluatee_id) === Number(evaluateeId)
       );
     }
     return classEvaluations.some(
-      e => e.evaluator_id == evaluatorId && e.evaluatee_id == evaluateeId && e.phase == phase
+      e => Number(e.evaluator_id) === Number(evaluatorId) && Number(e.evaluatee_id) === Number(evaluateeId) && Number(e.phase) === Number(phase)
     );
   };
 
@@ -484,7 +484,6 @@ function ProgressTab({
                         </td>
                         {heatmapStudents.map(evaluatee => {
                           const evaluateeGroup = getStudentGroup(evaluatee.id);
-                          const isSelf = evaluator.id === evaluatee.id;
                           const sameGroup = evaluatorGroup?.id === evaluateeGroup?.id;
 
                           let bgColor;
