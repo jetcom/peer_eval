@@ -1,0 +1,7 @@
+# PeerEval Robots.txt
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://peereval.up.railway.app/sitemap.xml
