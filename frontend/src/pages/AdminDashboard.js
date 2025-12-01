@@ -18,6 +18,7 @@ import TemplatesTab from '../components/admin/TemplatesTab';
 import QuickStats from '../components/admin/QuickStats';
 import ClassSelector from '../components/admin/ClassSelector';
 import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
+import CopyClassModal from '../components/admin/CopyClassModal';
 
 function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -61,6 +62,8 @@ function AdminDashboard() {
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
+  const [showCopyClassModal, setShowCopyClassModal] = useState(false);
+  const [copyingClass, setCopyingClass] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -548,6 +551,25 @@ function AdminDashboard() {
     }
   };
 
+  const handleCopyClass = async (sourceClassId, formData) => {
+    try {
+      const res = await axios.post(`/api/classes/${sourceClassId}/copy`, formData);
+      setMessage({ type: 'success', text: 'Class copied successfully!' });
+      setShowCopyClassModal(false);
+      setCopyingClass(null);
+      fetchData();
+      // Select the newly created class
+      setSelectedClass(res.data.id.toString());
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to copy class' });
+    }
+  };
+
+  const openCopyClassModal = (classData) => {
+    setCopyingClass(classData);
+    setShowCopyClassModal(true);
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -642,6 +664,18 @@ function AdminDashboard() {
         />
       )}
 
+      {showCopyClassModal && copyingClass && (
+        <CopyClassModal
+          darkMode={darkMode}
+          sourceClass={copyingClass}
+          onSubmit={handleCopyClass}
+          onClose={() => {
+            setShowCopyClassModal(false);
+            setCopyingClass(null);
+          }}
+        />
+      )}
+
       <div className="container">
         {message.text && (
           <div className={`message ${message.type}`}>{message.text}</div>
@@ -660,6 +694,7 @@ function AdminDashboard() {
           onRestoreClass={handleRestoreClass}
           onEditClass={openEditClassModal}
           onCreateClass={() => setShowClassWizard(true)}
+          onCopyClass={openCopyClassModal}
         />
 
         {/* Quick Stats Overview */}

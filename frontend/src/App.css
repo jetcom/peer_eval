@@ -1450,6 +1450,7 @@ body.dark-mode .progress-mini.incomplete {
 }
 
 .class-selector-settings-btn,
+.class-selector-copy-btn,
 .class-selector-new-btn {
   padding: 12px 20px;
   border-radius: 10px;
@@ -1460,13 +1461,15 @@ body.dark-mode .progress-mini.incomplete {
   white-space: nowrap;
 }
 
-.class-selector-settings-btn {
+.class-selector-settings-btn,
+.class-selector-copy-btn {
   background: white;
   border: 2px solid #e0e0e0;
   color: #7f8c8d;
 }
 
-.class-selector-settings-btn:hover {
+.class-selector-settings-btn:hover,
+.class-selector-copy-btn:hover {
   border-color: #3498db;
   color: #3498db;
 }
@@ -1589,13 +1592,15 @@ body.dark-mode .class-selector-archived-empty {
   color: #555;
 }
 
-body.dark-mode .class-selector-settings-btn {
+body.dark-mode .class-selector-settings-btn,
+body.dark-mode .class-selector-copy-btn {
   background: #1a1a1a;
   border-color: #333;
   color: #999;
 }
 
-body.dark-mode .class-selector-settings-btn:hover {
+body.dark-mode .class-selector-settings-btn:hover,
+body.dark-mode .class-selector-copy-btn:hover {
   border-color: #3498db;
   color: #3498db;
 }

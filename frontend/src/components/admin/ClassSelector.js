@@ -11,7 +11,8 @@ function ClassSelector({
   onFetchArchivedClasses,
   onRestoreClass,
   onEditClass,
-  onCreateClass
+  onCreateClass,
+  onCopyClass
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -104,13 +105,22 @@ function ClassSelector({
         </div>
 
         {selectedClass && (
-          <button
-            className="class-selector-settings-btn"
-            onClick={() => onEditClass(selectedClassData)}
-            title="Class settings"
-          >
-            Class Settings
-          </button>
+          <>
+            <button
+              className="class-selector-settings-btn"
+              onClick={() => onEditClass(selectedClassData)}
+              title="Class settings"
+            >
+              Class Settings
+            </button>
+            <button
+              className="class-selector-copy-btn"
+              onClick={() => onCopyClass(selectedClassData)}
+              title="Copy class for a new term"
+            >
+              Copy Class
+            </button>
+          </>
         )}
 
         <button

@@ -990,4 +990,173 @@ router.put('/:id/extensions', authenticateToken, requireTeacherOrAdmin, async (r
   }
 });
 
+// Copy/clone a class with new semester and dates
+router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const sourceId = parseInt(req.params.id);
+    const { name, section, semester, phase_due_dates } = req.body;
+
+    // Check ownership of source class
+    const where = { id: sourceId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
+    }
+
+    const sourceClass = await prisma.class.findFirst({
+      where,
+      include: {
+        instructors: true,
+        criteria: { orderBy: { orderIndex: 'asc' } },
+        assignments: {
+          include: {
+            evalTypes: {
+              include: {
+                criteria: { orderBy: { orderIndex: 'asc' } }
+              }
+            }
+          },
+          orderBy: { orderIndex: 'asc' }
+        }
+      }
+    });
+
+    if (!sourceClass) {
+      return res.status(404).json({ error: 'Class not found or access denied' });
+    }
+
+    // Create the new class with same settings
+    const newClass = await prisma.class.create({
+      data: {
+        name: name || `${sourceClass.name} (Copy)`,
+        section: section !== undefined ? section : sourceClass.section,
+        semester: semester !== undefined ? semester : sourceClass.semester,
+        teacherId: req.user.id,
+        numPhases: sourceClass.numPhases,
+        hasFinalEvaluation: sourceClass.hasFinalEvaluation,
+        dueDateTimezone: sourceClass.dueDateTimezone,
+        minCommentWords: sourceClass.minCommentWords,
+        evaluationMode: sourceClass.evaluationMode,
+        allowLate: sourceClass.allowLate,
+        lateWindowHours: sourceClass.lateWindowHours,
+        includeSelfEval: sourceClass.includeSelfEval,
+        peerTemplateId: sourceClass.peerTemplateId,
+        audienceTemplateId: sourceClass.audienceTemplateId,
+        selfTemplateId: sourceClass.selfTemplateId,
+        paperReviewTemplateId: sourceClass.paperReviewTemplateId
+      }
+    });
+
+    // Copy instructors (add current user if not already included)
+    const instructorIds = new Set(sourceClass.instructors.map(i => i.userId));
+    instructorIds.add(req.user.id);
+
+    for (const instructorId of instructorIds) {
+      await prisma.classInstructor.create({
+        data: { classId: newClass.id, userId: instructorId }
+      });
+    }
+
+    // Copy phase due dates if provided, otherwise leave empty for user to set
+    if (phase_due_dates && typeof phase_due_dates === 'object') {
+      const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
+      if (phases.length > 0) {
+        await prisma.phaseDueDate.createMany({
+          data: phases.map(phase => ({
+            classId: newClass.id,
+            phase: parseInt(phase),
+            dueDate: phase_due_dates[phase]
+          }))
+        });
+      }
+    }
+
+    // Copy class criteria (for phase-mode classes)
+    if (sourceClass.criteria && sourceClass.criteria.length > 0) {
+      for (const criterion of sourceClass.criteria) {
+        await prisma.classEvalCriterion.create({
+          data: {
+            classId: newClass.id,
+            name: criterion.name,
+            description: criterion.description,
+            orderIndex: criterion.orderIndex,
+            minValue: criterion.minValue,
+            maxValue: criterion.maxValue
+          }
+        });
+      }
+    }
+
+    // Copy assignments (for assignment-mode classes)
+    if (sourceClass.assignments && sourceClass.assignments.length > 0) {
+      for (const assignment of sourceClass.assignments) {
+        const newAssignment = await prisma.assignment.create({
+          data: {
+            classId: newClass.id,
+            name: assignment.name,
+            description: assignment.description,
+            orderIndex: assignment.orderIndex,
+            dueDate: null // Clear due dates - user should set new ones
+          }
+        });
+
+        // Copy eval types for this assignment
+        if (assignment.evalTypes && assignment.evalTypes.length > 0) {
+          for (const evalType of assignment.evalTypes) {
+            const newEvalType = await prisma.assignmentEvalType.create({
+              data: {
+                assignmentId: newAssignment.id,
+                evalType: evalType.evalType,
+                name: evalType.name,
+                targetType: evalType.targetType,
+                weight: evalType.weight,
+                includeSelf: evalType.includeSelf,
+                isRequired: evalType.isRequired,
+                minCompletion: evalType.minCompletion,
+                requireComments: evalType.requireComments,
+                minCommentWords: evalType.minCommentWords,
+                allowLate: evalType.allowLate,
+                dueDate: null // Clear due dates
+              }
+            });
+
+            // Copy criteria for this eval type
+            if (evalType.criteria && evalType.criteria.length > 0) {
+              for (const criterion of evalType.criteria) {
+                await prisma.evalTypeCriterion.create({
+                  data: {
+                    evalTypeId: newEvalType.id,
+                    name: criterion.name,
+                    description: criterion.description,
+                    orderIndex: criterion.orderIndex,
+                    minValue: criterion.minValue,
+                    maxValue: criterion.maxValue
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Fetch the new class with all relations
+    const createdClass = await prisma.class.findUnique({
+      where: { id: newClass.id },
+      include: {
+        teacher: { select: { firstName: true, lastName: true, email: true } },
+        instructors: {
+          include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } }
+        },
+        phaseDueDates: true,
+        _count: { select: { enrollments: true, groups: true } }
+      }
+    });
+
+    res.json(formatClassResponse(createdClass));
+  } catch (err) {
+    console.error('Copy class error:', err);
+    res.status(500).json({ error: 'Failed to copy class' });
+  }
+});
+
 module.exports = router;
