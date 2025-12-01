@@ -4,4 +4,4 @@ Allow: /
 Disallow: /api/
 
 # Sitemap location
-Sitemap: https://peereval.up.railway.app/sitemap.xml
+Sitemap: https://peerevals.app/sitemap.xml
