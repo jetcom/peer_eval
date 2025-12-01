@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 function ClassSelector({
   darkMode,
@@ -15,13 +15,28 @@ function ClassSelector({
   onCopyClass
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef(null);
 
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
 
   return (
     <div className="class-selector-container">
       <div className="class-selector-row">
-        <div className="class-selector-wrapper">
+        <div className="class-selector-wrapper" ref={wrapperRef}>
           <label className="class-selector-label">Current Class</label>
           <button
             className="class-selector-btn"
