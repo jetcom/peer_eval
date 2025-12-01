@@ -9,6 +9,8 @@ const groupRoutes = require('./routes/groups');
 const evaluationRoutes = require('./routes/evaluations');
 const ssoRoutes = require('./routes/sso');
 const classRoutes = require('./routes/classes');
+const templateRoutes = require('./routes/templates');
+const assignmentRoutes = require('./routes/assignments');
 const { initializeDatabase } = require('./database');
 
 const app = express();
@@ -52,6 +54,8 @@ app.use('/api/groups', groupRoutes);
 app.use('/api/evaluations', evaluationRoutes);
 app.use('/api/sso', ssoRoutes);
 app.use('/api/classes', classRoutes);
+app.use('/api/templates', templateRoutes);
+app.use('/api/assignments', assignmentRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -8,11 +8,18 @@ function ProgressTab({
   classStudents,
   classGroups,
   evaluations,
-  finalCommentsData
+  finalCommentsData,
+  assignmentEvaluations
 }) {
   const [filterGroup, setFilterGroup] = useState('all');
   const [heatmapPhase, setHeatmapPhase] = useState(1);
+  // eslint-disable-next-line no-unused-vars
+  const [selectedAssignment, setSelectedAssignment] = useState('');
   const confettiFired = useRef(false);
+
+  // Get class config
+  const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+  const isAssignmentMode = selectedClassData?.evaluation_mode === 'assignments';
 
   // Filter to students only
   const studentsOnly = classStudents.filter(s => s.role === 'student');
@@ -30,8 +37,7 @@ function ProgressTab({
       : (classStudentIds.has(fc.evaluator_id) && classStudentIds.has(fc.evaluatee_id))
   );
 
-  // Get class config
-  const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+  // Get class config (already defined above)
   const numPhases = selectedClassData?.num_phases || 3;
   const hasFinalEvaluation = selectedClassData?.has_final_evaluation;
   const phaseNumbers = Array.from({ length: numPhases }, (_, i) => i + 1);
@@ -237,6 +243,250 @@ function ProgressTab({
         <h2>Select a Class</h2>
         <p>Please select a class from the header dropdown to view progress.</p>
       </div>
+    );
+  }
+
+  // Assignment-based class progress view
+  if (isAssignmentMode) {
+    const assignments = assignmentEvaluations?.assignments || [];
+    const individualEvals = assignmentEvaluations?.individual_evaluations || [];
+    const groupEvals = assignmentEvaluations?.group_evaluations || [];
+
+    // Calculate student progress per assignment
+    const getStudentProgress = () => {
+      const progressData = [];
+
+      filteredStudents.forEach(student => {
+        const studentGroup = getStudentGroup(student.id);
+        const assignmentProgress = {};
+
+        assignments.forEach(assignment => {
+          const evalTypes = assignment.eval_types || [];
+          let totalExpected = 0;
+          let totalCompleted = 0;
+
+          evalTypes.forEach(evalType => {
+            if (evalType.target_type === 'individual') {
+              // Individual evaluations - count teammates
+              const teammates = studentGroup?.members?.filter(m => m.role === 'student') || [];
+              const includeSelf = evalType.include_self;
+              const targetsToEval = includeSelf ? teammates : teammates.filter(m => m.id !== student.id);
+              totalExpected += targetsToEval.length;
+
+              // Count completed
+              const completed = individualEvals.filter(e =>
+                e.evaluator_id === student.id &&
+                e.eval_type_id === evalType.id
+              ).length;
+              totalCompleted += Math.min(completed, targetsToEval.length);
+            } else {
+              // Group evaluations - count other groups
+              const otherGroups = classGroups.filter(g => g.id !== studentGroup?.id);
+              totalExpected += otherGroups.length;
+
+              // Count completed
+              const completed = groupEvals.filter(e =>
+                e.evaluator_id === student.id &&
+                e.eval_type_id === evalType.id
+              ).length;
+              totalCompleted += Math.min(completed, otherGroups.length);
+            }
+          });
+
+          assignmentProgress[assignment.id] = {
+            expected: totalExpected,
+            completed: totalCompleted,
+            percentage: totalExpected > 0 ? Math.round((totalCompleted / totalExpected) * 100) : 0
+          };
+        });
+
+        progressData.push({
+          ...student,
+          group: studentGroup,
+          assignmentProgress
+        });
+      });
+
+      return progressData;
+    };
+
+    const studentProgress = getStudentProgress();
+
+    // Overall stats
+    const totalExpected = studentProgress.reduce((sum, s) =>
+      sum + Object.values(s.assignmentProgress).reduce((a, p) => a + p.expected, 0), 0);
+    const totalCompleted = studentProgress.reduce((sum, s) =>
+      sum + Object.values(s.assignmentProgress).reduce((a, p) => a + p.completed, 0), 0);
+    const overallPercentage = totalExpected > 0 ? Math.round((totalCompleted / totalExpected) * 100) : 0;
+
+    return (
+      <>
+        {/* Filter */}
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 style={{ margin: 0 }}>Progress Overview (Assignment Mode)</h2>
+            <select
+              value={filterGroup}
+              onChange={(e) => setFilterGroup(e.target.value)}
+              style={{ padding: '8px', fontSize: '1rem', minWidth: '200px' }}
+            >
+              <option value="all">All Groups ({studentsOnly.length} students)</option>
+              {classGroups.map(g => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.members?.filter(m => m.role === 'student').length || 0} students)
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Overall Progress */}
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Overall Completion</h3>
+          <div style={{
+            background: darkMode ? '#2d2d2d' : '#ecf0f1',
+            borderRadius: '8px',
+            height: '30px',
+            overflow: 'hidden',
+            marginBottom: '10px'
+          }}>
+            <div style={{
+              background: overallPercentage === 100 ? '#27ae60' : '#3498db',
+              width: `${overallPercentage}%`,
+              height: '100%',
+              transition: 'width 0.3s',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              fontWeight: 'bold',
+              fontSize: '0.9rem'
+            }}>
+              {overallPercentage > 10 && `${overallPercentage}%`}
+            </div>
+          </div>
+          <p style={{ margin: 0, color: darkMode ? '#a0a0a0' : '#666' }}>
+            {totalCompleted} of {totalExpected} evaluations complete across all students
+          </p>
+        </div>
+
+        {/* Per-Assignment Progress */}
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Progress by Assignment</h3>
+          <div style={{ display: 'grid', gap: '15px' }}>
+            {assignments.map(assignment => {
+              const stats = {
+                complete: 0,
+                partial: 0,
+                notStarted: 0
+              };
+
+              filteredStudents.forEach(student => {
+                const sp = studentProgress.find(s => s.id === student.id);
+                const progress = sp?.assignmentProgress[assignment.id];
+                if (progress) {
+                  if (progress.percentage === 100) stats.complete++;
+                  else if (progress.percentage > 0) stats.partial++;
+                  else stats.notStarted++;
+                }
+              });
+
+              const total = stats.complete + stats.partial + stats.notStarted;
+
+              return (
+                <div key={assignment.id}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                    <span style={{ fontWeight: '500' }}>{assignment.name}</span>
+                    <span>
+                      <span style={{ color: '#27ae60' }}>{stats.complete} done</span>
+                      {stats.partial > 0 && <span style={{ color: '#f39c12' }}> · {stats.partial} partial</span>}
+                      {stats.notStarted > 0 && <span style={{ color: '#e74c3c' }}> · {stats.notStarted} not started</span>}
+                    </span>
+                  </div>
+                  <div style={{
+                    background: darkMode ? '#2d2d2d' : '#ecf0f1',
+                    borderRadius: '4px',
+                    height: '20px',
+                    overflow: 'hidden',
+                    display: 'flex'
+                  }}>
+                    <div style={{
+                      background: '#27ae60',
+                      width: `${(stats.complete / total) * 100}%`,
+                      height: '100%',
+                      transition: 'width 0.3s'
+                    }} />
+                    <div style={{
+                      background: '#f39c12',
+                      width: `${(stats.partial / total) * 100}%`,
+                      height: '100%',
+                      transition: 'width 0.3s'
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Student Progress Table */}
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Student Progress</h3>
+          {studentProgress.length === 0 ? (
+            <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>No students in selected group.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                      Student
+                    </th>
+                    <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                      Group
+                    </th>
+                    {assignments.map(a => (
+                      <th key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                        {a.name}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentProgress.map(student => (
+                    <tr key={student.id}>
+                      <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
+                        {student.last_name}, {student.first_name}
+                      </td>
+                      <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`, color: darkMode ? '#a0a0a0' : '#666' }}>
+                        {student.group?.name || 'No Group'}
+                      </td>
+                      {assignments.map(a => {
+                        const progress = student.assignmentProgress[a.id];
+                        const color = progress?.percentage === 100 ? '#27ae60' : progress?.percentage > 0 ? '#f39c12' : '#e74c3c';
+                        return (
+                          <td key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '4px 8px',
+                              borderRadius: '4px',
+                              background: color,
+                              color: 'white',
+                              fontSize: '0.8rem'
+                            }}>
+                              {progress?.completed || 0}/{progress?.expected || 0}
+                            </span>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </>
     );
   }
 

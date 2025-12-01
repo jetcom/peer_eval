@@ -2,51 +2,91 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const multer = require('multer');
 const { parse } = require('csv-parse');
-const { db } = require('../database');
+const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
 // Get all users (admin only)
-router.get('/', authenticateToken, requireAdmin, (req, res) => {
-  db.all('SELECT id, email, first_name, last_name, university_id, role, protected, created_at FROM users ORDER BY last_name, first_name', (err, users) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json(users);
-  });
+router.get('/', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        universityId: true,
+        role: true,
+        protected: true,
+        createdAt: true
+      },
+      orderBy: [
+        { lastName: 'asc' },
+        { firstName: 'asc' }
+      ]
+    });
+
+    // Map to snake_case for backwards compatibility
+    res.json(users.map(u => ({
+      id: u.id,
+      email: u.email,
+      first_name: u.firstName,
+      last_name: u.lastName,
+      university_id: u.universityId,
+      role: u.role,
+      protected: u.protected,
+      created_at: u.createdAt
+    })));
+  } catch (err) {
+    console.error('Get users error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Create user (admin only)
-router.post('/', authenticateToken, requireAdmin, (req, res) => {
-  const { email, password, first_name, last_name, role = 'student' } = req.body;
-  const hashedPassword = bcrypt.hashSync(password, 10);
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { email, password, first_name, last_name, role = 'student' } = req.body;
+    const hashedPassword = bcrypt.hashSync(password, 10);
 
-  db.run(
-    'INSERT INTO users (email, password, first_name, last_name, role) VALUES (?, ?, ?, ?, ?)',
-    [email, hashedPassword, first_name, last_name, role],
-    function(err) {
-      if (err) {
-        if (err.message.includes('UNIQUE constraint')) {
-          return res.status(400).json({ error: 'Email already exists' });
-        }
-        return res.status(500).json({ error: 'Failed to create user' });
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        firstName: first_name,
+        lastName: last_name,
+        role
       }
-      res.json({ id: this.lastID, email, first_name, last_name, role });
+    });
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      first_name: user.firstName,
+      last_name: user.lastName,
+      role: user.role
+    });
+  } catch (err) {
+    console.error('Create user error:', err);
+    if (err.code === 'P2002') {
+      return res.status(400).json({ error: 'Email already exists' });
     }
-  );
+    res.status(500).json({ error: 'Failed to create user' });
+  }
 });
 
 // Upload users via CSV (admin only)
 // CSV format: #university_id, last_name, first_name, email, group_name#
-router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'), (req, res) => {
+router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
   const results = [];
   const errors = [];
+  const credentials = [];
 
   // Preprocess CSV to strip # markers from start and end of lines
   let csvContent = req.file.buffer.toString('utf8');
@@ -57,39 +97,35 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
     return line;
   }).join('\n');
 
-  parse(csvContent, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true
-  }, (err, records) => {
-    if (err) {
-      return res.status(400).json({ error: 'Failed to parse CSV: ' + err.message });
+  // Helper to get field value with flexible column names
+  const getField = (record, ...names) => {
+    for (const name of names) {
+      if (record[name] !== undefined) return record[name];
+      const lowerName = name.toLowerCase();
+      for (const key of Object.keys(record)) {
+        if (key.toLowerCase() === lowerName) return record[key];
+      }
     }
+    return undefined;
+  };
 
-    let processed = 0;
-    const total = records.length;
+  try {
+    const records = await new Promise((resolve, reject) => {
+      parse(csvContent, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true
+      }, (err, records) => {
+        if (err) reject(err);
+        else resolve(records);
+      });
+    });
 
-    if (total === 0) {
+    if (records.length === 0) {
       return res.json({ created: 0, errors: [], credentials: [] });
     }
 
-    const credentials = [];
-
-    // Helper to get field value with flexible column names
-    const getField = (record, ...names) => {
-      for (const name of names) {
-        // Check exact match and case-insensitive
-        if (record[name] !== undefined) return record[name];
-        const lowerName = name.toLowerCase();
-        for (const key of Object.keys(record)) {
-          if (key.toLowerCase() === lowerName) return record[key];
-        }
-      }
-      return undefined;
-    };
-
-    records.forEach((record) => {
-      // Support flexible column names (including spaces)
+    for (const record of records) {
       const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
       const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
       const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
@@ -106,11 +142,7 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
           email: email || 'unknown',
           error: `Missing: ${missing.join(', ')}. Columns found: ${Object.keys(record).join(', ')}`
         });
-        processed++;
-        if (processed === total) {
-          res.json({ created: results.length, errors, credentials });
-        }
-        return;
+        continue;
       }
 
       // Password: use university_id or auto-generate
@@ -123,117 +155,231 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
       }
       const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
 
-      db.run(
-        'INSERT INTO users (email, password, first_name, last_name, university_id, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)',
-        [email, hashedPassword, first_name, last_name, university_id || null, role || 'student'],
-        function(err) {
-          if (err) {
-            errors.push({ email, error: err.message.includes('UNIQUE') ? 'Email already exists' : err.message });
-            processed++;
-            if (processed === total) {
-              res.json({ created: results.length, errors, credentials });
-            }
-            return;
+      try {
+        const user = await prisma.user.create({
+          data: {
+            email,
+            password: hashedPassword,
+            firstName: first_name,
+            lastName: last_name,
+            universityId: university_id || null,
+            role: role || 'student',
+            mustChangePassword: 1
           }
+        });
 
-          const userId = this.lastID;
-          const userResult = { id: userId, email, first_name, last_name, role: role || 'student' };
-          results.push(userResult);
-          credentials.push({ email, password: generatedPassword });
+        results.push({
+          id: user.id,
+          email: user.email,
+          first_name: user.firstName,
+          last_name: user.lastName,
+          role: user.role
+        });
+        credentials.push({ email, password: generatedPassword });
 
-          // If group_name is provided, add user to group
-          if (group_name) {
-            // Check if group exists, create if not
-            db.get('SELECT id FROM groups WHERE name = ?', [group_name], (err, group) => {
-              if (err) {
-                processed++;
-                if (processed === total) {
-                  res.json({ created: results.length, errors, credentials });
+        // If group_name is provided, add user to group
+        if (group_name) {
+          try {
+            let group = await prisma.group.findFirst({
+              where: { name: group_name }
+            });
+
+            if (!group) {
+              group = await prisma.group.create({
+                data: { name: group_name }
+              });
+            }
+
+            await prisma.groupMember.upsert({
+              where: {
+                groupId_userId: {
+                  groupId: group.id,
+                  userId: user.id
                 }
-                return;
-              }
-
-              if (group) {
-                // Add to existing group
-                db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [group.id, userId], () => {
-                  processed++;
-                  if (processed === total) {
-                    res.json({ created: results.length, errors, credentials });
-                  }
-                });
-              } else {
-                // Create group and add user
-                db.run('INSERT INTO groups (name) VALUES (?)', [group_name], function(err) {
-                  if (err) {
-                    processed++;
-                    if (processed === total) {
-                      res.json({ created: results.length, errors, credentials });
-                    }
-                    return;
-                  }
-                  const groupId = this.lastID;
-                  db.run('INSERT INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId], () => {
-                    processed++;
-                    if (processed === total) {
-                      res.json({ created: results.length, errors, credentials });
-                    }
-                  });
-                });
+              },
+              update: {},
+              create: {
+                groupId: group.id,
+                userId: user.id
               }
             });
-          } else {
-            processed++;
-            if (processed === total) {
-              res.json({ created: results.length, errors, credentials });
-            }
+          } catch (groupErr) {
+            console.error('Group assignment error:', groupErr);
           }
         }
-      );
+      } catch (err) {
+        if (err.code === 'P2002') {
+          errors.push({ email, error: 'Email already exists' });
+        } else {
+          errors.push({ email, error: err.message });
+        }
+      }
+    }
+
+    res.json({ created: results.length, errors, credentials });
+  } catch (err) {
+    console.error('CSV parse error:', err);
+    res.status(400).json({ error: 'Failed to parse CSV: ' + err.message });
+  }
+});
+
+// Get pending teacher requests (admin only)
+// NOTE: Must be defined BEFORE /:id routes to avoid route conflicts
+router.get('/pending-teachers', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const pendingTeachers = await prisma.user.findMany({
+      where: { role: 'pending_teacher' },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        university: true,
+        department: true,
+        createdAt: true
+      },
+      orderBy: { createdAt: 'desc' }
     });
-  });
+
+    res.json(pendingTeachers.map(u => ({
+      id: u.id,
+      email: u.email,
+      first_name: u.firstName,
+      last_name: u.lastName,
+      university: u.university,
+      department: u.department,
+      created_at: u.createdAt
+    })));
+  } catch (err) {
+    console.error('Get pending teachers error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Delete user (admin only)
-router.delete('/:id', authenticateToken, requireAdmin, (req, res) => {
-  const { id } = req.params;
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  // Check if user is protected
-  db.get('SELECT protected FROM users WHERE id = ?', [id], (err, user) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { protected: true }
+    });
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
     if (user.protected === 1) {
       return res.status(403).json({ error: 'Cannot delete protected admin account' });
     }
 
-    db.run('DELETE FROM users WHERE id = ?', [id], function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to delete user' });
-      }
-      res.json({ message: 'User deleted' });
+    await prisma.user.delete({
+      where: { id }
     });
-  });
+
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// Approve pending teacher (admin only)
+router.post('/:id/approve-teacher', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { role: true, email: true, firstName: true, lastName: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role !== 'pending_teacher') {
+      return res.status(400).json({ error: 'User is not a pending teacher' });
+    }
+
+    await prisma.user.update({
+      where: { id },
+      data: { role: 'teacher' }
+    });
+
+    res.json({
+      message: `${user.firstName} ${user.lastName} has been approved as an instructor`,
+      user: {
+        id,
+        email: user.email,
+        first_name: user.firstName,
+        last_name: user.lastName,
+        role: 'teacher'
+      }
+    });
+  } catch (err) {
+    console.error('Approve teacher error:', err);
+    res.status(500).json({ error: 'Failed to approve teacher' });
+  }
+});
+
+// Reject pending teacher (admin only)
+router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { role: true, email: true, firstName: true, lastName: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (user.role !== 'pending_teacher') {
+      return res.status(400).json({ error: 'User is not a pending teacher' });
+    }
+
+    // Delete the user
+    await prisma.user.delete({
+      where: { id }
+    });
+
+    res.json({
+      message: `${user.firstName} ${user.lastName}'s instructor request has been rejected`
+    });
+  } catch (err) {
+    console.error('Reject teacher error:', err);
+    res.status(500).json({ error: 'Failed to reject teacher' });
+  }
 });
 
 // Reset user password (admin only)
-router.post('/:id/reset-password', authenticateToken, requireAdmin, (req, res) => {
-  const { id } = req.params;
-  const { password } = req.body;
-  const hashedPassword = bcrypt.hashSync(password, 10);
+router.post('/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { password } = req.body;
+    const hashedPassword = bcrypt.hashSync(password, 10);
 
-  // Set must_change_password = 1 so user must change on first login
-  db.run('UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?', [hashedPassword, id], function(err) {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to reset password' });
-    }
-    if (this.changes === 0) {
+    const result = await prisma.user.updateMany({
+      where: { id },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: 1
+      }
+    });
+
+    if (result.count === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
+
     res.json({ message: 'Password reset successfully. User must change password on next login.' });
-  });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 module.exports = router;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -79,6 +79,12 @@ function Login() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+
+        <div style={{ marginTop: '20px', textAlign: 'center', borderTop: `1px solid ${darkMode ? '#2d4a6f' : '#e0e0e0'}`, paddingTop: '20px' }}>
+          <Link to="/register-instructor" style={{ color: darkMode ? '#268bd2' : '#3498db', textDecoration: 'none', fontSize: '0.9rem' }}>
+            Instructor? Register for access
+          </Link>
+        </div>
       </div>
     </div>
   );

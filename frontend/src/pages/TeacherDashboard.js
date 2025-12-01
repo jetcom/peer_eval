@@ -161,6 +161,9 @@ function TeacherDashboard() {
           <button className="theme-toggle" onClick={toggleDarkMode}>
             {darkMode ? 'Light' : 'Dark'}
           </button>
+          <button className="btn btn-primary" onClick={() => navigate('/dashboard')}>
+            View as Student
+          </button>
           <button className="btn btn-secondary" onClick={handleLogout}>
             Logout
           </button>

@@ -5,7 +5,9 @@ import confetti from 'canvas-confetti';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+import StudentClassSelector from '../components/StudentClassSelector';
 import CustomDropdown from '../components/CustomDropdown';
+import AssignmentDashboard from '../components/AssignmentDashboard';
 
 // Helper function to calculate effective due date for a phase using cascading logic
 function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates) {
@@ -258,18 +260,6 @@ function Dashboard() {
       <div className="header">
         <h1>Peer Evaluation</h1>
         <div className="header-right">
-          {classes.length > 0 && (
-            <CustomDropdown
-              value={selectedClass}
-              onChange={(value) => setSelectedClass(value)}
-              options={classes.map(c => ({
-                value: c.id,
-                label: `${c.name}${c.section ? ` (${c.section})` : ''}${c.semester ? ` - ${c.semester}` : ''}`
-              }))}
-              darkMode={darkMode}
-              style={{ marginRight: '10px' }}
-            />
-          )}
           <span>Welcome, {user?.first_name || user?.name}</span>
           <button className="theme-toggle" onClick={toggleDarkMode}>
             {darkMode ? 'Light' : 'Dark'}
@@ -277,6 +267,11 @@ function Dashboard() {
           {user?.role === 'admin' && (
             <button className="btn btn-secondary" onClick={() => navigate('/admin')}>
               Admin Panel
+            </button>
+          )}
+          {user?.role === 'teacher' && (
+            <button className="btn btn-secondary" onClick={() => navigate('/teacher')}>
+              Teacher Dashboard
             </button>
           )}
           <button className="btn btn-secondary" onClick={handleLogout}>
@@ -293,6 +288,15 @@ function Dashboard() {
           </div>
         ) : (
           <>
+            {/* Class Selector - only show if multiple classes */}
+            {classes.length > 1 && (
+              <StudentClassSelector
+                classes={classes}
+                selectedClass={selectedClass}
+                setSelectedClass={setSelectedClass}
+              />
+            )}
+
             {currentClass && (
               <div className="card">
                 <h2>{currentClass.name} {currentClass.section && `(${currentClass.section})`}</h2>
@@ -399,7 +403,16 @@ function Dashboard() {
               <div className="loading">Loading class data...</div>
             ) : error ? (
               <div className="message error">{error}</div>
+            ) : currentClass?.evaluation_mode === 'assignments' ? (
+              /* Assignment-based evaluation mode */
+              <AssignmentDashboard
+                classId={selectedClass}
+                currentClass={currentClass}
+                masqueradeUser={masqueradeUser}
+                darkMode={darkMode}
+              />
             ) : group && (
+              /* Phase-based evaluation mode */
               <>
                 <div className="card">
                   <h2>Your Group: {group.name}</h2>

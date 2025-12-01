@@ -7,7 +7,9 @@ import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import TeacherDashboard from './pages/TeacherDashboard';
 import Evaluation from './pages/Evaluation';
+import AssignmentEvaluation from './pages/AssignmentEvaluation';
 import SSOCallback from './pages/SSOCallback';
+import InstructorRegistration from './pages/InstructorRegistration';
 import './App.css';
 
 function PrivateRoute({ children, adminOnly = false, teacherOnly = false }) {
@@ -62,6 +64,7 @@ function App() {
           <div className="app">
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route path="/register-instructor" element={<InstructorRegistration />} />
               <Route path="/sso-callback" element={<SSOCallback />} />
               <Route
                 path="/dashboard"
@@ -92,6 +95,14 @@ function App() {
                 element={
                   <PrivateRoute>
                     <Evaluation />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/evaluate-assignment/:assignmentId/:evalTypeId"
+                element={
+                  <PrivateRoute>
+                    <AssignmentEvaluation />
                   </PrivateRoute>
                 }
               />

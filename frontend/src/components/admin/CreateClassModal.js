@@ -1,5 +1,15 @@
 import React from 'react';
 
+// Helper function to normalize datetime input - defaults to 11:59 PM if only date is provided
+function normalizeDateTime(value) {
+  if (!value) return null;
+  // If the value is just a date (YYYY-MM-DD), append 11:59 PM
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return `${value}T23:59`;
+  }
+  return value;
+}
+
 // Helper function to calculate effective due date for a phase using cascading logic
 function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates) {
   // If this phase has a due date, use it
@@ -53,7 +63,7 @@ function CreateClassModal({ darkMode, newClass, setNewClass, currentUser, onSubm
       ...newClass,
       phase_due_dates: {
         ...newClass.phase_due_dates,
-        [phase]: value || null
+        [phase]: normalizeDateTime(value)
       }
     });
   };

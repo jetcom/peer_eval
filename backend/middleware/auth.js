@@ -26,4 +26,11 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-module.exports = { authenticateToken, requireAdmin, JWT_SECRET };
+function requireTeacher(req, res, next) {
+  if (req.user.role !== 'admin' && req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Teacher or admin access required' });
+  }
+  next();
+}
+
+module.exports = { authenticateToken, requireAdmin, requireTeacher, JWT_SECRET };

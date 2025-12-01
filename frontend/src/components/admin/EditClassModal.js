@@ -1,5 +1,15 @@
 import React from 'react';
 
+// Helper function to normalize datetime input - defaults to 11:59 PM if only date is provided
+function normalizeDateTime(value) {
+  if (!value) return null;
+  // If the value is just a date (YYYY-MM-DD), append 11:59 PM
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return `${value}T23:59`;
+  }
+  return value;
+}
+
 // Helper function to calculate effective due date for a phase using cascading logic
 function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates) {
   // If this phase has a due date, use it
@@ -54,7 +64,7 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
       ...editingClass,
       phase_due_dates: {
         ...editingClass.phase_due_dates,
-        [phase]: value || null
+        [phase]: normalizeDateTime(value)
       }
     });
   };
@@ -73,13 +83,15 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
       zIndex: 1000
     }}>
       <div style={{
-        background: darkMode ? '#1e3a5f' : '#fff',
-        padding: '25px',
-        borderRadius: '8px',
+        background: darkMode ? '#1a1a1a' : '#fff',
+        padding: '30px',
+        borderRadius: '12px',
         width: '100%',
         maxWidth: '850px',
         maxHeight: '90vh',
-        overflow: 'auto'
+        overflow: 'auto',
+        border: darkMode ? '1px solid #333' : '1px solid #e0e0e0',
+        boxShadow: darkMode ? '0 20px 60px rgba(0,0,0,0.5)' : '0 20px 60px rgba(0,0,0,0.15)'
       }}>
         <h2 style={{ marginTop: 0, marginBottom: '15px' }}>Edit Class</h2>
         <form onSubmit={onSubmit}>
@@ -119,12 +131,13 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                 <div className="form-group" style={{ marginBottom: '12px' }}>
                   <label>Instructors ({(editingClass.instructor_ids || []).length} selected)</label>
                   <div style={{
-                    maxHeight: '120px',
+                    minHeight: availableInstructors.length <= 4 ? 'auto' : '100px',
+                    maxHeight: '200px',
                     overflowY: 'auto',
-                    border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
+                    border: `1px solid ${darkMode ? '#333' : '#ddd'}`,
                     borderRadius: '4px',
                     padding: '8px',
-                    backgroundColor: darkMode ? '#001e27' : '#fff'
+                    backgroundColor: darkMode ? '#0f0f0f' : '#fff'
                   }}>
                     {availableInstructors.map(u => (
                       <label
@@ -133,7 +146,7 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                           display: 'flex',
                           alignItems: 'center',
                           cursor: 'pointer',
-                          color: darkMode ? '#93a1a1' : '#333',
+                          color: darkMode ? '#e0e0e0' : '#333',
                           fontSize: '0.9rem',
                           padding: '2px 0'
                         }}
@@ -226,10 +239,10 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                   Empty phases inherit from next set date
                 </small>
                 <div style={{
-                  border: `1px solid ${darkMode ? '#586e75' : '#ddd'}`,
+                  border: `1px solid ${darkMode ? '#333' : '#ddd'}`,
                   borderRadius: '4px',
                   padding: '8px',
-                  backgroundColor: darkMode ? '#001e27' : '#f9f9f9'
+                  backgroundColor: darkMode ? '#0f0f0f' : '#f9f9f9'
                 }}>
                   {getPhases().map(({ phase, label }) => {
                     const phaseDueDates = editingClass.phase_due_dates || {};
@@ -257,17 +270,45 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                           {label}{isLastPhase ? '*' : ''}:
                         </span>
                         <input
-                          type="datetime-local"
-                          value={phaseDueDates[phase] || effectiveDate || ''}
-                          onChange={(e) => handlePhaseDueDateChange(phase, e.target.value)}
+                          type="date"
+                          value={(phaseDueDates[phase] || effectiveDate || '').split('T')[0]}
+                          onChange={(e) => {
+                            const date = e.target.value;
+                            const currentTime = (phaseDueDates[phase] || '').split('T')[1] || '23:59';
+                            handlePhaseDueDateChange(phase, date ? `${date}T${currentTime}` : null);
+                          }}
                           required={isLastPhase}
                           style={{
-                            flex: 1,
                             fontSize: '0.8rem',
                             padding: '3px 5px',
-                            opacity: hasOwnDate ? 1 : 0.6
+                            opacity: hasOwnDate ? 1 : 0.6,
+                            background: darkMode ? '#1a1a1a' : '#fff',
+                            border: `1px solid ${darkMode ? '#444' : '#ccc'}`,
+                            color: darkMode ? '#e0e0e0' : '#333',
+                            borderRadius: '4px'
                           }}
                           title={!hasOwnDate && effectiveDate ? 'Inherited from later phase' : ''}
+                        />
+                        <input
+                          type="time"
+                          value={(phaseDueDates[phase] || effectiveDate || 'T23:59').split('T')[1] || '23:59'}
+                          onChange={(e) => {
+                            const time = e.target.value || '23:59';
+                            const currentDate = (phaseDueDates[phase] || '').split('T')[0];
+                            if (currentDate) {
+                              handlePhaseDueDateChange(phase, `${currentDate}T${time}`);
+                            }
+                          }}
+                          style={{
+                            fontSize: '0.8rem',
+                            padding: '3px 5px',
+                            opacity: hasOwnDate ? 1 : 0.6,
+                            width: '90px',
+                            background: darkMode ? '#1a1a1a' : '#fff',
+                            border: `1px solid ${darkMode ? '#444' : '#ccc'}`,
+                            color: darkMode ? '#e0e0e0' : '#333',
+                            borderRadius: '4px'
+                          }}
                         />
                         {hasOwnDate && !isLastPhase && (
                           <button
@@ -279,7 +320,7 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                               cursor: 'pointer',
                               padding: '2px 6px',
                               fontSize: '1rem',
-                              color: darkMode ? '#839496' : '#666'
+                              color: darkMode ? '#888' : '#666'
                             }}
                             title="Clear date (inherit from later phase)"
                           >
@@ -311,8 +352,8 @@ function EditClassModal({ darkMode, editingClass, setEditingClass, onSubmit, onC
                 }}
                 style={{
                   background: 'none',
-                  border: `1px solid ${darkMode ? '#839496' : '#999'}`,
-                  color: darkMode ? '#839496' : '#666',
+                  border: `1px solid ${darkMode ? '#555' : '#999'}`,
+                  color: darkMode ? '#888' : '#666',
                   padding: '8px 12px',
                   borderRadius: '4px',
                   cursor: 'pointer',

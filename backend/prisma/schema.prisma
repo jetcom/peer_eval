@@ -1,0 +1,406 @@
+// PeerEval Prisma Schema
+// Supports SQLite (local dev) and PostgreSQL (production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// CORE TABLES (Existing)
+// ==========================================
+
+model User {
+  id                 Int      @id @default(autoincrement())
+  email              String   @unique
+  password           String
+  firstName          String   @default("") @map("first_name")
+  lastName           String   @default("") @map("last_name")
+  universityId       String?  @map("university_id")
+  role               String   @default("student")
+  mustChangePassword Int      @default(0) @map("must_change_password")
+  protected          Int      @default(0)
+  university         String?
+  department         String?
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  // Relations
+  enrollments                ClassEnrollment[]
+  instructorOf               ClassInstructor[]
+  teacherOf                  Class[]               @relation("TeacherRelation")
+  groupMemberships           GroupMember[]
+  evaluationsGiven           Evaluation[]          @relation("EvaluatorRelation")
+  evaluationsReceived        Evaluation[]          @relation("EvaluateeRelation")
+  finalCommentsGiven         FinalComment[]        @relation("FinalCommentEvaluator")
+  finalCommentsReceived      FinalComment[]        @relation("FinalCommentEvaluatee")
+  extensions                 StudentExtension[]
+  createdTemplates           EvalTemplate[]
+  assignmentEvalsGiven       AssignmentEvaluation[] @relation("AssignmentEvaluator")
+  assignmentEvalsReceived    AssignmentEvaluation[] @relation("AssignmentEvaluatee")
+  groupEvalsGiven            GroupEvaluation[]
+
+  @@map("users")
+}
+
+model Class {
+  id                    Int      @id @default(autoincrement())
+  name                  String
+  section               String?
+  semester              String?
+  teacherId             Int      @map("teacher_id")
+  numPhases             Int      @default(3) @map("num_phases")
+  hasFinalEvaluation    Int      @default(1) @map("has_final_evaluation")
+  dueDate               String?  @map("due_date")
+  dueDateTimezone       String?  @map("due_date_timezone")
+  archived              Int      @default(0)
+  minCommentWords       Int      @default(0) @map("min_comment_words")
+  evaluationMode        String   @default("phases") @map("evaluation_mode")
+  allowLate             Int      @default(1) @map("allow_late")
+  lateWindowHours       Int      @default(48) @map("late_window_hours")
+  includeSelfEval       Int      @default(0) @map("include_self_eval")
+  peerTemplateId        Int?     @map("peer_template_id")
+  audienceTemplateId    Int?     @map("audience_template_id")
+  selfTemplateId        Int?     @map("self_template_id")
+  paperReviewTemplateId Int?     @map("paper_review_template_id")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  // Relations
+  teacher       User              @relation("TeacherRelation", fields: [teacherId], references: [id])
+  enrollments   ClassEnrollment[]
+  instructors   ClassInstructor[]
+  groups        Group[]
+  evaluations   Evaluation[]
+  finalComments FinalComment[]
+  phaseDueDates PhaseDueDate[]
+  extensions    StudentExtension[]
+  criteria      ClassEvalCriterion[]
+  assignments   Assignment[]
+
+  @@map("classes")
+}
+
+model ClassEnrollment {
+  id        Int      @id @default(autoincrement())
+  classId   Int      @map("class_id")
+  userId    Int      @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId])
+  @@map("class_enrollments")
+}
+
+model ClassInstructor {
+  id        Int      @id @default(autoincrement())
+  classId   Int      @map("class_id")
+  userId    Int      @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId])
+  @@map("class_instructors")
+}
+
+model Group {
+  id        Int      @id @default(autoincrement())
+  name      String
+  classId   Int?     @map("class_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  class            Class?            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  members          GroupMember[]
+  groupEvaluations GroupEvaluation[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id      Int @id @default(autoincrement())
+  groupId Int @map("group_id")
+  userId  Int @map("user_id")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}
+
+model Evaluation {
+  id           Int       @id @default(autoincrement())
+  evaluatorId  Int       @map("evaluator_id")
+  evaluateeId  Int       @map("evaluatee_id")
+  classId      Int?      @map("class_id")
+  phase        Int
+  // Legacy fixed criteria columns
+  contribution  Int?
+  communication Int?
+  reliability   Int?
+  qualityOfWork Int?     @map("quality_of_work")
+  collaboration Int?
+  score         Int?
+  comments      String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  evaluator       User                       @relation("EvaluatorRelation", fields: [evaluatorId], references: [id])
+  evaluatee       User                       @relation("EvaluateeRelation", fields: [evaluateeId], references: [id])
+  class           Class?                     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  criterionScores EvaluationCriterionScore[]
+
+  @@unique([evaluatorId, evaluateeId, phase])
+  @@map("evaluations")
+}
+
+model FinalComment {
+  id          Int       @id @default(autoincrement())
+  evaluatorId Int       @map("evaluator_id")
+  evaluateeId Int       @map("evaluatee_id")
+  classId     Int?      @map("class_id")
+  comments    String?
+  finalPoints Int       @default(0) @map("final_points")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  evaluator User   @relation("FinalCommentEvaluator", fields: [evaluatorId], references: [id])
+  evaluatee User   @relation("FinalCommentEvaluatee", fields: [evaluateeId], references: [id])
+  class     Class? @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([evaluatorId, evaluateeId])
+  @@map("final_comments")
+}
+
+model PhaseDueDate {
+  id        Int      @id @default(autoincrement())
+  classId   Int      @map("class_id")
+  phase     Int
+  dueDate   String   @map("due_date")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, phase])
+  @@map("phase_due_dates")
+}
+
+model StudentExtension {
+  id              Int      @id @default(autoincrement())
+  classId         Int      @map("class_id")
+  userId          Int      @map("user_id")
+  phase           Int
+  extendedDueDate String   @map("extended_due_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([classId, userId, phase])
+  @@map("student_extensions")
+}
+
+// ==========================================
+// NEW TABLES - Flexible Evaluation System
+// ==========================================
+
+// Templates for reusable rubrics
+model EvalTemplate {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  targetType  String    @map("target_type") // 'individual' or 'group'
+  isSystem    Int       @default(0) @map("is_system")
+  createdById Int?      @map("created_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  createdBy User?                   @relation(fields: [createdById], references: [id])
+  criteria  EvalTemplateCriterion[]
+
+  @@map("eval_templates")
+}
+
+model EvalTemplateCriterion {
+  id          Int     @id @default(autoincrement())
+  templateId  Int     @map("template_id")
+  name        String
+  description String?
+  orderIndex  Int     @default(0) @map("order_index")
+  minValue    Int     @default(1) @map("min_value")
+  maxValue    Int     @default(5) @map("max_value")
+
+  template EvalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@map("eval_template_criteria")
+}
+
+// Custom criteria for phase-based classes
+model ClassEvalCriterion {
+  id          Int     @id @default(autoincrement())
+  classId     Int     @map("class_id")
+  name        String
+  description String?
+  orderIndex  Int     @default(0) @map("order_index")
+  minValue    Int     @default(1) @map("min_value")
+  maxValue    Int     @default(5) @map("max_value")
+
+  class  Class                      @relation(fields: [classId], references: [id], onDelete: Cascade)
+  scores EvaluationCriterionScore[]
+
+  @@map("class_eval_criteria")
+}
+
+model EvaluationCriterionScore {
+  id           Int @id @default(autoincrement())
+  evaluationId Int @map("evaluation_id")
+  criterionId  Int @map("criterion_id")
+  score        Int
+
+  evaluation Evaluation         @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  criterion  ClassEvalCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([evaluationId, criterionId])
+  @@map("evaluation_criterion_scores")
+}
+
+// Assignment mode tables
+model Assignment {
+  id          Int      @id @default(autoincrement())
+  classId     Int      @map("class_id")
+  name        String
+  description String?
+  orderIndex  Int      @default(0) @map("order_index")
+  dueDate     String?  @map("due_date")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  class     Class                @relation(fields: [classId], references: [id], onDelete: Cascade)
+  evalTypes AssignmentEvalType[]
+
+  @@map("assignments")
+}
+
+model AssignmentEvalType {
+  id              Int     @id @default(autoincrement())
+  assignmentId    Int     @map("assignment_id")
+  evalType        String  @map("eval_type") // 'peer', 'audience', 'self', 'paper_review'
+  name            String
+  targetType      String  @map("target_type") // 'individual' or 'group'
+  weight          Float   @default(1.0)
+  includeSelf     Int     @default(0) @map("include_self")
+  isRequired      Int     @default(1) @map("is_required")
+  minCompletion   Int?    @map("min_completion")
+  requireComments Int     @default(0) @map("require_comments")
+  minCommentWords Int?    @map("min_comment_words")
+  allowLate       Int     @default(1) @map("allow_late")
+  dueDate         String? @map("due_date")
+
+  assignment       Assignment               @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  criteria         EvalTypeCriterion[]
+  evaluations      AssignmentEvaluation[]
+  groupEvaluations GroupEvaluation[]
+  extensions       AssignmentExtension[]
+
+  @@unique([assignmentId, evalType])
+  @@map("assignment_eval_types")
+}
+
+model EvalTypeCriterion {
+  id          Int     @id @default(autoincrement())
+  evalTypeId  Int     @map("eval_type_id")
+  name        String
+  description String?
+  orderIndex  Int     @default(0) @map("order_index")
+  minValue    Int     @default(1) @map("min_value")
+  maxValue    Int     @default(5) @map("max_value")
+
+  evalType    AssignmentEvalType          @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  scores      AssignmentEvaluationScore[]
+  groupScores GroupEvaluationScore[]
+
+  @@map("eval_type_criteria")
+}
+
+model AssignmentEvaluation {
+  id          Int       @id @default(autoincrement())
+  evaluatorId Int       @map("evaluator_id")
+  evaluateeId Int       @map("evaluatee_id")
+  evalTypeId  Int       @map("eval_type_id")
+  comments    String?
+  submittedAt DateTime? @map("submitted_at")
+  isLate      Int       @default(0) @map("is_late")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  evaluator User                        @relation("AssignmentEvaluator", fields: [evaluatorId], references: [id])
+  evaluatee User                        @relation("AssignmentEvaluatee", fields: [evaluateeId], references: [id])
+  evalType  AssignmentEvalType          @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  scores    AssignmentEvaluationScore[]
+
+  @@unique([evaluatorId, evaluateeId, evalTypeId])
+  @@map("assignment_evaluations")
+}
+
+model AssignmentEvaluationScore {
+  id           Int @id @default(autoincrement())
+  evaluationId Int @map("evaluation_id")
+  criterionId  Int @map("criterion_id")
+  score        Int
+
+  evaluation AssignmentEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  criterion  EvalTypeCriterion    @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([evaluationId, criterionId])
+  @@map("assignment_evaluation_scores")
+}
+
+model GroupEvaluation {
+  id          Int       @id @default(autoincrement())
+  evaluatorId Int       @map("evaluator_id")
+  groupId     Int       @map("group_id")
+  evalTypeId  Int       @map("eval_type_id")
+  comments    String?
+  submittedAt DateTime? @map("submitted_at")
+  isLate      Int       @default(0) @map("is_late")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @default(now()) @map("updated_at")
+
+  evaluator User                   @relation(fields: [evaluatorId], references: [id])
+  group     Group                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  evalType  AssignmentEvalType     @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  scores    GroupEvaluationScore[]
+
+  @@unique([evaluatorId, groupId, evalTypeId])
+  @@map("group_evaluations")
+}
+
+model GroupEvaluationScore {
+  id                Int @id @default(autoincrement())
+  groupEvaluationId Int @map("group_evaluation_id")
+  criterionId       Int @map("criterion_id")
+  score             Int
+
+  groupEvaluation GroupEvaluation   @relation(fields: [groupEvaluationId], references: [id], onDelete: Cascade)
+  criterion       EvalTypeCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([groupEvaluationId, criterionId])
+  @@map("group_evaluation_scores")
+}
+
+model AssignmentExtension {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  evalTypeId      Int      @map("eval_type_id")
+  extendedDueDate String   @map("extended_due_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  evalType AssignmentEvalType @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, evalTypeId])
+  @@map("assignment_extensions")
+}

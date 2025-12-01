@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { parse } = require('csv-parse');
 const bcrypt = require('bcryptjs');
-const { db } = require('../database');
+const prisma = require('../lib/prisma');
 const { authenticateToken } = require('../middleware/auth');
 
 const router = express.Router();
@@ -16,513 +16,602 @@ const requireTeacherOrAdmin = (req, res, next) => {
   next();
 };
 
+// Helper to format class response for backwards compatibility
+const formatClassResponse = (c) => ({
+  id: c.id,
+  name: c.name,
+  section: c.section,
+  semester: c.semester,
+  teacher_id: c.teacherId,
+  num_phases: c.numPhases,
+  has_final_evaluation: c.hasFinalEvaluation,
+  due_date: c.dueDate,
+  due_date_timezone: c.dueDateTimezone,
+  archived: c.archived,
+  min_comment_words: c.minCommentWords,
+  evaluation_mode: c.evaluationMode,
+  allow_late: c.allowLate,
+  late_window_hours: c.lateWindowHours,
+  include_self_eval: c.includeSelfEval,
+  peer_template_id: c.peerTemplateId,
+  audience_template_id: c.audienceTemplateId,
+  self_template_id: c.selfTemplateId,
+  paper_review_template_id: c.paperReviewTemplateId,
+  created_at: c.createdAt,
+  teacher_name: c.teacher ? `${c.teacher.firstName} ${c.teacher.lastName}`.trim() : undefined,
+  teacher_email: c.teacher?.email,
+  student_count: c._count?.enrollments,
+  group_count: c._count?.groups,
+  instructors: c.instructors?.map(i => ({
+    id: i.user.id,
+    first_name: i.user.firstName,
+    last_name: i.user.lastName,
+    email: i.user.email
+  })),
+  phase_due_dates: c.phaseDueDates?.reduce((acc, pd) => {
+    acc[pd.phase] = pd.dueDate;
+    return acc;
+  }, {})
+});
+
 // Get all classes (admin sees all, teacher sees their own)
-// Pass ?include_archived=true to include archived classes
-router.get('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const includeArchived = req.query.include_archived === 'true';
-  let query, params;
+router.get('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const includeArchived = req.query.include_archived === 'true';
 
-  if (req.user.role === 'admin') {
-    query = `
-      SELECT c.*, (u.first_name || ' ' || u.last_name) as teacher_name, u.email as teacher_email,
-        (SELECT COUNT(*) FROM class_enrollments WHERE class_id = c.id) as student_count,
-        (SELECT COUNT(*) FROM groups WHERE class_id = c.id) as group_count
-      FROM classes c
-      JOIN users u ON c.teacher_id = u.id
-      ${includeArchived ? '' : 'WHERE (c.archived IS NULL OR c.archived = 0)'}
-      ORDER BY c.archived ASC, c.created_at DESC
-    `;
-    params = [];
-  } else {
-    query = `
-      SELECT c.*, (u.first_name || ' ' || u.last_name) as teacher_name, u.email as teacher_email,
-        (SELECT COUNT(*) FROM class_enrollments WHERE class_id = c.id) as student_count,
-        (SELECT COUNT(*) FROM groups WHERE class_id = c.id) as group_count
-      FROM classes c
-      JOIN users u ON c.teacher_id = u.id
-      WHERE c.teacher_id = ? ${includeArchived ? '' : 'AND (c.archived IS NULL OR c.archived = 0)'}
-      ORDER BY c.archived ASC, c.created_at DESC
-    `;
-    params = [req.user.id];
-  }
-
-  db.all(query, params, (err, classes) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    const where = {};
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
-    res.json(classes);
-  });
+    if (!includeArchived) {
+      where.archived = 0;
+    }
+
+    const classes = await prisma.class.findMany({
+      where,
+      include: {
+        teacher: {
+          select: { firstName: true, lastName: true, email: true }
+        },
+        _count: {
+          select: { enrollments: true, groups: true }
+        }
+      },
+      orderBy: [
+        { archived: 'asc' },
+        { createdAt: 'desc' }
+      ]
+    });
+
+    res.json(classes.map(formatClassResponse));
+  } catch (err) {
+    console.error('Get classes error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get instructors for a class
-router.get('/:id/instructors', authenticateToken, (req, res) => {
-  const { id } = req.params;
+router.get('/:id/instructors', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  db.all(`
-    SELECT u.id, u.first_name, u.last_name, u.email
-    FROM users u
-    JOIN class_instructors ci ON u.id = ci.user_id
-    WHERE ci.class_id = ?
-    ORDER BY u.last_name, u.first_name
-  `, [id], (err, instructors) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json(instructors);
-  });
+    const instructors = await prisma.classInstructor.findMany({
+      where: { classId: id },
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, email: true }
+        }
+      },
+      orderBy: [
+        { user: { lastName: 'asc' } },
+        { user: { firstName: 'asc' } }
+      ]
+    });
+
+    res.json(instructors.map(i => ({
+      id: i.user.id,
+      first_name: i.user.firstName,
+      last_name: i.user.lastName,
+      email: i.user.email
+    })));
+  } catch (err) {
+    console.error('Get instructors error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get class config (accessible by any authenticated user enrolled in the class)
-router.get('/:id/config', authenticateToken, (req, res) => {
-  const { id } = req.params;
+router.get('/:id/config', authenticateToken, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const isTeacherOrAdmin = req.user.role === 'admin' || req.user.role === 'teacher';
 
-  // Check if user is enrolled in this class or is teacher/admin
-  const checkQuery = (req.user.role === 'admin' || req.user.role === 'teacher')
-    ? 'SELECT min_comment_words FROM classes WHERE id = ?'
-    : `SELECT c.min_comment_words FROM classes c
-       JOIN class_enrollments ce ON c.id = ce.class_id
-       WHERE c.id = ? AND ce.user_id = ?`;
-  const checkParams = (req.user.role === 'admin' || req.user.role === 'teacher')
-    ? [id]
-    : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    let classData;
+    if (isTeacherOrAdmin) {
+      classData = await prisma.class.findUnique({
+        where: { id },
+        select: { minCommentWords: true }
+      });
+    } else {
+      const enrollment = await prisma.classEnrollment.findFirst({
+        where: { classId: id, userId: req.user.id },
+        include: {
+          class: { select: { minCommentWords: true } }
+        }
+      });
+      classData = enrollment?.class;
     }
+
     if (!classData) {
       return res.status(404).json({ error: 'Class not found or not enrolled' });
     }
-    res.json({ min_comment_words: classData.min_comment_words || 0 });
-  });
+
+    res.json({ min_comment_words: classData.minCommentWords || 0 });
+  } catch (err) {
+    console.error('Get class config error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get single class with details
-router.get('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
+router.get('/:id', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  // Check ownership if not admin
-  const checkQuery = req.user.role === 'admin'
-    ? 'SELECT * FROM classes WHERE id = ?'
-    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
-  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    const where = { id };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
+
+    const classData = await prisma.class.findFirst({
+      where,
+      include: {
+        instructors: {
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, email: true } }
+          }
+        },
+        phaseDueDates: true
+      }
+    });
+
     if (!classData) {
       return res.status(404).json({ error: 'Class not found' });
     }
 
-    // Get instructors for this class
-    db.all(`
-      SELECT u.id, u.first_name, u.last_name, u.email
-      FROM users u
-      JOIN class_instructors ci ON u.id = ci.user_id
-      WHERE ci.class_id = ?
-      ORDER BY u.last_name, u.first_name
-    `, [id], (err, instructors) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      classData.instructors = instructors;
-
-      // Get phase due dates for this class
-      db.all(`
-        SELECT phase, due_date
-        FROM phase_due_dates
-        WHERE class_id = ?
-      `, [id], (err, phaseDueDates) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-
-        // Convert to object format { phase: due_date }
-        const phaseDueDatesObj = {};
-        if (phaseDueDates) {
-          phaseDueDates.forEach(pd => {
-            phaseDueDatesObj[pd.phase] = pd.due_date;
-          });
-        }
-        classData.phase_due_dates = phaseDueDatesObj;
-
-        res.json(classData);
-      });
-    });
-  });
+    res.json(formatClassResponse(classData));
+  } catch (err) {
+    console.error('Get class error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Create class
-router.post('/', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates, min_comment_words } = req.body;
-  const teacher_id = req.user.role === 'admin' && req.body.teacher_id
-    ? req.body.teacher_id
-    : req.user.id;
+router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const {
+      name, section, semester, num_phases, has_final_evaluation, due_date_timezone,
+      instructor_ids, phase_due_dates, min_comment_words, evaluation_mode, allow_late,
+      late_window_hours, include_self_eval, peer_template_id, audience_template_id,
+      self_template_id, paper_review_template_id, assignments
+    } = req.body;
+    const teacher_id = req.user.role === 'admin' && req.body.teacher_id
+      ? req.body.teacher_id
+      : req.user.id;
 
-  db.run(
-    'INSERT INTO classes (name, section, semester, teacher_id, num_phases, has_final_evaluation, due_date_timezone, min_comment_words) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [name, section || null, semester || null, teacher_id, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null, min_comment_words || 0],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to create class' });
+    const classData = await prisma.class.create({
+      data: {
+        name,
+        section: section || null,
+        semester: semester || null,
+        teacherId: teacher_id,
+        numPhases: num_phases || 3,
+        hasFinalEvaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+        dueDateTimezone: due_date_timezone || null,
+        minCommentWords: min_comment_words || 0,
+        evaluationMode: evaluation_mode || 'phases',
+        allowLate: allow_late !== undefined ? allow_late : 1,
+        lateWindowHours: late_window_hours || 48,
+        includeSelfEval: include_self_eval || 0,
+        peerTemplateId: peer_template_id || null,
+        audienceTemplateId: audience_template_id || null,
+        selfTemplateId: self_template_id || null,
+        paperReviewTemplateId: paper_review_template_id || null
       }
+    });
 
-      const classId = this.lastID;
+    // Save phase due dates if provided
+    if (phase_due_dates && typeof phase_due_dates === 'object') {
+      const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
+      if (phases.length > 0) {
+        await prisma.phaseDueDate.createMany({
+          data: phases.map(phase => ({
+            classId: classData.id,
+            phase: parseInt(phase),
+            dueDate: phase_due_dates[phase]
+          }))
+        });
+      }
+    }
 
-      // Save phase due dates if provided
-      const savePhaseDueDates = (callback) => {
-        if (!phase_due_dates || typeof phase_due_dates !== 'object') {
-          callback();
-          return;
-        }
-
-        const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
-        if (phases.length === 0) {
-          callback();
-          return;
-        }
-
-        let savedCount = 0;
-        phases.forEach(phase => {
-          const dueDate = phase_due_dates[phase];
-          if (dueDate) {
-            db.run(
-              'INSERT OR REPLACE INTO phase_due_dates (class_id, phase, due_date) VALUES (?, ?, ?)',
-              [classId, parseInt(phase), dueDate],
-              () => {
-                savedCount++;
-                if (savedCount === phases.length) callback();
-              }
-            );
-          } else {
-            savedCount++;
-            if (savedCount === phases.length) callback();
+    // Add instructors
+    const instructorList = instructor_ids && Array.isArray(instructor_ids) ? instructor_ids : [teacher_id];
+    if (instructorList.length > 0) {
+      // Use upsert instead of createMany with skipDuplicates (SQLite doesn't support skipDuplicates)
+      for (const instructorId of instructorList) {
+        await prisma.classInstructor.upsert({
+          where: {
+            classId_userId: {
+              classId: classData.id,
+              userId: instructorId
+            }
+          },
+          update: {},
+          create: {
+            classId: classData.id,
+            userId: instructorId
           }
         });
-      };
-
-      // Add instructors to class_instructors table
-      const instructorList = instructor_ids && Array.isArray(instructor_ids) ? instructor_ids : (teacher_id ? [teacher_id] : []);
-
-      const sendResponse = () => {
-        res.json({
-          id: classId,
-          name,
-          section,
-          semester,
-          teacher_id,
-          num_phases: num_phases || 3,
-          has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
-          due_date_timezone: due_date_timezone || null,
-          phase_due_dates: phase_due_dates || {}
-        });
-      };
-
-      savePhaseDueDates(() => {
-        if (instructorList.length > 0) {
-          let insertedInstructors = 0;
-          instructorList.forEach(instructorId => {
-            db.run(
-              'INSERT OR IGNORE INTO class_instructors (class_id, user_id) VALUES (?, ?)',
-              [classId, instructorId],
-              () => {
-                insertedInstructors++;
-                if (insertedInstructors === instructorList.length) {
-                  sendResponse();
-                }
-              }
-            );
-          });
-        } else {
-          sendResponse();
-        }
-      });
+      }
     }
-  );
+
+    // Create assignments if provided (for assignment-mode classes)
+    if (assignments && Array.isArray(assignments) && assignments.length > 0) {
+      // Fetch templates to get criteria
+      const templateIds = [peer_template_id, audience_template_id, self_template_id, paper_review_template_id].filter(Boolean);
+      let templateMap = {};
+
+      if (templateIds.length > 0) {
+        const templates = await prisma.evalTemplate.findMany({
+          where: { id: { in: templateIds } },
+          include: { criteria: { orderBy: { orderIndex: 'asc' } } }
+        });
+        templateMap = templates.reduce((acc, t) => { acc[t.id] = t; return acc; }, {});
+      }
+
+      // Also get default system templates if no custom ones specified
+      const defaultTemplates = await prisma.evalTemplate.findMany({
+        where: { isSystem: 1 },
+        include: { criteria: { orderBy: { orderIndex: 'asc' } } }
+      });
+      // Find default system templates by target type (first system template of each type)
+      const defaultPeerTemplate = defaultTemplates.find(t => t.targetType === 'individual');
+      const defaultAudienceTemplate = defaultTemplates.find(t => t.targetType === 'group');
+
+      for (let i = 0; i < assignments.length; i++) {
+        const assignment = assignments[i];
+        // Create the assignment
+        const createdAssignment = await prisma.assignment.create({
+          data: {
+            classId: classData.id,
+            name: assignment.name,
+            description: assignment.description || null,
+            dueDate: assignment.due_date || null,
+            orderIndex: assignment.order_index !== undefined ? assignment.order_index : i
+          }
+        });
+
+        // Create eval types for this assignment
+        if (assignment.eval_types && Array.isArray(assignment.eval_types)) {
+          for (let j = 0; j < assignment.eval_types.length; j++) {
+            const evalType = assignment.eval_types[j];
+            // eval_types from wizard is just an array of strings like ['peer', 'audience']
+            const evalTypeStr = typeof evalType === 'string' ? evalType : evalType.eval_type;
+
+            // Determine which template to use for criteria
+            let template = null;
+            if (evalTypeStr === 'audience') {
+              template = templateMap[audience_template_id] || defaultAudienceTemplate;
+            } else if (evalTypeStr === 'self') {
+              template = templateMap[self_template_id] || templateMap[peer_template_id] || defaultPeerTemplate;
+            } else if (evalTypeStr === 'paper_review') {
+              template = templateMap[paper_review_template_id] || templateMap[peer_template_id] || defaultPeerTemplate;
+            } else {
+              // peer
+              template = templateMap[peer_template_id] || defaultPeerTemplate;
+            }
+
+            const createdEvalType = await prisma.assignmentEvalType.create({
+              data: {
+                assignmentId: createdAssignment.id,
+                name: evalTypeStr === 'peer' ? 'Peer Evaluation' :
+                      evalTypeStr === 'audience' ? 'Audience Evaluation' :
+                      evalTypeStr === 'self' ? 'Self Evaluation' :
+                      evalTypeStr === 'paper_review' ? 'Paper Review' : evalTypeStr,
+                evalType: evalTypeStr,
+                targetType: evalTypeStr === 'audience' ? 'group' : 'individual',
+                includeSelf: evalTypeStr === 'self' ? 1 : 0
+              }
+            });
+
+            // Copy criteria from template
+            if (template && template.criteria && template.criteria.length > 0) {
+              for (let k = 0; k < template.criteria.length; k++) {
+                const c = template.criteria[k];
+                await prisma.assignmentEvalTypeCriteria.create({
+                  data: {
+                    evalTypeId: createdEvalType.id,
+                    name: c.name,
+                    description: c.description || null,
+                    minValue: c.minValue || 1,
+                    maxValue: c.maxValue || 5,
+                    orderIndex: c.orderIndex || k
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    res.json({
+      id: classData.id,
+      name,
+      section,
+      semester,
+      teacher_id,
+      num_phases: num_phases || 3,
+      has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+      due_date_timezone: due_date_timezone || null,
+      phase_due_dates: phase_due_dates || {}
+    });
+  } catch (err) {
+    console.error('Create class error:', err);
+    res.status(500).json({ error: 'Failed to create class' });
+  }
 });
 
 // Update class
-router.put('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
-  const { name, section, semester, num_phases, has_final_evaluation, due_date_timezone, instructor_ids, phase_due_dates, min_comment_words } = req.body;
+router.put('/:id', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const {
+      name, section, semester, num_phases, has_final_evaluation, due_date_timezone,
+      instructor_ids, phase_due_dates, min_comment_words, evaluation_mode, allow_late,
+      late_window_hours, include_self_eval, peer_template_id, audience_template_id,
+      self_template_id, paper_review_template_id
+    } = req.body;
 
-  // Check ownership if not admin
-  const checkQuery = req.user.role === 'admin'
-    ? 'SELECT * FROM classes WHERE id = ?'
-    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
-  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    // Check ownership if not admin
+    const where = { id };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
-    if (!classData) {
+
+    const existingClass = await prisma.class.findFirst({ where });
+    if (!existingClass) {
       return res.status(404).json({ error: 'Class not found or access denied' });
     }
 
-    db.run(
-      'UPDATE classes SET name = ?, section = ?, semester = ?, num_phases = ?, has_final_evaluation = ?, due_date_timezone = ?, min_comment_words = ? WHERE id = ?',
-      [name, section || null, semester || null, num_phases || 3, has_final_evaluation !== undefined ? has_final_evaluation : 1, due_date_timezone || null, min_comment_words || 0, id],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to update class' });
-        }
+    await prisma.class.update({
+      where: { id },
+      data: {
+        name,
+        section: section || null,
+        semester: semester || null,
+        numPhases: num_phases || 3,
+        hasFinalEvaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+        dueDateTimezone: due_date_timezone || null,
+        minCommentWords: min_comment_words || 0,
+        evaluationMode: evaluation_mode || 'phases',
+        allowLate: allow_late !== undefined ? allow_late : 1,
+        lateWindowHours: late_window_hours || 48,
+        includeSelfEval: include_self_eval || 0,
+        peerTemplateId: peer_template_id || null,
+        audienceTemplateId: audience_template_id || null,
+        selfTemplateId: self_template_id || null,
+        paperReviewTemplateId: paper_review_template_id || null
+      }
+    });
 
-        // Update phase due dates
-        const updatePhaseDueDates = (callback) => {
-          if (!phase_due_dates || typeof phase_due_dates !== 'object') {
-            callback();
-            return;
-          }
+    // Update phase due dates
+    if (phase_due_dates && typeof phase_due_dates === 'object') {
+      await prisma.phaseDueDate.deleteMany({ where: { classId: id } });
 
-          // Delete existing phase due dates for this class
-          db.run('DELETE FROM phase_due_dates WHERE class_id = ?', [id], (err) => {
-            if (err) {
-              callback();
-              return;
-            }
-
-            const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
-            if (phases.length === 0) {
-              callback();
-              return;
-            }
-
-            let savedCount = 0;
-            phases.forEach(phase => {
-              const dueDate = phase_due_dates[phase];
-              if (dueDate) {
-                db.run(
-                  'INSERT INTO phase_due_dates (class_id, phase, due_date) VALUES (?, ?, ?)',
-                  [id, parseInt(phase), dueDate],
-                  () => {
-                    savedCount++;
-                    if (savedCount === phases.length) callback();
-                  }
-                );
-              } else {
-                savedCount++;
-                if (savedCount === phases.length) callback();
-              }
-            });
-          });
-        };
-
-        const sendResponse = () => {
-          res.json({
-            id: parseInt(id),
-            name,
-            section,
-            semester,
-            num_phases: num_phases || 3,
-            has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
-            due_date_timezone: due_date_timezone || null,
-            phase_due_dates: phase_due_dates || {}
-          });
-        };
-
-        updatePhaseDueDates(() => {
-          // Update instructors if provided
-          if (instructor_ids && Array.isArray(instructor_ids)) {
-            // Delete existing instructors
-            db.run('DELETE FROM class_instructors WHERE class_id = ?', [id], (err) => {
-              if (err) {
-                return res.status(500).json({ error: 'Failed to update instructors' });
-              }
-
-              // Add new instructors
-              if (instructor_ids.length > 0) {
-                let insertedInstructors = 0;
-                instructor_ids.forEach(instructorId => {
-                  db.run(
-                    'INSERT INTO class_instructors (class_id, user_id) VALUES (?, ?)',
-                    [id, instructorId],
-                    () => {
-                      insertedInstructors++;
-                      if (insertedInstructors === instructor_ids.length) {
-                        sendResponse();
-                      }
-                    }
-                  );
-                });
-              } else {
-                sendResponse();
-              }
-            });
-          } else {
-            sendResponse();
-          }
+      const phases = Object.keys(phase_due_dates).filter(p => phase_due_dates[p]);
+      if (phases.length > 0) {
+        await prisma.phaseDueDate.createMany({
+          data: phases.map(phase => ({
+            classId: id,
+            phase: parseInt(phase),
+            dueDate: phase_due_dates[phase]
+          }))
         });
       }
-    );
-  });
+    }
+
+    // Update instructors if provided
+    if (instructor_ids && Array.isArray(instructor_ids)) {
+      await prisma.classInstructor.deleteMany({ where: { classId: id } });
+
+      if (instructor_ids.length > 0) {
+        await prisma.classInstructor.createMany({
+          data: instructor_ids.map(instructorId => ({
+            classId: id,
+            userId: instructorId
+          }))
+        });
+      }
+    }
+
+    res.json({
+      id,
+      name,
+      section,
+      semester,
+      num_phases: num_phases || 3,
+      has_final_evaluation: has_final_evaluation !== undefined ? has_final_evaluation : 1,
+      due_date_timezone: due_date_timezone || null,
+      phase_due_dates: phase_due_dates || {}
+    });
+  } catch (err) {
+    console.error('Update class error:', err);
+    res.status(500).json({ error: 'Failed to update class' });
+  }
 });
 
 // Delete class
-router.delete('/:id', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
+router.delete('/:id', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  // Check ownership if not admin
-  const checkQuery = req.user.role === 'admin'
-    ? 'SELECT * FROM classes WHERE id = ?'
-    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
-  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    const where = { id };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
-    if (!classData) {
+
+    const existingClass = await prisma.class.findFirst({ where });
+    if (!existingClass) {
       return res.status(404).json({ error: 'Class not found' });
     }
 
-    // Delete class and related data
-    db.serialize(() => {
-      db.run('DELETE FROM class_enrollments WHERE class_id = ?', [id]);
-      db.run('DELETE FROM group_members WHERE group_id IN (SELECT id FROM groups WHERE class_id = ?)', [id]);
-      db.run('DELETE FROM groups WHERE class_id = ?', [id]);
-      db.run('DELETE FROM classes WHERE id = ?', [id], function(err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to delete class' });
-        }
-        res.json({ message: 'Class deleted' });
-      });
-    });
-  });
+    // Delete in transaction (cascades handle most of it)
+    await prisma.$transaction([
+      prisma.groupMember.deleteMany({
+        where: { group: { classId: id } }
+      }),
+      prisma.class.delete({ where: { id } })
+    ]);
+
+    res.json({ message: 'Class deleted' });
+  } catch (err) {
+    console.error('Delete class error:', err);
+    res.status(500).json({ error: 'Failed to delete class' });
+  }
 });
 
 // Archive/unarchive a class
-router.put('/:id/archive', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
-  const { archived } = req.body;
+router.put('/:id/archive', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { archived } = req.body;
 
-  // Check ownership if not admin
-  const checkQuery = req.user.role === 'admin'
-    ? 'SELECT * FROM classes WHERE id = ?'
-    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
-  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    const where = { id };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
-    if (!classData) {
+
+    const existingClass = await prisma.class.findFirst({ where });
+    if (!existingClass) {
       return res.status(404).json({ error: 'Class not found' });
     }
 
-    db.run('UPDATE classes SET archived = ? WHERE id = ?', [archived ? 1 : 0, id], function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to update class' });
-      }
-      res.json({ message: archived ? 'Class archived' : 'Class restored', archived: archived ? 1 : 0 });
+    await prisma.class.update({
+      where: { id },
+      data: { archived: archived ? 1 : 0 }
     });
-  });
+
+    res.json({ message: archived ? 'Class archived' : 'Class restored', archived: archived ? 1 : 0 });
+  } catch (err) {
+    console.error('Archive class error:', err);
+    res.status(500).json({ error: 'Failed to update class' });
+  }
 });
 
 // Get students in a class
-router.get('/:id/students', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
+router.get('/:id/students', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  db.all(`
-    SELECT u.id, u.email, u.first_name, u.last_name, u.role, ce.created_at as enrolled_at
-    FROM users u
-    JOIN class_enrollments ce ON u.id = ce.user_id
-    WHERE ce.class_id = ?
-    ORDER BY u.last_name, u.first_name
-  `, [id], (err, students) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json(students);
-  });
+    const enrollments = await prisma.classEnrollment.findMany({
+      where: { classId: id },
+      include: {
+        user: {
+          select: { id: true, email: true, firstName: true, lastName: true, role: true }
+        }
+      },
+      orderBy: [
+        { user: { lastName: 'asc' } },
+        { user: { firstName: 'asc' } }
+      ]
+    });
+
+    res.json(enrollments.map(e => ({
+      id: e.user.id,
+      email: e.user.email,
+      first_name: e.user.firstName,
+      last_name: e.user.lastName,
+      role: e.user.role,
+      enrolled_at: e.createdAt
+    })));
+  } catch (err) {
+    console.error('Get students error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Add student to class
-router.post('/:id/students', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
-  const { user_id } = req.body;
+router.post('/:id/students', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { user_id } = req.body;
 
-  db.run(
-    'INSERT OR IGNORE INTO class_enrollments (class_id, user_id) VALUES (?, ?)',
-    [id, user_id],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to add student' });
-      }
-      res.json({ message: 'Student added to class' });
-    }
-  );
+    await prisma.classEnrollment.upsert({
+      where: {
+        classId_userId: { classId: id, userId: user_id }
+      },
+      update: {},
+      create: { classId: id, userId: user_id }
+    });
+
+    res.json({ message: 'Student added to class' });
+  } catch (err) {
+    console.error('Add student error:', err);
+    res.status(500).json({ error: 'Failed to add student' });
+  }
 });
 
 // Remove student from class
-router.delete('/:id/students/:userId', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id, userId } = req.params;
+router.delete('/:id/students/:userId', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const userId = parseInt(req.params.userId);
 
-  db.run(
-    'DELETE FROM class_enrollments WHERE class_id = ? AND user_id = ?',
-    [id, userId],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to remove student' });
-      }
-      res.json({ message: 'Student removed from class' });
-    }
-  );
+    await prisma.classEnrollment.deleteMany({
+      where: { classId: id, userId }
+    });
+
+    res.json({ message: 'Student removed from class' });
+  } catch (err) {
+    console.error('Remove student error:', err);
+    res.status(500).json({ error: 'Failed to remove student' });
+  }
 });
 
 // Upload students via CSV to a class
-router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, upload.single('file'), (req, res) => {
-  const { id } = req.params;
+router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, upload.single('file'), async (req, res) => {
+  const classId = parseInt(req.params.id);
 
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
-  // Check ownership if teacher
-  const checkQuery = req.user.role === 'admin'
-    ? 'SELECT * FROM classes WHERE id = ?'
-    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
-  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+  try {
+    // Check ownership if teacher
+    const where = { id: classId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
+
+    const classData = await prisma.class.findFirst({ where });
     if (!classData) {
       return res.status(404).json({ error: 'Class not found or not authorized' });
     }
 
-  const results = [];
-  const errors = [];
-  const credentials = [];
+    const results = [];
+    const errors = [];
+    const credentials = [];
 
-  // Preprocess CSV to strip # markers from start and end of lines
-  let csvContent = req.file.buffer.toString('utf8');
-  csvContent = csvContent.split('\n').map(line => {
-    line = line.trim();
-    if (line.startsWith('#')) line = line.substring(1);
-    if (line.endsWith('#')) line = line.slice(0, -1);
-    return line;
-  }).join('\n');
+    // Preprocess CSV
+    let csvContent = req.file.buffer.toString('utf8');
+    csvContent = csvContent.split('\n').map(line => {
+      line = line.trim();
+      if (line.startsWith('#')) line = line.substring(1);
+      if (line.endsWith('#')) line = line.slice(0, -1);
+      return line;
+    }).join('\n');
 
-  parse(csvContent, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true
-  }, (err, records) => {
-    if (err) {
-      return res.status(400).json({ error: 'Failed to parse CSV: ' + err.message });
-    }
-
-    let processed = 0;
-    const total = records.length;
-
-    if (total === 0) {
-      return res.json({ created: 0, enrolled: 0, errors: [], credentials: [] });
-    }
-
-    // Helper to get field value with flexible column names
     const getField = (record, ...names) => {
       for (const name of names) {
         if (record[name] !== undefined) return record[name];
@@ -534,7 +623,18 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       return undefined;
     };
 
-    // Pre-process: collect all unique group names and create them first
+    const records = await new Promise((resolve, reject) => {
+      parse(csvContent, { columns: true, skip_empty_lines: true, trim: true }, (err, records) => {
+        if (err) reject(err);
+        else resolve(records);
+      });
+    });
+
+    if (records.length === 0) {
+      return res.json({ created: 0, enrolled: 0, errors: [], credentials: [] });
+    }
+
+    // Collect unique group names
     const uniqueGroupNames = new Set();
     records.forEach(record => {
       const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
@@ -543,121 +643,39 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       }
     });
 
-    // Map to store group name -> group id
+    // Create groups map
     const groupMap = new Map();
-
-    // Function to ensure all groups exist before processing students
-    const ensureGroupsExist = (callback) => {
-      const groupNames = Array.from(uniqueGroupNames);
-      if (groupNames.length === 0) {
-        callback();
-        return;
-      }
-
-      let groupsProcessed = 0;
-      groupNames.forEach(groupName => {
-        // Check if group exists in this class
-        db.get('SELECT id FROM groups WHERE name = ? AND class_id = ?', [groupName, id], (err, existingGroup) => {
-          if (existingGroup) {
-            groupMap.set(groupName, existingGroup.id);
-            groupsProcessed++;
-            if (groupsProcessed === groupNames.length) callback();
-          } else {
-            // Create group
-            db.run('INSERT INTO groups (name, class_id) VALUES (?, ?)', [groupName, id], function(err) {
-              if (!err && this.lastID) {
-                groupMap.set(groupName, this.lastID);
-              }
-              groupsProcessed++;
-              if (groupsProcessed === groupNames.length) callback();
-            });
-          }
-        });
+    for (const groupName of uniqueGroupNames) {
+      let group = await prisma.group.findFirst({
+        where: { name: groupName, classId }
       });
-    };
+      if (!group) {
+        group = await prisma.group.create({
+          data: { name: groupName, classId }
+        });
+      }
+      groupMap.set(groupName, group.id);
+    }
 
-    // First ensure all groups exist, then process students
-    ensureGroupsExist(() => {
-      records.forEach((record) => {
-        // Support flexible column names
-        const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
-        const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
-        const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
-        const email = getField(record, 'email', 'Email', 'e-mail', 'EMAIL');
-        const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
+    // Process students
+    for (const record of records) {
+      const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
+      const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
+      const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
+      const email = getField(record, 'email', 'Email', 'e-mail', 'EMAIL');
+      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
 
       if (!email || !first_name || !last_name) {
         errors.push({ email: email || 'unknown', error: 'Missing required fields (email, first_name, last_name)' });
-        processed++;
-        if (processed === total) {
-          res.json({ created: results.length, enrolled: results.length, errors, credentials });
-        }
-        return;
+        continue;
       }
 
-      // Check if user exists
-      db.get('SELECT id FROM users WHERE email = ?', [email], (err, existingUser) => {
-        if (err) {
-          errors.push({ email, error: 'Database error' });
-          processed++;
-          if (processed === total) {
-            res.json({ created: results.length, enrolled: results.length, errors, credentials });
-          }
-          return;
-        }
+      try {
+        let user = await prisma.user.findUnique({ where: { email } });
+        let isNew = false;
 
-        // Helper function to add user to group (uses pre-created groupMap)
-        // First removes user from any existing groups in this class, then adds to new group
-        const addToGroup = (userId, groupName, callback) => {
-          if (!groupName || !groupName.trim()) {
-            callback();
-            return;
-          }
-
-          const groupId = groupMap.get(groupName.trim());
-          if (groupId) {
-            // Remove from any existing groups in this class first
-            db.run(`
-              DELETE FROM group_members
-              WHERE user_id = ?
-              AND group_id IN (SELECT id FROM groups WHERE class_id = ?)
-            `, [userId, id], (err) => {
-              // Then add to the new group
-              db.run('INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)', [groupId, userId], callback);
-            });
-          } else {
-            callback();
-          }
-        };
-
-        if (existingUser) {
-          // User exists, just enroll them
-          db.run(
-            'INSERT OR IGNORE INTO class_enrollments (class_id, user_id) VALUES (?, ?)',
-            [id, existingUser.id],
-            function(err) {
-              if (err) {
-                errors.push({ email, error: 'Failed to enroll existing user' });
-                processed++;
-                if (processed === total) {
-                  res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-                }
-                return;
-              }
-
-              results.push({ id: existingUser.id, email, first_name, last_name, existing: true });
-
-              // Add to group if specified
-              addToGroup(existingUser.id, group_name, () => {
-                processed++;
-                if (processed === total) {
-                  res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-                }
-              });
-            }
-          );
-        } else {
-          // Create new user and enroll
+        if (!user) {
+          // Create new user
           let generatedPassword;
           if (university_id) {
             generatedPassword = university_id;
@@ -667,329 +685,309 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           }
           const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
 
-          db.run(
-            'INSERT INTO users (email, password, first_name, last_name, university_id, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?, 1)',
-            [email, hashedPassword, first_name, last_name, university_id || null, 'student'],
-            function(err) {
-              if (err) {
-                errors.push({ email, error: err.message.includes('UNIQUE') ? 'Email already exists' : err.message });
-                processed++;
-                if (processed === total) {
-                  res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-                }
-                return;
-              }
-
-              const userId = this.lastID;
-
-              // Enroll in class
-              db.run(
-                'INSERT INTO class_enrollments (class_id, user_id) VALUES (?, ?)',
-                [id, userId],
-                function(err) {
-                  if (err) {
-                    errors.push({ email, error: 'Created user but failed to enroll' });
-                    processed++;
-                    if (processed === total) {
-                      res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-                    }
-                    return;
-                  }
-
-                  results.push({ id: userId, email, first_name, last_name, existing: false });
-                  credentials.push({ email, password: generatedPassword });
-
-                  // Add to group if specified
-                  addToGroup(userId, group_name, () => {
-                    processed++;
-                    if (processed === total) {
-                      res.json({ created: results.filter(r => !r.existing).length, enrolled: results.length, errors, credentials });
-                    }
-                  });
-                }
-              );
+          user = await prisma.user.create({
+            data: {
+              email,
+              password: hashedPassword,
+              firstName: first_name,
+              lastName: last_name,
+              universityId: university_id || null,
+              role: 'student',
+              mustChangePassword: 1
             }
-          );
+          });
+          isNew = true;
+          credentials.push({ email, password: generatedPassword });
         }
-      });
+
+        // Enroll in class
+        await prisma.classEnrollment.upsert({
+          where: { classId_userId: { classId, userId: user.id } },
+          update: {},
+          create: { classId, userId: user.id }
+        });
+
+        results.push({ id: user.id, email, first_name, last_name, existing: !isNew });
+
+        // Add to group if specified
+        if (group_name && group_name.trim()) {
+          const groupId = groupMap.get(group_name.trim());
+          if (groupId) {
+            // Remove from any existing groups in this class first
+            await prisma.groupMember.deleteMany({
+              where: {
+                userId: user.id,
+                group: { classId }
+              }
+            });
+
+            // Add to new group
+            await prisma.groupMember.upsert({
+              where: { groupId_userId: { groupId, userId: user.id } },
+              update: {},
+              create: { groupId, userId: user.id }
+            });
+          }
+        }
+      } catch (err) {
+        if (err.code === 'P2002') {
+          errors.push({ email, error: 'Email already exists' });
+        } else {
+          errors.push({ email, error: err.message });
+        }
+      }
+    }
+
+    res.json({
+      created: results.filter(r => !r.existing).length,
+      enrolled: results.length,
+      errors,
+      credentials
     });
-  });
-  });
-  });
+  } catch (err) {
+    console.error('CSV upload error:', err);
+    res.status(400).json({ error: 'Failed to parse CSV: ' + err.message });
+  }
 });
 
 // Get groups in a class with members
-router.get('/:id/groups', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
+router.get('/:id/groups', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  db.all(`
-    SELECT g.*,
-      (SELECT COUNT(*) FROM group_members WHERE group_id = g.id) as member_count
-    FROM groups g
-    WHERE g.class_id = ?
-    ORDER BY g.name
-  `, [id], (err, groups) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-
-    if (groups.length === 0) {
-      return res.json([]);
-    }
-
-    // Fetch members for each group
-    let processed = 0;
-    const results = [];
-
-    groups.forEach(group => {
-      db.all(`
-        SELECT u.id, u.email, u.first_name, u.last_name, u.role
-        FROM users u
-        JOIN group_members gm ON u.id = gm.user_id
-        WHERE gm.group_id = ?
-        ORDER BY u.last_name, u.first_name
-      `, [group.id], (err, members) => {
-        results.push({ ...group, members: members || [] });
-        processed++;
-        if (processed === groups.length) {
-          res.json(results.sort((a, b) => a.name.localeCompare(b.name)));
-        }
-      });
+    const groups = await prisma.group.findMany({
+      where: { classId: id },
+      include: {
+        members: {
+          include: {
+            user: {
+              select: { id: true, email: true, firstName: true, lastName: true, role: true }
+            }
+          },
+          orderBy: [
+            { user: { lastName: 'asc' } },
+            { user: { firstName: 'asc' } }
+          ]
+        },
+        _count: { select: { members: true } }
+      },
+      orderBy: { name: 'asc' }
     });
-  });
+
+    res.json(groups.map(g => ({
+      id: g.id,
+      name: g.name,
+      class_id: g.classId,
+      created_at: g.createdAt,
+      member_count: g._count.members,
+      members: g.members.map(m => ({
+        id: m.user.id,
+        email: m.user.email,
+        first_name: m.user.firstName,
+        last_name: m.user.lastName,
+        role: m.user.role
+      }))
+    })));
+  } catch (err) {
+    console.error('Get groups error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get classes for a student (or teacher/admin viewing student dashboard)
-router.get('/my/enrolled', authenticateToken, (req, res) => {
-  // For teachers/admins, include classes they teach
-  const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
+router.get('/my/enrolled', authenticateToken, async (req, res) => {
+  try {
+    const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
 
-  let query;
-  let params;
-
-  if (isTeacherOrAdmin) {
-    // Get classes they teach (and any they're enrolled in)
-    query = `
-      SELECT DISTINCT c.*, (u.first_name || ' ' || u.last_name) as teacher_name
-      FROM classes c
-      JOIN users u ON c.teacher_id = u.id
-      WHERE c.teacher_id = ? OR c.id IN (
-        SELECT class_id FROM class_enrollments WHERE user_id = ?
-      )
-      ORDER BY c.created_at DESC
-    `;
-    params = [req.user.id, req.user.id];
-  } else {
-    // Students only see enrolled classes
-    query = `
-      SELECT c.*, (u.first_name || ' ' || u.last_name) as teacher_name
-      FROM classes c
-      JOIN class_enrollments ce ON c.id = ce.class_id
-      JOIN users u ON c.teacher_id = u.id
-      WHERE ce.user_id = ?
-      ORDER BY c.created_at DESC
-    `;
-    params = [req.user.id];
-  }
-
-  db.all(query, params, (err, classes) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-
-    // If no classes, return empty array
-    if (!classes || classes.length === 0) {
-      return res.json([]);
-    }
-
-    // Fetch instructors and phase due dates for each class
-    let completedClasses = 0;
-    classes.forEach((classItem, index) => {
-      // Get instructors
-      db.all(`
-        SELECT u.id, u.first_name, u.last_name, u.email
-        FROM users u
-        JOIN class_instructors ci ON u.id = ci.user_id
-        WHERE ci.class_id = ?
-        ORDER BY u.last_name, u.first_name
-      `, [classItem.id], (err, instructors) => {
-        if (!err) {
-          classes[index].instructors = instructors || [];
-        } else {
-          classes[index].instructors = [];
-        }
-
-        // Get phase due dates
-        db.all(`
-          SELECT phase, due_date
-          FROM phase_due_dates
-          WHERE class_id = ?
-        `, [classItem.id], (err, phaseDueDates) => {
-          const phaseDueDatesObj = {};
-          if (!err && phaseDueDates) {
-            phaseDueDates.forEach(pd => {
-              phaseDueDatesObj[pd.phase] = pd.due_date;
-            });
-          }
-          classes[index].phase_due_dates = phaseDueDatesObj;
-
-          completedClasses++;
-          if (completedClasses === classes.length) {
-            res.json(classes);
-          }
-        });
+    let classes;
+    if (isTeacherOrAdmin) {
+      classes = await prisma.class.findMany({
+        where: {
+          OR: [
+            { teacherId: req.user.id },
+            { enrollments: { some: { userId: req.user.id } } }
+          ]
+        },
+        include: {
+          teacher: { select: { firstName: true, lastName: true } },
+          instructors: {
+            include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } }
+          },
+          phaseDueDates: true
+        },
+        orderBy: { createdAt: 'desc' }
       });
-    });
-  });
+    } else {
+      classes = await prisma.class.findMany({
+        where: {
+          enrollments: { some: { userId: req.user.id } }
+        },
+        include: {
+          teacher: { select: { firstName: true, lastName: true } },
+          instructors: {
+            include: { user: { select: { id: true, firstName: true, lastName: true, email: true } } }
+          },
+          phaseDueDates: true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+    }
+
+    res.json(classes.map(formatClassResponse));
+  } catch (err) {
+    console.error('Get enrolled classes error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Reset student password (teacher can reset for students in their class)
-router.post('/:id/students/:userId/reset-password', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id, userId } = req.params;
-  const { password } = req.body;
+router.post('/:id/students/:userId/reset-password', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+    const userId = parseInt(req.params.userId);
+    const { password } = req.body;
 
-  // Check if teacher owns the class (or admin)
-  const checkQuery = req.user.role === 'admin'
-    ? 'SELECT * FROM classes WHERE id = ?'
-    : 'SELECT * FROM classes WHERE id = ? AND teacher_id = ?';
-  const checkParams = req.user.role === 'admin' ? [id] : [id, req.user.id];
-
-  db.get(checkQuery, checkParams, (err, classData) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
+    // Check ownership
+    const where = { id: classId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
     }
+
+    const classData = await prisma.class.findFirst({ where });
     if (!classData) {
       return res.status(404).json({ error: 'Class not found or not authorized' });
     }
 
-    // Check if student is enrolled in this class
-    db.get('SELECT * FROM class_enrollments WHERE class_id = ? AND user_id = ?', [id, userId], (err, enrollment) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!enrollment) {
-        return res.status(404).json({ error: 'Student not enrolled in this class' });
-      }
-
-      const hashedPassword = bcrypt.hashSync(password, 10);
-      db.run('UPDATE users SET password = ?, must_change_password = 1 WHERE id = ?', [hashedPassword, userId], function(err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to reset password' });
-        }
-        res.json({ message: 'Password reset successfully. Student must change password on next login.' });
-      });
+    // Check if student is enrolled
+    const enrollment = await prisma.classEnrollment.findUnique({
+      where: { classId_userId: { classId, userId } }
     });
-  });
+    if (!enrollment) {
+      return res.status(404).json({ error: 'Student not enrolled in this class' });
+    }
+
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword, mustChangePassword: 1 }
+    });
+
+    res.json({ message: 'Password reset successfully. Student must change password on next login.' });
+  } catch (err) {
+    console.error('Reset student password error:', err);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
 });
 
 // Get all extensions for a class
-router.get('/:id/extensions', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
+router.get('/:id/extensions', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
 
-  db.all(`
-    SELECT se.*, u.first_name, u.last_name, u.email
-    FROM student_extensions se
-    JOIN users u ON se.user_id = u.id
-    WHERE se.class_id = ?
-    ORDER BY u.last_name, u.first_name, se.phase
-  `, [id], (err, extensions) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    res.json(extensions || []);
-  });
+    const extensions = await prisma.studentExtension.findMany({
+      where: { classId: id },
+      include: {
+        user: { select: { firstName: true, lastName: true, email: true } }
+      },
+      orderBy: [
+        { user: { lastName: 'asc' } },
+        { user: { firstName: 'asc' } },
+        { phase: 'asc' }
+      ]
+    });
+
+    res.json(extensions.map(e => ({
+      id: e.id,
+      class_id: e.classId,
+      user_id: e.userId,
+      phase: e.phase,
+      extended_due_date: e.extendedDueDate,
+      created_at: e.createdAt,
+      first_name: e.user.firstName,
+      last_name: e.user.lastName,
+      email: e.user.email
+    })));
+  } catch (err) {
+    console.error('Get extensions error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Create or update an extension
-router.post('/:id/extensions', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
-  const { user_id, phase, extended_due_date } = req.body;
+router.post('/:id/extensions', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+    const { user_id, phase, extended_due_date } = req.body;
 
-  if (!user_id || phase === undefined || !extended_due_date) {
-    return res.status(400).json({ error: 'Missing required fields: user_id, phase, extended_due_date' });
-  }
-
-  // Use INSERT OR REPLACE for SQLite, ON CONFLICT for PostgreSQL
-  db.run(`
-    INSERT INTO student_extensions (class_id, user_id, phase, extended_due_date)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(class_id, user_id, phase) DO UPDATE SET extended_due_date = ?
-  `, [id, user_id, phase, extended_due_date, extended_due_date], function(err) {
-    if (err) {
-      // Fallback for SQLite
-      db.run(`
-        INSERT OR REPLACE INTO student_extensions (class_id, user_id, phase, extended_due_date)
-        VALUES (?, ?, ?, ?)
-      `, [id, user_id, phase, extended_due_date], function(err2) {
-        if (err2) {
-          return res.status(500).json({ error: 'Failed to save extension' });
-        }
-        res.json({ message: 'Extension saved', id: this.lastID });
-      });
-      return;
+    if (!user_id || phase === undefined || !extended_due_date) {
+      return res.status(400).json({ error: 'Missing required fields: user_id, phase, extended_due_date' });
     }
-    res.json({ message: 'Extension saved', id: this.lastID });
-  });
+
+    const extension = await prisma.studentExtension.upsert({
+      where: {
+        classId_userId_phase: { classId, userId: user_id, phase }
+      },
+      update: { extendedDueDate: extended_due_date },
+      create: { classId, userId: user_id, phase, extendedDueDate: extended_due_date }
+    });
+
+    res.json({ message: 'Extension saved', id: extension.id });
+  } catch (err) {
+    console.error('Create extension error:', err);
+    res.status(500).json({ error: 'Failed to save extension' });
+  }
 });
 
 // Delete an extension
-router.delete('/:id/extensions/:userId/:phase', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id, userId, phase } = req.params;
+router.delete('/:id/extensions/:userId/:phase', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+    const userId = parseInt(req.params.userId);
+    const phase = parseInt(req.params.phase);
 
-  db.run(
-    'DELETE FROM student_extensions WHERE class_id = ? AND user_id = ? AND phase = ?',
-    [id, userId, phase],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: 'Failed to delete extension' });
-      }
-      res.json({ message: 'Extension deleted' });
-    }
-  );
+    await prisma.studentExtension.deleteMany({
+      where: { classId, userId, phase }
+    });
+
+    res.json({ message: 'Extension deleted' });
+  } catch (err) {
+    console.error('Delete extension error:', err);
+    res.status(500).json({ error: 'Failed to delete extension' });
+  }
 });
 
-// Bulk update extensions (for efficient saving from modal)
-router.put('/:id/extensions', authenticateToken, requireTeacherOrAdmin, (req, res) => {
-  const { id } = req.params;
-  const { extensions } = req.body; // Array of { user_id, phase, extended_due_date }
+// Bulk update extensions
+router.put('/:id/extensions', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+    const { extensions } = req.body;
 
-  if (!Array.isArray(extensions)) {
-    return res.status(400).json({ error: 'extensions must be an array' });
-  }
-
-  // First, delete all existing extensions for this class
-  db.run('DELETE FROM student_extensions WHERE class_id = ?', [id], (err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Failed to clear existing extensions' });
+    if (!Array.isArray(extensions)) {
+      return res.status(400).json({ error: 'extensions must be an array' });
     }
 
-    // Filter out entries with no due date
+    // Delete all existing extensions for this class
+    await prisma.studentExtension.deleteMany({ where: { classId } });
+
+    // Filter and create valid extensions
     const validExtensions = extensions.filter(e => e.extended_due_date);
 
-    if (validExtensions.length === 0) {
-      return res.json({ message: 'Extensions updated', count: 0 });
+    if (validExtensions.length > 0) {
+      await prisma.studentExtension.createMany({
+        data: validExtensions.map(ext => ({
+          classId,
+          userId: ext.user_id,
+          phase: ext.phase,
+          extendedDueDate: ext.extended_due_date
+        }))
+      });
     }
 
-    let savedCount = 0;
-    let hasError = false;
-
-    validExtensions.forEach(ext => {
-      db.run(
-        'INSERT INTO student_extensions (class_id, user_id, phase, extended_due_date) VALUES (?, ?, ?, ?)',
-        [id, ext.user_id, ext.phase, ext.extended_due_date],
-        (err) => {
-          if (err && !hasError) {
-            hasError = true;
-            return res.status(500).json({ error: 'Failed to save some extensions' });
-          }
-          savedCount++;
-          if (savedCount === validExtensions.length && !hasError) {
-            res.json({ message: 'Extensions updated', count: savedCount });
-          }
-        }
-      );
-    });
-  });
+    res.json({ message: 'Extensions updated', count: validExtensions.length });
+  } catch (err) {
+    console.error('Bulk update extensions error:', err);
+    res.status(500).json({ error: 'Failed to save some extensions' });
+  }
 });
 
 module.exports = router;

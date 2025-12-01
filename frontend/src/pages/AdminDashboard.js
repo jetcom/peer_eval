@@ -5,7 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import CreateClassModal from '../components/admin/CreateClassModal';
-import EditClassModal from '../components/admin/EditClassModal';
+import ClassWizard from '../components/admin/ClassWizard';
+import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 import ManageMembersModal from '../components/admin/ManageMembersModal';
 import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import UsersTab from '../components/admin/UsersTab';
@@ -13,6 +14,10 @@ import GroupsTab from '../components/admin/GroupsTab';
 import EvaluationsTab from '../components/admin/EvaluationsTab';
 import ReportsTab from '../components/admin/ReportsTab';
 import ProgressTab from '../components/admin/ProgressTab';
+import TemplatesTab from '../components/admin/TemplatesTab';
+import QuickStats from '../components/admin/QuickStats';
+import ClassSelector from '../components/admin/ClassSelector';
+import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
 
 function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -42,9 +47,11 @@ function AdminDashboard() {
   const [classGroups, setClassGroups] = useState([]);
   const [classStudents, setClassStudents] = useState([]);
   const [showCreateClassModal, setShowCreateClassModal] = useState(false);
+  const [showClassWizard, setShowClassWizard] = useState(false);
   const [showManageMembersModal, setShowManageMembersModal] = useState(false);
   const [showEditClassModal, setShowEditClassModal] = useState(false);
   const [editingClass, setEditingClass] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
   const [showArchivedClasses, setShowArchivedClasses] = useState(false);
@@ -52,6 +59,7 @@ function AdminDashboard() {
   const [finalCommentsData, setFinalCommentsData] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userSearchResults, setUserSearchResults] = useState([]);
+  const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
 
   useEffect(() => {
@@ -79,6 +87,7 @@ function AdminDashboard() {
       if (!selectedClass) {
         setClassGroups([]);
         setClassStudents([]);
+        setAssignmentEvaluations(null);
         return;
       }
       try {
@@ -88,12 +97,26 @@ function AdminDashboard() {
         ]);
         setClassGroups(groupsRes.data);
         setClassStudents(studentsRes.data);
+
+        // Check if this is an assignment-based class and fetch assignment evaluations
+        const currentClass = classes.find(c => c.id.toString() === selectedClass);
+        if (currentClass?.evaluation_mode === 'assignments') {
+          try {
+            const assignmentEvalsRes = await axios.get(`/api/assignments/evaluations/admin/${selectedClass}`);
+            setAssignmentEvaluations(assignmentEvalsRes.data);
+          } catch (err) {
+            console.error('Failed to fetch assignment evaluations:', err);
+            setAssignmentEvaluations(null);
+          }
+        } else {
+          setAssignmentEvaluations(null);
+        }
       } catch (err) {
         console.error('Failed to fetch class data:', err);
       }
     };
     fetchClassData();
-  }, [selectedClass]);
+  }, [selectedClass, classes]);
 
   const fetchData = async () => {
     try {
@@ -129,9 +152,26 @@ function AdminDashboard() {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('/api/users', newUser);
+      const response = await axios.post('/api/users', newUser);
+      const createdUser = response.data;
+
+      // If a class is selected and the user is a student, also enroll them in the class
+      if (selectedClass && newUser.role === 'student') {
+        try {
+          await axios.post(`/api/classes/${selectedClass}/students`, { user_id: createdUser.id });
+          // Refresh class students
+          const studentsRes = await axios.get(`/api/classes/${selectedClass}/students`);
+          setClassStudents(studentsRes.data);
+          setMessage({ type: 'success', text: `User created and added to class` });
+        } catch (enrollErr) {
+          // User created but enrollment failed
+          setMessage({ type: 'success', text: 'User created (but failed to add to class)' });
+        }
+      } else {
+        setMessage({ type: 'success', text: 'User created successfully' });
+      }
+
       setNewUser({ email: '', password: '', first_name: '', last_name: '', role: 'student' });
-      setMessage({ type: 'success', text: 'User created successfully' });
       fetchData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to create user' });
@@ -339,6 +379,37 @@ function AdminDashboard() {
     }
   };
 
+  const handleCreateClassFromWizard = async (wizardData) => {
+    // Transform wizard data to API format
+    const classData = {
+      name: wizardData.name,
+      section: wizardData.section || null,
+      semester: wizardData.semester || null,
+      evaluation_mode: wizardData.evaluation_mode || 'phases',
+      num_phases: wizardData.evaluation_mode === 'phases' ? (wizardData.num_phases || 3) : 0,
+      has_final_evaluation: wizardData.evaluation_mode === 'phases' ? (wizardData.has_final_evaluation ? 1 : 0) : 0,
+      due_date_timezone: wizardData.due_date_timezone || null,
+      instructor_ids: wizardData.instructor_ids && wizardData.instructor_ids.length > 0 ? wizardData.instructor_ids : null,
+      phase_due_dates: wizardData.phase_due_dates || {},
+      min_comment_words: wizardData.min_comment_words || 0,
+      allow_late: wizardData.allow_late ? 1 : 0,
+      late_window_hours: wizardData.allow_late ? (wizardData.late_window_hours || 48) : 0,
+      include_self_eval: wizardData.include_self_eval ? 1 : 0,
+      peer_template_id: wizardData.peer_template_id || null,
+      audience_template_id: wizardData.audience_template_id || null,
+      self_template_id: wizardData.self_template_id || null,
+      paper_review_template_id: wizardData.paper_review_template_id || null,
+      assignments: wizardData.assignments || []
+    };
+
+    const res = await axios.post('/api/classes', classData);
+    setMessage({ type: 'success', text: 'Class created successfully' });
+    setShowClassWizard(false);
+    fetchData();
+    // Select the newly created class
+    setSelectedClass(res.data.id.toString());
+  };
+
   const handleEditClass = async (e) => {
     e.preventDefault();
     try {
@@ -346,12 +417,20 @@ function AdminDashboard() {
         name: editingClass.name,
         section: editingClass.section || null,
         semester: editingClass.semester || null,
+        evaluation_mode: editingClass.evaluation_mode || 'phases',
         num_phases: editingClass.num_phases || 3,
         has_final_evaluation: editingClass.has_final_evaluation ? 1 : 0,
         due_date_timezone: editingClass.due_date_timezone || null,
         instructor_ids: editingClass.instructor_ids || [],
         phase_due_dates: editingClass.phase_due_dates || {},
-        min_comment_words: editingClass.min_comment_words || 0
+        min_comment_words: editingClass.min_comment_words || 0,
+        allow_late: editingClass.allow_late ? 1 : 0,
+        late_window_hours: editingClass.allow_late ? (editingClass.late_window_hours || 48) : 0,
+        include_self_eval: editingClass.include_self_eval ? 1 : 0,
+        peer_template_id: editingClass.peer_template_id || null,
+        audience_template_id: editingClass.audience_template_id || null,
+        self_template_id: editingClass.self_template_id || null,
+        paper_review_template_id: editingClass.paper_review_template_id || null
       };
       await axios.put(`/api/classes/${editingClass.id}`, classData);
       setMessage({ type: 'success', text: 'Class updated successfully' });
@@ -375,11 +454,25 @@ function AdminDashboard() {
       // Filter enrolled users to only teachers/admins
       const enrolledTeachers = studentsRes.data.filter(u => u.role === 'teacher' || u.role === 'admin');
 
+      // Fetch assignments if this is an assignment-based class
+      let assignments = [];
+      if (classRes.data.evaluation_mode === 'assignments') {
+        try {
+          const assignmentsRes = await axios.get(`/api/assignments/class/${classItem.id}`);
+          assignments = assignmentsRes.data;
+        } catch (err) {
+          console.error('Failed to fetch assignments:', err);
+        }
+      }
+
       setEditingClass({
         ...classRes.data,
         has_final_evaluation: classRes.data.has_final_evaluation === 1 || classRes.data.has_final_evaluation === true,
+        allow_late: classRes.data.allow_late === 1 || classRes.data.allow_late === true,
+        include_self_eval: classRes.data.include_self_eval === 1 || classRes.data.include_self_eval === true,
         instructor_ids: instructorsRes.data.map(i => i.id),
-        enrolledTeachers: enrolledTeachers
+        enrolledTeachers: enrolledTeachers,
+        assignments: assignments
       });
       setShowEditClassModal(true);
     } catch (err) {
@@ -470,182 +563,6 @@ function AdminDashboard() {
       <div className="header">
         <h1>Admin Dashboard</h1>
         <div className="header-right">
-          <div style={{ position: 'relative', marginRight: '10px' }}>
-            <button
-              onClick={() => setShowClassDropdown(!showClassDropdown)}
-              style={{
-                padding: '8px 12px',
-                borderRadius: '4px',
-                border: '1px solid #ccc',
-                background: darkMode ? '#2a3a5a' : '#fff',
-                color: darkMode ? '#e0e0e0' : '#333',
-                minWidth: '300px',
-                textAlign: 'left',
-                cursor: 'pointer',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}
-            >
-              <span>
-                {selectedClass
-                  ? (() => {
-                      const cls = classes.find(c => c.id.toString() === selectedClass);
-                      return cls ? `${cls.name}${cls.section ? ` (${cls.section})` : ''}${cls.semester ? ` - ${cls.semester}` : ''}` : '';
-                    })()
-                  : '-- Select Class --'}
-              </span>
-              <span>▼</span>
-            </button>
-            {showClassDropdown && (
-              <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                background: darkMode ? '#2a3a5a' : '#fff',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
-                zIndex: 1001,
-                maxHeight: '300px',
-                overflowY: 'auto'
-              }}>
-                {classes.map(c => (
-                  <div
-                    key={c.id}
-                    style={{
-                      padding: '8px 12px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      background: selectedClass === c.id.toString() ? (darkMode ? '#3a4a6a' : '#e3f2fd') : 'transparent',
-                      color: darkMode ? '#e0e0e0' : '#000'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = darkMode ? '#3a4a6a' : '#f5f5f5'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = selectedClass === c.id.toString() ? (darkMode ? '#3a4a6a' : '#e3f2fd') : 'transparent'}
-                  >
-                    <span
-                      onClick={() => {
-                        setSelectedClass(c.id.toString());
-                        setShowClassDropdown(false);
-                      }}
-                      style={{
-                        flex: 1,
-                        color: darkMode ? '#e0e0e0' : '#000'
-                      }}
-                    >
-                      {c.name} {c.section ? `(${c.section})` : ''} {c.semester ? `- ${c.semester}` : ''}
-                    </span>
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openEditClassModal(c);
-                        setShowClassDropdown(false);
-                      }}
-                      style={{
-                        cursor: 'pointer',
-                        padding: '2px 6px',
-                        borderRadius: '3px',
-                        fontSize: '0.9rem'
-                      }}
-                      title="Edit class settings"
-                    >
-                      ⚙️
-                    </span>
-                  </div>
-                ))}
-                <div
-                  onClick={() => {
-                    setShowCreateClassModal(true);
-                    setShowClassDropdown(false);
-                  }}
-                  style={{
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderTop: '1px solid #ccc',
-                    color: '#3498db',
-                    fontWeight: '500'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = darkMode ? '#3a4a6a' : '#f5f5f5'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  + Create New Class
-                </div>
-                <div
-                  onClick={() => {
-                    if (!showArchivedClasses) {
-                      fetchArchivedClasses();
-                    }
-                    setShowArchivedClasses(!showArchivedClasses);
-                  }}
-                  style={{
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    borderTop: '1px solid #ccc',
-                    color: darkMode ? '#839496' : '#666',
-                    fontSize: '0.9rem'
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.background = darkMode ? '#3a4a6a' : '#f5f5f5'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                >
-                  {showArchivedClasses ? '▼' : '▶'} Archived Classes ({archivedClasses.length})
-                </div>
-                {showArchivedClasses && archivedClasses.length > 0 && (
-                  <div style={{
-                    background: darkMode ? '#1a2a4a' : '#f9f9f9',
-                    borderTop: '1px solid #ccc'
-                  }}>
-                    {archivedClasses.map(c => (
-                      <div
-                        key={c.id}
-                        style={{
-                          padding: '6px 12px 6px 24px',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          color: darkMode ? '#93a1a1' : '#666',
-                          fontSize: '0.9rem'
-                        }}
-                      >
-                        <span style={{ opacity: 0.8 }}>
-                          {c.name} {c.section ? `(${c.section})` : ''} {c.semester ? `- ${c.semester}` : ''}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRestoreClass(c.id);
-                          }}
-                          style={{
-                            background: 'none',
-                            border: `1px solid ${darkMode ? '#586e75' : '#ccc'}`,
-                            color: darkMode ? '#93a1a1' : '#666',
-                            padding: '2px 8px',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                            fontSize: '0.8rem'
-                          }}
-                        >
-                          Restore
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {showArchivedClasses && archivedClasses.length === 0 && (
-                  <div style={{
-                    padding: '8px 12px 8px 24px',
-                    color: darkMode ? '#839496' : '#999',
-                    fontSize: '0.85rem',
-                    fontStyle: 'italic'
-                  }}>
-                    No archived classes
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
           <span>Welcome, {user?.first_name || user?.name}</span>
           <button className="theme-toggle" onClick={toggleDarkMode}>
             {darkMode ? 'Light' : 'Dark'}
@@ -674,8 +591,17 @@ function AdminDashboard() {
         />
       )}
 
+      {showClassWizard && (
+        <ClassWizard
+          darkMode={darkMode}
+          currentUser={user}
+          onSubmit={handleCreateClassFromWizard}
+          onClose={() => setShowClassWizard(false)}
+        />
+      )}
+
       {showEditClassModal && (
-        <EditClassModal
+        <ClassSettingsPanel
           darkMode={darkMode}
           editingClass={editingClass}
           setEditingClass={setEditingClass}
@@ -721,37 +647,78 @@ function AdminDashboard() {
           <div className={`message ${message.type}`}>{message.text}</div>
         )}
 
-        <div className="tabs">
+        {/* Class Selector */}
+        <ClassSelector
+          darkMode={darkMode}
+          classes={classes}
+          selectedClass={selectedClass}
+          setSelectedClass={setSelectedClass}
+          archivedClasses={archivedClasses}
+          showArchivedClasses={showArchivedClasses}
+          setShowArchivedClasses={setShowArchivedClasses}
+          onFetchArchivedClasses={fetchArchivedClasses}
+          onRestoreClass={handleRestoreClass}
+          onEditClass={openEditClassModal}
+          onCreateClass={() => setShowClassWizard(true)}
+        />
+
+        {/* Quick Stats Overview */}
+        <QuickStats
+          selectedClass={selectedClass}
+          classes={classes}
+          classStudents={classStudents}
+          classGroups={classGroups}
+          evaluations={evaluations}
+          finalCommentsData={finalCommentsData}
+          assignmentEvaluations={assignmentEvaluations}
+          onNavigate={setActiveTab}
+        />
+
+        <div className="admin-tabs">
           <button
-            className={`tab ${activeTab === 'progress' ? 'active' : ''}`}
+            className={`admin-tab ${activeTab === 'progress' ? 'active' : ''}`}
             onClick={() => setActiveTab('progress')}
           >
             Progress
           </button>
           <button
-            className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
+            className={`admin-tab ${activeTab === 'reports' ? 'active' : ''}`}
             onClick={() => setActiveTab('reports')}
           >
             Reports
           </button>
           <button
-            className={`tab ${activeTab === 'evaluations' ? 'active' : ''}`}
+            className={`admin-tab ${activeTab === 'evaluations' ? 'active' : ''}`}
             onClick={() => setActiveTab('evaluations')}
           >
             Evaluations
           </button>
           <button
-            className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
+            className={`admin-tab ${activeTab === 'groups' ? 'active' : ''}`}
             onClick={() => setActiveTab('groups')}
           >
             Groups
           </button>
           <button
-            className={`tab ${activeTab === 'users' ? 'active' : ''}`}
+            className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`}
             onClick={() => setActiveTab('users')}
           >
             Users
           </button>
+          <button
+            className={`admin-tab ${activeTab === 'templates' ? 'active' : ''}`}
+            onClick={() => setActiveTab('templates')}
+          >
+            Templates
+          </button>
+          {user?.role === 'admin' && (
+            <button
+              className={`admin-tab ${activeTab === 'instructors' ? 'active' : ''}`}
+              onClick={() => setActiveTab('instructors')}
+            >
+              Instructors
+            </button>
+          )}
         </div>
 
         {activeTab === 'users' && (
@@ -799,7 +766,9 @@ function AdminDashboard() {
             selectedClass={selectedClass}
             classes={classes}
             classStudents={classStudents}
+            classGroups={classGroups}
             evaluations={evaluations}
+            assignmentEvaluations={assignmentEvaluations}
             onManageExtensions={() => setShowExtensionsModal(true)}
           />
         )}
@@ -813,11 +782,13 @@ function AdminDashboard() {
             classGroups={classGroups}
             evaluations={evaluations}
             finalCommentsData={finalCommentsData}
+            assignmentEvaluations={assignmentEvaluations}
           />
         )}
 
         {activeTab === 'reports' && (
           <ReportsTab
+            darkMode={darkMode}
             selectedClass={selectedClass}
             classes={classes}
             classStudents={classStudents}
@@ -826,6 +797,20 @@ function AdminDashboard() {
             finalCommentsData={finalCommentsData}
             reportGroup={reportGroup}
             setReportGroup={setReportGroup}
+            assignmentEvaluations={assignmentEvaluations}
+          />
+        )}
+
+        {activeTab === 'templates' && (
+          <TemplatesTab
+            darkMode={darkMode}
+          />
+        )}
+
+        {activeTab === 'instructors' && user?.role === 'admin' && (
+          <PendingInstructorsTab
+            darkMode={darkMode}
+            onRefreshUsers={fetchData}
           />
         )}
       </div>

@@ -1,6 +1,29 @@
 import React from 'react';
 
+// Helper to escape CSV values
+function escapeCSV(value) {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+// Helper to trigger CSV download
+function downloadCSV(filename, csvContent) {
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(link.href);
+}
+
 function ReportsTab({
+  darkMode,
   selectedClass,
   classes,
   classStudents,
@@ -8,7 +31,8 @@ function ReportsTab({
   evaluations,
   finalCommentsData,
   reportGroup,
-  setReportGroup
+  setReportGroup,
+  assignmentEvaluations
 }) {
   if (!selectedClass) {
     return (
@@ -19,8 +43,366 @@ function ReportsTab({
     );
   }
 
+  // Get class config
+  const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+  const isAssignmentMode = selectedClassData?.evaluation_mode === 'assignments';
+
   // Filter out teachers and admins - only show students in reports
   const studentsOnly = classStudents.filter(s => s.role === 'student');
+
+  // Get students in selected group
+  const getStudentsInGroup = () => {
+    if (reportGroup === 'all') return studentsOnly;
+    const groupId = parseInt(reportGroup);
+    const selectedGroupData = classGroups.find(g => g.id === groupId);
+    if (!selectedGroupData || !selectedGroupData.members) return [];
+    return selectedGroupData.members.filter(m => m.role === 'student');
+  };
+
+  // Find which group a student belongs to
+  const getStudentGroup = (studentId) => {
+    return classGroups.find(g => g.members?.some(m => m.id === studentId));
+  };
+
+  // Assignment-based class reports view
+  if (isAssignmentMode) {
+    const assignments = assignmentEvaluations?.assignments || [];
+    const individualEvals = assignmentEvaluations?.individual_evaluations || [];
+    const groupEvals = assignmentEvaluations?.group_evaluations || [];
+    const students = getStudentsInGroup();
+
+    // Build student summaries for assignment mode
+    const studentSummaries = students.map(student => {
+      const studentGroup = getStudentGroup(student.id);
+
+      // Get evaluations received by this student (individual)
+      const receivedEvals = individualEvals.filter(e => e.evaluatee_id === student.id);
+
+      // Get evaluations submitted by this student
+      const submittedIndividual = individualEvals.filter(e => e.evaluator_id === student.id);
+      const submittedGroup = groupEvals.filter(e => e.evaluator_id === student.id);
+
+      // Calculate scores per assignment
+      const assignmentScores = {};
+      assignments.forEach(assignment => {
+        const assignmentEvals = receivedEvals.filter(e => e.assignment_id === assignment.id);
+        if (assignmentEvals.length > 0) {
+          const avgScore = assignmentEvals.reduce((sum, e) => sum + (e.avg_score || 0), 0) / assignmentEvals.length;
+          assignmentScores[assignment.id] = {
+            avgScore,
+            count: assignmentEvals.length,
+            comments: assignmentEvals.filter(e => e.comments).map(e => ({
+              from: e.evaluator_name,
+              text: e.comments
+            }))
+          };
+        }
+      });
+
+      // Overall average
+      const allReceivedScores = receivedEvals.filter(e => e.avg_score != null);
+      const overallAvg = allReceivedScores.length > 0
+        ? allReceivedScores.reduce((sum, e) => sum + e.avg_score, 0) / allReceivedScores.length
+        : null;
+
+      return {
+        ...student,
+        group: studentGroup,
+        assignmentScores,
+        overallAvg,
+        submittedCount: submittedIndividual.length + submittedGroup.length
+      };
+    });
+
+    // Export scores to CSV
+    const exportAssignmentScoresCSV = () => {
+      const className = selectedClassData?.name || 'class';
+      const headers = ['Last Name', 'First Name', 'Email', 'Group'];
+      assignments.forEach(a => headers.push(a.name));
+      headers.push('Overall Avg');
+
+      const rows = studentSummaries.map(student => {
+        const row = [student.last_name, student.first_name, student.email, student.group?.name || ''];
+        assignments.forEach(a => {
+          const score = student.assignmentScores[a.id]?.avgScore;
+          row.push(score != null ? score.toFixed(2) : '');
+        });
+        row.push(student.overallAvg != null ? student.overallAvg.toFixed(2) : '');
+        return row;
+      });
+
+      const csvContent = [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
+      downloadCSV(`${className.replace(/\s+/g, '_')}_assignment_scores.csv`, csvContent);
+    };
+
+    // Export comments to CSV
+    const exportAssignmentCommentsCSV = () => {
+      const className = selectedClassData?.name || 'class';
+      const headers = ['Student Last Name', 'Student First Name', 'Assignment', 'From', 'Comment'];
+      const rows = [];
+
+      studentSummaries.forEach(student => {
+        assignments.forEach(assignment => {
+          const comments = student.assignmentScores[assignment.id]?.comments || [];
+          comments.forEach(comment => {
+            rows.push([
+              student.last_name,
+              student.first_name,
+              assignment.name,
+              comment.from,
+              comment.text
+            ]);
+          });
+        });
+      });
+
+      const csvContent = [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
+      downloadCSV(`${className.replace(/\s+/g, '_')}_assignment_comments.csv`, csvContent);
+    };
+
+    return (
+      <>
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h2 style={{ margin: 0 }}>Export Data (Assignment Mode)</h2>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={exportAssignmentScoresCSV}
+                className="btn btn-primary"
+                style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+              >
+                Export Scores
+              </button>
+              <button
+                onClick={exportAssignmentCommentsCSV}
+                className="btn btn-secondary"
+                style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+              >
+                Export Comments
+              </button>
+            </div>
+          </div>
+          <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>
+            Download CSV files for the currently selected group ({reportGroup === 'all' ? 'All Groups' : classGroups.find(g => g.id.toString() === reportGroup)?.name || 'Selected Group'})
+          </p>
+        </div>
+
+        <div className="card">
+          <h2>Filter by Group</h2>
+          <select
+            value={reportGroup}
+            onChange={(e) => setReportGroup(e.target.value)}
+            style={{ width: '100%', padding: '10px', fontSize: '1rem' }}
+          >
+            <option value="all">All Groups in Class</option>
+            {classGroups.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="card">
+          <h2>Student Scores by Assignment</h2>
+          {students.length === 0 ? (
+            <p>No students found.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '10px' }}>Student</th>
+                    <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>
+                    {assignments.map(a => (
+                      <th key={a.id} style={{ textAlign: 'center', padding: '10px' }}>{a.name}</th>
+                    ))}
+                    <th style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75' }}>Overall</th>
+                    <th style={{ textAlign: 'center', padding: '10px' }}>Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentSummaries.map(student => (
+                    <tr key={student.id}>
+                      <td style={{ padding: '10px' }}><strong>{student.last_name}, {student.first_name}</strong></td>
+                      <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>
+                      {assignments.map(a => {
+                        const score = student.assignmentScores[a.id];
+                        return (
+                          <td key={a.id} style={{ textAlign: 'center', padding: '10px' }}>
+                            {score?.avgScore != null ? (
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '3px',
+                                background: score.avgScore >= 4 ? '#27ae60' : score.avgScore >= 3 ? '#f39c12' : '#e74c3c',
+                                color: 'white',
+                                fontSize: '0.85rem'
+                              }}>
+                                {score.avgScore.toFixed(1)}
+                              </span>
+                            ) : '-'}
+                          </td>
+                        );
+                      })}
+                      <td style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75', fontWeight: 'bold' }}>
+                        {student.overallAvg != null ? student.overallAvg.toFixed(2) : '-'}
+                      </td>
+                      <td style={{ textAlign: 'center', padding: '10px' }}>
+                        {student.submittedCount}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Group Scores Section - for audience/group evaluations */}
+        {groupEvals.length > 0 && (
+          <div className="card">
+            <h2>Group Scores (Audience Evaluations)</h2>
+            <p style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '15px' }}>
+              Scores received by groups from audience evaluations
+            </p>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>
+                    <th style={{ textAlign: 'left', padding: '10px' }}>Assignment</th>
+                    <th style={{ textAlign: 'center', padding: '10px' }}>Avg Score</th>
+                    <th style={{ textAlign: 'center', padding: '10px' }}># Evaluations</th>
+                    <th style={{ textAlign: 'left', padding: '10px' }}>Comments</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    // Group evaluations by group and assignment
+                    const groupSummaries = {};
+                    groupEvals.forEach(e => {
+                      const key = `${e.group_id}-${e.assignment_id}`;
+                      if (!groupSummaries[key]) {
+                        groupSummaries[key] = {
+                          group_id: e.group_id,
+                          group_name: e.group_name,
+                          assignment_id: e.assignment_id,
+                          assignment_name: e.assignment_name,
+                          scores: [],
+                          comments: []
+                        };
+                      }
+                      if (e.avg_score != null) {
+                        groupSummaries[key].scores.push(e.avg_score);
+                      }
+                      if (e.comments) {
+                        groupSummaries[key].comments.push({
+                          from: e.evaluator_name,
+                          text: e.comments
+                        });
+                      }
+                    });
+
+                    return Object.values(groupSummaries).map((summary, idx) => {
+                      const avgScore = summary.scores.length > 0
+                        ? summary.scores.reduce((a, b) => a + b, 0) / summary.scores.length
+                        : null;
+                      return (
+                        <tr key={`${summary.group_id}-${summary.assignment_id}`} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.05)' }}>
+                          <td style={{ padding: '10px', fontWeight: 'bold' }}>{summary.group_name}</td>
+                          <td style={{ padding: '10px' }}>{summary.assignment_name}</td>
+                          <td style={{ textAlign: 'center', padding: '10px' }}>
+                            {avgScore != null ? (
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '3px',
+                                background: avgScore >= 4 ? '#27ae60' : avgScore >= 3 ? '#f39c12' : '#e74c3c',
+                                color: 'white',
+                                fontSize: '0.85rem'
+                              }}>
+                                {avgScore.toFixed(2)}
+                              </span>
+                            ) : '-'}
+                          </td>
+                          <td style={{ textAlign: 'center', padding: '10px' }}>{summary.scores.length}</td>
+                          <td style={{ padding: '10px', fontSize: '0.85rem' }}>
+                            {summary.comments.length > 0 ? (
+                              <details>
+                                <summary style={{ cursor: 'pointer' }}>{summary.comments.length} comment(s)</summary>
+                                <div style={{ marginTop: '8px' }}>
+                                  {summary.comments.map((c, i) => (
+                                    <div key={i} style={{ marginBottom: '6px', paddingLeft: '10px', borderLeft: '2px solid #ddd' }}>
+                                      <span style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>{c.from}:</span> {c.text}
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
+                            ) : '-'}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="card">
+          <h2>All Comments by Assignment</h2>
+          {assignments.map(assignment => {
+            const allComments = studentSummaries.flatMap(student =>
+              (student.assignmentScores[assignment.id]?.comments || []).map(c => ({
+                ...c,
+                studentName: `${student.last_name}, ${student.first_name}`
+              }))
+            );
+
+            if (allComments.length === 0) return null;
+
+            return (
+              <div key={assignment.id} style={{ marginBottom: '30px' }}>
+                <h3 style={{ borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}`, paddingBottom: '10px', marginBottom: '15px' }}>
+                  {assignment.name}
+                </h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
+                  {studentSummaries.map(student => {
+                    const comments = student.assignmentScores[assignment.id]?.comments || [];
+                    if (comments.length === 0) return null;
+                    return (
+                      <div key={student.id} style={{
+                        padding: '15px',
+                        borderRadius: '8px',
+                        background: darkMode ? '#1a1a1a' : '#f8f9fa',
+                        border: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`
+                      }}>
+                        <h4 style={{ marginTop: 0, marginBottom: '10px' }}>
+                          {student.last_name}, {student.first_name}
+                        </h4>
+                        {comments.map((comment, idx) => (
+                          <div key={idx} style={{
+                            marginBottom: idx < comments.length - 1 ? '10px' : 0,
+                            paddingBottom: idx < comments.length - 1 ? '10px' : 0,
+                            borderBottom: idx < comments.length - 1 ? `1px solid ${darkMode ? '#333' : '#ddd'}` : 'none'
+                          }}>
+                            <div style={{ fontSize: '0.8rem', color: darkMode ? '#a0a0a0' : '#666', marginBottom: '4px' }}>
+                              From: {comment.from}
+                            </div>
+                            <div style={{ fontSize: '0.9rem' }}>{comment.text}</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
+  // Phase-based class reports view (existing logic below)
 
   // Filter evaluations and final comments by class
   // Use class_id if available (new data), otherwise check if BOTH evaluator and evaluatee are in this class
@@ -36,21 +418,7 @@ function ReportsTab({
       : (classStudentIds.has(fc.evaluator_id) && classStudentIds.has(fc.evaluatee_id))
   );
 
-  // Get students in selected group (filtered to class, excluding teachers/admins)
-  const getStudentsInGroup = () => {
-    if (reportGroup === 'all') return studentsOnly;
-
-    // Find students in the selected group
-    const groupId = parseInt(reportGroup);
-    const selectedGroupData = classGroups.find(g => g.id === groupId);
-    if (!selectedGroupData || !selectedGroupData.members) return [];
-
-    // Filter out non-students from group members
-    return selectedGroupData.members.filter(m => m.role === 'student');
-  };
-
-  // Get class config for number of phases and min word count
-  const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+  // Phase-based config (uses selectedClassData defined above)
   const numPhases = selectedClassData?.num_phases || 3;
   const minCommentWords = parseInt(selectedClassData?.min_comment_words) || 0;
   const phaseNumbers = Array.from({ length: numPhases }, (_, i) => i + 1);
@@ -157,8 +525,141 @@ function ReportsTab({
     collaboration: '#e74c3c'
   };
 
+  // Export scores to CSV
+  const exportScoresCSV = () => {
+    const className = selectedClassData?.name || 'class';
+    const headers = ['Last Name', 'First Name', 'Email'];
+    phaseNumbers.forEach(p => {
+      headers.push(`P${p} Score`, `P${p} Likert`, `P${p} Contribution`, `P${p} Communication`, `P${p} Reliability`, `P${p} Quality`, `P${p} Collaboration`);
+    });
+    headers.push('Final Points');
+
+    const rows = studentSummaries.map(student => {
+      const row = [student.last_name, student.first_name, student.email];
+      phaseNumbers.forEach(phaseNum => {
+        const phase = student.phases[phaseNum - 1];
+        if (phase) {
+          row.push(
+            phase.avgScore.toFixed(1),
+            phase.avgLikert.toFixed(2),
+            phase.criteria.contribution.toFixed(2),
+            phase.criteria.communication.toFixed(2),
+            phase.criteria.reliability.toFixed(2),
+            phase.criteria.quality_of_work.toFixed(2),
+            phase.criteria.collaboration.toFixed(2)
+          );
+        } else {
+          row.push('', '', '', '', '', '', '');
+        }
+      });
+      row.push(student.totalFinalPoints || 0);
+      return row;
+    });
+
+    const csvContent = [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
+    downloadCSV(`${className.replace(/\s+/g, '_')}_scores.csv`, csvContent);
+  };
+
+  // Export comments to CSV
+  const exportCommentsCSV = () => {
+    const className = selectedClassData?.name || 'class';
+    const headers = ['Student Last Name', 'Student First Name', 'Phase', 'From', 'Score', 'Comment'];
+    const rows = [];
+
+    studentSummaries.forEach(student => {
+      phaseNumbers.forEach(phaseNum => {
+        const phase = student.phases[phaseNum - 1];
+        if (phase && phase.comments) {
+          phase.comments.forEach(comment => {
+            rows.push([
+              student.last_name,
+              student.first_name,
+              `Phase ${phaseNum}`,
+              comment.from,
+              phase.avgScore.toFixed(1),
+              comment.text
+            ]);
+          });
+        }
+      });
+      // Add final comments
+      if (student.finalComments && student.finalComments.length > 0) {
+        student.finalComments.forEach(comment => {
+          rows.push([
+            student.last_name,
+            student.first_name,
+            'Final',
+            comment.from,
+            comment.points,
+            comment.text
+          ]);
+        });
+      }
+    });
+
+    const csvContent = [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
+    downloadCSV(`${className.replace(/\s+/g, '_')}_comments.csv`, csvContent);
+  };
+
+  // Export submission status to CSV
+  const exportSubmissionStatusCSV = () => {
+    const className = selectedClassData?.name || 'class';
+    const headers = ['Last Name', 'First Name', 'Email'];
+    phaseNumbers.forEach(p => headers.push(`P${p} Status`));
+    if (selectedClassData?.has_final_evaluation) {
+      headers.push('Final Status');
+    }
+
+    const rows = studentSummaries.map(student => {
+      const row = [student.last_name, student.first_name, student.email];
+      phaseNumbers.forEach(p => {
+        const status = student.phaseStatus[p];
+        row.push(status === 'complete' ? 'Complete' : status === 'incomplete' ? 'Incomplete' : 'Not Submitted');
+      });
+      if (selectedClassData?.has_final_evaluation) {
+        row.push(student.finalStatus === 'complete' ? 'Complete' : student.finalStatus === 'incomplete' ? 'Incomplete' : 'Not Submitted');
+      }
+      return row;
+    });
+
+    const csvContent = [headers.map(escapeCSV).join(','), ...rows.map(r => r.map(escapeCSV).join(','))].join('\n');
+    downloadCSV(`${className.replace(/\s+/g, '_')}_submission_status.csv`, csvContent);
+  };
+
   return (
     <>
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h2 style={{ margin: 0 }}>Export Data</h2>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <button
+              onClick={exportScoresCSV}
+              className="btn btn-primary"
+              style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+            >
+              Export Scores
+            </button>
+            <button
+              onClick={exportCommentsCSV}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+            >
+              Export Comments
+            </button>
+            <button
+              onClick={exportSubmissionStatusCSV}
+              className="btn btn-secondary"
+              style={{ fontSize: '0.85rem', padding: '8px 12px' }}
+            >
+              Export Status
+            </button>
+          </div>
+        </div>
+        <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>
+          Download CSV files for the currently selected group ({reportGroup === 'all' ? 'All Groups' : classGroups.find(g => g.id.toString() === reportGroup)?.name || 'Selected Group'})
+        </p>
+      </div>
+
       <div className="card">
         <h2>Filter by Group</h2>
         <select
