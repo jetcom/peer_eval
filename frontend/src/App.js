@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -63,6 +64,7 @@ function App() {
         <Router>
           <div className="app">
             <Routes>
+              <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register-instructor" element={<InstructorRegistration />} />
               <Route path="/sso-callback" element={<SSOCallback />} />
@@ -106,7 +108,7 @@ function App() {
                   </PrivateRoute>
                 }
               />
-              <Route path="/" element={<RoleBasedRedirect />} />
+              <Route path="/home" element={<RoleBasedRedirect />} />
             </Routes>
           </div>
         </Router>
