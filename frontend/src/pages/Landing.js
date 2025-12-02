@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 
 function Landing() {
@@ -66,9 +65,9 @@ function Landing() {
             <button className="theme-toggle" onClick={toggleDarkMode}>
               {darkMode ? '☀️ Light' : '🌙 Dark'}
             </button>
-            <Link to="/login" className="landing-btn landing-btn-secondary">
+            <a href="https://peerevals.app/login" className="landing-btn landing-btn-secondary">
               Sign In
-            </Link>
+            </a>
             <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-primary">
               Get Started
             </a>
@@ -336,7 +335,7 @@ function Landing() {
             <span className="landing-logo-text">PeerEval</span>
           </div>
           <div className="landing-footer-links">
-            <Link to="/login">Sign In</Link>
+            <a href="https://peerevals.app/login">Sign In</a>
             <a href="https://peerevals.app/register-instructor">Register</a>
             <a href="mailto:support@peerevals.app">Contact</a>
           </div>

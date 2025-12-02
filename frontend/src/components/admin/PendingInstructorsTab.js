@@ -178,7 +178,7 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
             borderRadius: '4px',
             fontSize: '0.85rem'
           }}>
-            {window.location.origin}/register-instructor
+            https://peerevals.app/register-instructor
           </code>
         </p>
       </div>
