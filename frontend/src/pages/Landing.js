@@ -69,9 +69,9 @@ function Landing() {
             <Link to="/login" className="landing-btn landing-btn-secondary">
               Sign In
             </Link>
-            <Link to="/register-instructor" className="landing-btn landing-btn-primary">
+            <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-primary">
               Get Started
-            </Link>
+            </a>
           </div>
         </div>
       </nav>
@@ -89,9 +89,9 @@ function Landing() {
             in group projects.
           </p>
           <div className="landing-hero-actions">
-            <Link to="/register-instructor" className="landing-btn landing-btn-primary landing-btn-lg">
+            <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-primary landing-btn-lg">
               Get Started Free
-            </Link>
+            </a>
             <a href="#features" className="landing-btn landing-btn-outline landing-btn-lg">
               Learn More
             </a>
@@ -322,9 +322,9 @@ function Landing() {
         <div className="landing-cta-content">
           <h2>Ready to Transform Your Peer Evaluations?</h2>
           <p>Join educators who are making team assessments more meaningful and manageable. It's completely free.</p>
-          <Link to="/register-instructor" className="landing-btn landing-btn-white landing-btn-lg">
+          <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-white landing-btn-lg">
             Start Using PeerEval
-          </Link>
+          </a>
         </div>
       </section>
 
@@ -337,7 +337,7 @@ function Landing() {
           </div>
           <div className="landing-footer-links">
             <Link to="/login">Sign In</Link>
-            <Link to="/register-instructor">Register</Link>
+            <a href="https://peerevals.app/register-instructor">Register</a>
             <a href="mailto:support@peerevals.app">Contact</a>
           </div>
           <div className="landing-footer-copyright">
