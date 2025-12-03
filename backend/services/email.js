@@ -581,6 +581,48 @@ async function sendEvaluationConfirmation({ student, className, assignmentName, 
   });
 }
 
+/**
+ * Notify teacher/instructor about nudge/reminder emails that were sent
+ */
+async function notifyTeacherOfNudges({ teacherEmail, teacherName, className, students, isReminder = false }) {
+  const type = isReminder ? 'Reminder' : 'Nudge';
+  const studentList = students.map(s => `• ${s.firstName} ${s.lastName} (${s.email})`).join('\n');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">${type} Emails Sent</h2>
+      <p>Hi ${teacherName},</p>
+      <p>${students.length} ${isReminder ? 'reminder' : 'nudge'} email${students.length === 1 ? ' was' : 's were'} sent to students in <strong>${className}</strong>:</p>
+
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0; white-space: pre-wrap; font-size: 14px;">
+${studentList}
+      </div>
+
+      <p style="color: #666; font-size: 14px;">
+        Sent at: ${new Date().toLocaleString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short',
+        })}
+      </p>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — PeerEvals System
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: teacherEmail,
+    subject: `${type} Emails Sent: ${students.length} student${students.length === 1 ? '' : 's'} in ${className}`,
+    html,
+  });
+}
+
 module.exports = {
   sendEmail,
   notifyAdminNewInstructor,
@@ -593,4 +635,5 @@ module.exports = {
   sendPasswordReset,
   sendWelcomeEmail,
   sendEvaluationConfirmation,
+  notifyTeacherOfNudges,
 };

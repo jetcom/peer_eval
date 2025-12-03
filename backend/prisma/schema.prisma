@@ -448,3 +448,24 @@ model ReminderLog {
 
   @@map("reminder_logs")
 }
+
+// ==========================================
+// ACTIVITY LOGGING
+// ==========================================
+
+// Track user actions for teacher visibility
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  classId     Int?     @map("class_id")
+  action      String   // 'login', 'view_evaluations', 'submit_evaluation', 'update_evaluation', etc.
+  details     String?  // JSON string with additional context
+  ipAddress   String?  @map("ip_address")
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([classId])
+  @@index([createdAt])
+  @@map("activity_logs")
+}

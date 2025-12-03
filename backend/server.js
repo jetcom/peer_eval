@@ -13,7 +13,10 @@ const templateRoutes = require('./routes/templates');
 const assignmentRoutes = require('./routes/assignments');
 const notificationRoutes = require('./routes/notifications');
 const nudgeTemplateRoutes = require('./routes/nudgeTemplates');
+const reminderScheduleRoutes = require('./routes/reminderSchedules');
+const activityLogRoutes = require('./routes/activityLogs');
 const { initializeDatabase } = require('./database');
+const { startScheduler } = require('./services/reminderScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -60,6 +63,8 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/nudge-templates', nudgeTemplateRoutes);
+app.use('/api/reminder-schedules', reminderScheduleRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -79,4 +84,7 @@ if (process.env.NODE_ENV === 'production') {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+
+  // Start the reminder scheduler
+  startScheduler();
 });

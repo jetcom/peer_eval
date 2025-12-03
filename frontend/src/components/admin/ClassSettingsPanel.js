@@ -42,6 +42,7 @@ const TABS_PHASES = [
   { id: 'schedule', label: 'Schedule' },
   { id: 'criteria', label: 'Criteria' },
   { id: 'options', label: 'Options' },
+  { id: 'reminders', label: 'Reminders' },
   { id: 'danger', label: 'Danger Zone' }
 ];
 
@@ -50,7 +51,15 @@ const TABS_ASSIGNMENTS = [
   { id: 'assignments', label: 'Assignments' },
   { id: 'criteria', label: 'Criteria' },
   { id: 'options', label: 'Options' },
+  { id: 'reminders', label: 'Reminders' },
   { id: 'danger', label: 'Danger Zone' }
+];
+
+const REMINDER_OPTIONS = [
+  { value: 24, label: '24 hours before' },
+  { value: 48, label: '48 hours before' },
+  { value: 72, label: '3 days before' },
+  { value: 168, label: '1 week before' }
 ];
 
 function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit, onClose, onArchive }) {
@@ -60,6 +69,10 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const assignmentListRef = useRef(null);
+  const [reminderSchedules, setReminderSchedules] = useState([]);
+  const [nudgeTemplates, setNudgeTemplates] = useState([]);
+  const [addingReminder, setAddingReminder] = useState(false);
+  const [newReminder, setNewReminder] = useState({ hours_before_due: 24, nudge_template_id: '' });
 
   useEffect(() => {
     const fetchTemplates = async () => {
@@ -78,6 +91,24 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
     };
     fetchTemplates();
   }, []);
+
+  // Fetch reminder schedules when class changes
+  useEffect(() => {
+    const fetchReminderData = async () => {
+      if (!editingClass?.id) return;
+      try {
+        const [schedulesRes, nudgeRes] = await Promise.all([
+          axios.get(`/api/reminder-schedules/${editingClass.id}`),
+          axios.get('/api/nudge-templates')
+        ]);
+        setReminderSchedules(schedulesRes.data);
+        setNudgeTemplates(nudgeRes.data);
+      } catch (err) {
+        console.error('Failed to fetch reminder data:', err);
+      }
+    };
+    fetchReminderData();
+  }, [editingClass?.id]);
 
   if (!editingClass) return null;
 
@@ -1049,6 +1080,209 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
     </div>
   );
 
+  const formatHours = (hours) => {
+    const option = REMINDER_OPTIONS.find(o => o.value === hours);
+    return option ? option.label : `${hours} hours before`;
+  };
+
+  const handleAddReminder = async () => {
+    try {
+      await axios.post('/api/reminder-schedules', {
+        class_id: editingClass.id,
+        hours_before_due: newReminder.hours_before_due,
+        enabled: true,
+        nudge_template_id: newReminder.nudge_template_id ? parseInt(newReminder.nudge_template_id) : null
+      });
+      // Refresh schedules
+      const res = await axios.get(`/api/reminder-schedules/${editingClass.id}`);
+      setReminderSchedules(res.data);
+      setAddingReminder(false);
+      setNewReminder({ hours_before_due: 24, nudge_template_id: '' });
+    } catch (err) {
+      console.error('Failed to add reminder:', err);
+    }
+  };
+
+  const handleToggleReminder = async (schedule) => {
+    try {
+      await axios.patch(`/api/reminder-schedules/${schedule.id}/toggle`);
+      const res = await axios.get(`/api/reminder-schedules/${editingClass.id}`);
+      setReminderSchedules(res.data);
+    } catch (err) {
+      console.error('Failed to toggle reminder:', err);
+    }
+  };
+
+  const handleDeleteReminder = async (id) => {
+    if (!window.confirm('Remove this reminder schedule?')) return;
+    try {
+      await axios.delete(`/api/reminder-schedules/${id}`);
+      setReminderSchedules(reminderSchedules.filter(s => s.id !== id));
+    } catch (err) {
+      console.error('Failed to delete reminder:', err);
+    }
+  };
+
+  const renderRemindersTab = () => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div>
+          <h3 style={{ margin: 0, marginBottom: '8px' }}>Automatic Email Reminders</h3>
+          <p style={{ margin: 0, color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.9rem' }}>
+            Automatically notify students before evaluation deadlines.
+          </p>
+        </div>
+        {!addingReminder && (
+          <button className="btn btn-primary" onClick={() => setAddingReminder(true)}>
+            + Add Reminder
+          </button>
+        )}
+      </div>
+
+      {addingReminder && (
+        <div style={{
+          background: darkMode ? '#1a1a1a' : '#f8f9fa',
+          padding: '20px',
+          borderRadius: '8px',
+          marginBottom: '20px',
+          border: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`
+        }}>
+          <h4 style={{ marginTop: 0 }}>New Reminder Schedule</h4>
+
+          <div className="form-group" style={{ marginBottom: '15px' }}>
+            <label>When to send</label>
+            <select
+              value={newReminder.hours_before_due}
+              onChange={(e) => setNewReminder({ ...newReminder, hours_before_due: parseInt(e.target.value) })}
+              style={{ maxWidth: '300px' }}
+            >
+              {REMINDER_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: '15px' }}>
+            <label>Email template (optional)</label>
+            <select
+              value={newReminder.nudge_template_id}
+              onChange={(e) => setNewReminder({ ...newReminder, nudge_template_id: e.target.value })}
+              style={{ maxWidth: '300px' }}
+            >
+              <option value="">Default reminder message</option>
+              {nudgeTemplates.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <small style={{ display: 'block', marginTop: '6px', color: darkMode ? '#888' : '#888' }}>
+              Create templates from the Email tab in Admin Dashboard
+            </small>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="btn btn-primary" onClick={handleAddReminder}>
+              Add Schedule
+            </button>
+            <button className="btn btn-secondary" onClick={() => setAddingReminder(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {reminderSchedules.length === 0 ? (
+        <div style={{
+          padding: '30px',
+          textAlign: 'center',
+          color: darkMode ? '#888' : '#888',
+          background: darkMode ? '#1a1a1a' : '#f8f9fa',
+          borderRadius: '8px',
+          border: `1px dashed ${darkMode ? '#333' : '#ddd'}`
+        }}>
+          No automatic reminders configured. Add a reminder to automatically notify students before evaluations are due.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {reminderSchedules.map(schedule => {
+            const template = nudgeTemplates.find(t => t.id === schedule.nudge_template_id);
+            return (
+              <div
+                key={schedule.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  background: darkMode ? '#1a1a1a' : '#f8f9fa',
+                  padding: '15px',
+                  borderRadius: '8px',
+                  border: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`,
+                  opacity: schedule.enabled ? 1 : 0.6
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: '500' }}>
+                    {formatHours(schedule.hours_before_due)}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#666' }}>
+                    {template ? `Using template: ${template.name}` : 'Default reminder message'}
+                  </div>
+                  {schedule.last_sent_at && (
+                    <div style={{ fontSize: '0.8rem', color: darkMode ? '#666' : '#999', marginTop: '4px' }}>
+                      Last sent: {new Date(schedule.last_sent_at).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={schedule.enabled}
+                      onChange={() => handleToggleReminder(schedule)}
+                      style={{ width: 'auto' }}
+                    />
+                    <span style={{ fontSize: '0.85rem' }}>
+                      {schedule.enabled ? 'Enabled' : 'Disabled'}
+                    </span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReminder(schedule.id)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#e74c3c',
+                      fontSize: '1.2rem',
+                      padding: '5px 10px'
+                    }}
+                    title="Remove reminder"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{
+        marginTop: '25px',
+        padding: '15px',
+        background: darkMode ? '#1a2332' : '#eff6ff',
+        borderRadius: '8px',
+        fontSize: '0.9rem',
+        color: darkMode ? '#a0b4c8' : '#1e40af'
+      }}>
+        <strong>How it works:</strong> The system checks every 15 minutes for upcoming due dates.
+        When an evaluation is due within your configured time window, students who haven't completed
+        their evaluations will receive an automatic reminder email. Teachers receive a notification
+        listing which students were reminded.
+      </div>
+    </div>
+  );
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'basic': return renderBasicInfoTab();
@@ -1056,6 +1290,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
       case 'assignments': return renderAssignmentsTab();
       case 'criteria': return renderCriteriaTab();
       case 'options': return renderOptionsTab();
+      case 'reminders': return renderRemindersTab();
       case 'danger': return renderDangerTab();
       default: return null;
     }

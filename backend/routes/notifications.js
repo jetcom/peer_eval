@@ -94,6 +94,29 @@ router.post('/nudge', authenticateToken, requireTeacher, async (req, res) => {
       subject: templateSubject
     });
 
+    // Send notification to teacher about who was nudged
+    if (result.successful > 0) {
+      // Get teacher's email
+      const teacher = await prisma.user.findUnique({
+        where: { id: classInfo.teacherId },
+        select: { email: true, firstName: true, lastName: true }
+      });
+
+      if (teacher) {
+        await emailService.notifyTeacherOfNudges({
+          teacherEmail: teacher.email,
+          teacherName: teacher.firstName,
+          className: classInfo.name,
+          students: students.map(s => ({
+            firstName: s.firstName,
+            lastName: s.lastName,
+            email: s.email
+          })),
+          isReminder: false
+        });
+      }
+    }
+
     res.json({
       message: `Nudge emails sent: ${result.successful} successful, ${result.failed} failed`,
       ...result
@@ -320,9 +343,12 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
       include: {
         class: {
           include: {
+            teacher: {
+              select: { id: true, email: true, firstName: true, lastName: true }
+            },
             enrollments: {
               include: {
-                user: { select: { id: true, email: true, firstName: true } }
+                user: { select: { id: true, email: true, firstName: true, lastName: true } }
               }
             }
           }
@@ -365,7 +391,8 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
           students: incompleteStudents,
           className: assignment.class.name,
           dueDate,
-          assignmentName: assignment.name
+          assignmentName: assignment.name,
+          teacher: assignment.class.teacher
         });
       }
     }
@@ -382,9 +409,12 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
       include: {
         class: {
           include: {
+            teacher: {
+              select: { id: true, email: true, firstName: true, lastName: true }
+            },
             enrollments: {
               include: {
-                user: { select: { id: true, email: true, firstName: true } }
+                user: { select: { id: true, email: true, firstName: true, lastName: true } }
               }
             }
           }
@@ -400,7 +430,8 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
           students,
           className: phaseDue.class.name,
           dueDate: phaseDue.dueDate,
-          assignmentName: null
+          assignmentName: null,
+          teacher: phaseDue.class.teacher
         });
       }
     }
@@ -416,6 +447,21 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
 
       results.sent += batchResult.successful;
       results.failed += batchResult.failed;
+
+      // Notify teacher about who was reminded
+      if (batchResult.successful > 0 && batch.teacher) {
+        await emailService.notifyTeacherOfNudges({
+          teacherEmail: batch.teacher.email,
+          teacherName: batch.teacher.firstName,
+          className: batch.className,
+          students: batch.students.map(s => ({
+            firstName: s.firstName,
+            lastName: s.lastName,
+            email: s.email
+          })),
+          isReminder: true
+        });
+      }
     }
 
     res.json({

@@ -16,6 +16,7 @@ import ReportsTab from '../components/admin/ReportsTab';
 import ProgressTab from '../components/admin/ProgressTab';
 import TemplatesTab from '../components/admin/TemplatesTab';
 import NudgeTemplatesTab from '../components/admin/NudgeTemplatesTab';
+import ActivityLogsTab from '../components/admin/ActivityLogsTab';
 import QuickStats from '../components/admin/QuickStats';
 import ClassSelector from '../components/admin/ClassSelector';
 import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
@@ -753,6 +754,12 @@ function AdminDashboard() {
           >
             Email
           </button>
+          <button
+            className={`admin-tab ${activeTab === 'activity' ? 'active' : ''}`}
+            onClick={() => setActiveTab('activity')}
+          >
+            Activity
+          </button>
           {user?.role === 'admin' && (
             <button
               className={`admin-tab ${activeTab === 'instructors' ? 'active' : ''}`}
@@ -852,6 +859,14 @@ function AdminDashboard() {
         {activeTab === 'email' && (
           <NudgeTemplatesTab
             darkMode={darkMode}
+          />
+        )}
+
+        {activeTab === 'activity' && (
+          <ActivityLogsTab
+            darkMode={darkMode}
+            selectedClass={selectedClass}
+            classes={classes}
           />
         )}
 

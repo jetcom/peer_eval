@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
 
 const router = express.Router();
 
@@ -361,6 +362,16 @@ router.post('/', authenticateToken, async (req, res) => {
           updatedAt: new Date()
         }
       });
+
+      // Log evaluation update
+      logActivityAsync({
+        userId: req.user.id,
+        action: ACTIONS.UPDATE_EVALUATION,
+        classId: class_id ? parseInt(class_id) : null,
+        details: { phase, evaluatee_id },
+        req
+      });
+
       res.json({ id: updated.id, message: 'Evaluation updated' });
     } else {
       // Create new evaluation
@@ -379,6 +390,16 @@ router.post('/', authenticateToken, async (req, res) => {
           comments
         }
       });
+
+      // Log evaluation submission
+      logActivityAsync({
+        userId: req.user.id,
+        action: ACTIONS.SUBMIT_EVALUATION,
+        classId: class_id ? parseInt(class_id) : null,
+        details: { phase, evaluatee_id },
+        req
+      });
+
       res.json({ id: created.id, message: 'Evaluation created' });
     }
   } catch (err) {
@@ -421,6 +442,16 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
           updatedAt: new Date()
         }
       });
+
+      // Log final comment update
+      logActivityAsync({
+        userId: req.user.id,
+        action: ACTIONS.UPDATE_FINAL_COMMENT,
+        classId: class_id ? parseInt(class_id) : null,
+        details: { evaluatee_id },
+        req
+      });
+
       res.json({ id: updated.id, message: 'Final comments updated' });
     } else {
       // Create new
@@ -433,6 +464,16 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
           classId: class_id ? parseInt(class_id) : null
         }
       });
+
+      // Log final comment submission
+      logActivityAsync({
+        userId: req.user.id,
+        action: ACTIONS.SUBMIT_FINAL_COMMENT,
+        classId: class_id ? parseInt(class_id) : null,
+        details: { evaluatee_id },
+        req
+      });
+
       res.json({ id: created.id, message: 'Final comments created' });
     }
   } catch (err) {

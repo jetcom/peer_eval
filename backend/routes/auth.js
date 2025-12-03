@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
 const emailService = require('../services/email');
+const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
 
 const router = express.Router();
 
@@ -55,6 +56,13 @@ router.post('/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '24h' }
     );
+
+    // Log successful login
+    logActivityAsync({
+      userId: user.id,
+      action: ACTIONS.LOGIN,
+      req
+    });
 
     res.json({
       token,
@@ -194,6 +202,13 @@ router.post('/change-password', authenticateToken, async (req, res) => {
         password: hashedPassword,
         mustChangePassword: 0
       }
+    });
+
+    // Log password change
+    logActivityAsync({
+      userId: req.user.id,
+      action: ACTIONS.PASSWORD_CHANGE,
+      req
     });
 
     res.json({ message: 'Password updated successfully' });

@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken');
 const { db } = require('../database');
 const { JWT_SECRET } = require('../middleware/auth');
 const samlConfig = require('../config/saml');
+const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
 
 const router = express.Router();
 
@@ -96,6 +97,13 @@ router.post('/callback',
             JWT_SECRET,
             { expiresIn: '24h' }
           );
+
+          // Log SSO login
+          logActivityAsync({
+            userId: user.id,
+            action: ACTIONS.LOGIN_SSO,
+            req
+          });
 
           // Redirect to frontend with token
           const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
