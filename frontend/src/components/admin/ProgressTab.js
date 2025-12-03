@@ -500,55 +500,92 @@ function ProgressTab({
           {studentProgress.length === 0 ? (
             <p style={{ color: darkMode ? '#a0a0a0' : '#666' }}>No students in selected group.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
-                      Student
-                    </th>
-                    <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
-                      Group
-                    </th>
-                    {assignments.map(a => (
-                      <th key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
-                        {a.name}
+            <>
+              {/* Desktop table */}
+              <div className="desktop-table" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                        Student
                       </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {studentProgress.map(student => (
-                    <tr key={student.id}>
-                      <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
-                        {student.last_name}, {student.first_name}
-                      </td>
-                      <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`, color: darkMode ? '#a0a0a0' : '#666' }}>
-                        {student.group?.name || 'No Group'}
-                      </td>
-                      {assignments.map(a => {
-                        const progress = student.assignmentProgress[a.id];
-                        const color = progress?.percentage === 100 ? '#27ae60' : progress?.percentage > 0 ? '#f39c12' : '#e74c3c';
-                        return (
-                          <td key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
-                            <span style={{
-                              display: 'inline-block',
-                              padding: '4px 8px',
-                              borderRadius: '4px',
-                              background: color,
-                              color: 'white',
-                              fontSize: '0.8rem'
-                            }}>
-                              {progress?.completed || 0}/{progress?.expected || 0}
-                            </span>
-                          </td>
-                        );
-                      })}
+                      <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                        Group
+                      </th>
+                      {assignments.map(a => (
+                        <th key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                          {a.name}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {studentProgress.map(student => (
+                      <tr key={student.id}>
+                        <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
+                          {student.last_name}, {student.first_name}
+                        </td>
+                        <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`, color: darkMode ? '#a0a0a0' : '#666' }}>
+                          {student.group?.name || 'No Group'}
+                        </td>
+                        {assignments.map(a => {
+                          const progress = student.assignmentProgress[a.id];
+                          const color = progress?.percentage === 100 ? '#27ae60' : progress?.percentage > 0 ? '#f39c12' : '#e74c3c';
+                          return (
+                            <td key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
+                              <span style={{
+                                display: 'inline-block',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                background: color,
+                                color: 'white',
+                                fontSize: '0.8rem'
+                              }}>
+                                {progress?.completed || 0}/{progress?.expected || 0}
+                              </span>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card view */}
+              <div className="mobile-card-list">
+                {studentProgress.map(student => (
+                  <div key={student.id} className="mobile-card">
+                    <div className="mobile-card-header">
+                      {student.last_name}, {student.first_name}
+                    </div>
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Group</span>
+                      <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
+                    </div>
+                    {assignments.map(a => {
+                      const progress = student.assignmentProgress[a.id];
+                      const color = progress?.percentage === 100 ? '#27ae60' : progress?.percentage > 0 ? '#f39c12' : '#e74c3c';
+                      return (
+                        <div key={a.id} className="mobile-card-row">
+                          <span className="mobile-card-label">{a.name}</span>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            background: color,
+                            color: 'white',
+                            fontSize: '0.8rem'
+                          }}>
+                            {progress?.completed || 0}/{progress?.expected || 0}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </>

@@ -239,37 +239,72 @@ function TeacherDashboard() {
             {classes.length === 0 ? (
               <p>No classes yet. Create one to get started.</p>
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Section</th>
-                    <th>Students</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                {/* Desktop table view */}
+                <table className="desktop-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Section</th>
+                      <th>Students</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {classes.map(c => (
+                      <tr key={c.id} style={{ background: selectedClass === c.id ? (darkMode ? '#1a3a6e' : '#e8f4fc') : 'transparent' }}>
+                        <td>
+                          <button
+                            onClick={() => setSelectedClass(c.id)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: selectedClass === c.id ? 'bold' : 'normal' }}
+                          >
+                            {c.name}
+                          </button>
+                        </td>
+                        <td>{c.section || '-'}</td>
+                        <td>{c.student_count}</td>
+                        <td>
+                          <button className="btn btn-danger" onClick={() => handleDeleteClass(c.id)}>
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Mobile card view */}
+                <div className="mobile-card-list">
                   {classes.map(c => (
-                    <tr key={c.id} style={{ background: selectedClass === c.id ? (darkMode ? '#1a3a6e' : '#e8f4fc') : 'transparent' }}>
-                      <td>
-                        <button
-                          onClick={() => setSelectedClass(c.id)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: selectedClass === c.id ? 'bold' : 'normal' }}
-                        >
-                          {c.name}
-                        </button>
-                      </td>
-                      <td>{c.section || '-'}</td>
-                      <td>{c.student_count}</td>
-                      <td>
+                    <div
+                      key={c.id}
+                      className="mobile-card"
+                      style={{
+                        background: selectedClass === c.id ? (darkMode ? '#1a3a6e' : '#e8f4fc') : undefined,
+                        borderColor: selectedClass === c.id ? '#3498db' : undefined
+                      }}
+                      onClick={() => setSelectedClass(c.id)}
+                    >
+                      <div className="mobile-card-header" style={{ fontWeight: selectedClass === c.id ? 'bold' : 'normal' }}>
+                        {c.name}
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Section</span>
+                        <span className="mobile-card-value">{c.section || '-'}</span>
+                      </div>
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Students</span>
+                        <span className="mobile-card-value">{c.student_count}</span>
+                      </div>
+                      <div className="mobile-card-actions" onClick={(e) => e.stopPropagation()}>
                         <button className="btn btn-danger" onClick={() => handleDeleteClass(c.id)}>
                           Delete
                         </button>
-                      </td>
-                    </tr>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -340,28 +375,80 @@ function TeacherDashboard() {
                   {students.length === 0 ? (
                     <p>No students enrolled yet.</p>
                   ) : (
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Last Name</th>
-                          <th>First Name</th>
-                          <th>Email</th>
-                          <th>Group</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <>
+                      {/* Desktop table view */}
+                      <table className="desktop-table">
+                        <thead>
+                          <tr>
+                            <th>Last Name</th>
+                            <th>First Name</th>
+                            <th>Email</th>
+                            <th>Group</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {students.map(student => {
+                            const studentGroup = groups.find(g =>
+                              g.members?.some(m => m.id === student.id)
+                            );
+                            const fullName = `${student.first_name} ${student.last_name}`;
+                            return (
+                              <tr key={student.id}>
+                                <td>{student.last_name}</td>
+                                <td>{student.first_name}</td>
+                                <td>{student.email}</td>
+                                <td>
+                                  <select
+                                    value={studentGroup?.id || ''}
+                                    onChange={(e) => {
+                                      const newGroupId = e.target.value;
+                                      if (newGroupId) {
+                                        handleAddToGroup(student.id, newGroupId);
+                                      }
+                                    }}
+                                  >
+                                    <option value="">Unassigned</option>
+                                    {groups.map(g => (
+                                      <option key={g.id} value={g.id}>{g.name}</option>
+                                    ))}
+                                  </select>
+                                </td>
+                                <td>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                                    onClick={() => handleResetPassword(student.id, fullName)}
+                                  >
+                                    Reset Password
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+
+                      {/* Mobile card view */}
+                      <div className="mobile-card-list">
                         {students.map(student => {
                           const studentGroup = groups.find(g =>
                             g.members?.some(m => m.id === student.id)
                           );
                           const fullName = `${student.first_name} ${student.last_name}`;
                           return (
-                            <tr key={student.id}>
-                              <td>{student.last_name}</td>
-                              <td>{student.first_name}</td>
-                              <td>{student.email}</td>
-                              <td>
+                            <div key={student.id} className="mobile-card">
+                              <div className="mobile-card-header">
+                                {student.last_name}, {student.first_name}
+                              </div>
+                              <div className="mobile-card-row">
+                                <span className="mobile-card-label">Email</span>
+                                <span className="mobile-card-value" style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                                  {student.email}
+                                </span>
+                              </div>
+                              <div className="mobile-card-row">
+                                <span className="mobile-card-label">Group</span>
                                 <select
                                   value={studentGroup?.id || ''}
                                   onChange={(e) => {
@@ -370,27 +457,27 @@ function TeacherDashboard() {
                                       handleAddToGroup(student.id, newGroupId);
                                     }
                                   }}
+                                  style={{ flex: 1, maxWidth: '150px' }}
                                 >
                                   <option value="">Unassigned</option>
                                   {groups.map(g => (
                                     <option key={g.id} value={g.id}>{g.name}</option>
                                   ))}
                                 </select>
-                              </td>
-                              <td>
+                              </div>
+                              <div className="mobile-card-actions">
                                 <button
                                   className="btn btn-secondary"
-                                  style={{ fontSize: '0.8rem', padding: '4px 8px' }}
                                   onClick={() => handleResetPassword(student.id, fullName)}
                                 >
                                   Reset Password
                                 </button>
-                              </td>
-                            </tr>
+                              </div>
+                            </div>
                           );
                         })}
-                      </tbody>
-                    </table>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

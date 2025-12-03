@@ -44,24 +44,54 @@ function GroupsTab({
         {classGroups.length === 0 ? (
           <p>No groups in this class yet.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Group Name</th>
-                <th>Members</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            {/* Desktop table view */}
+            <table className="desktop-table">
+              <thead>
+                <tr>
+                  <th>Group Name</th>
+                  <th>Members</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {classGroups.map(g => (
+                  <tr key={g.id}>
+                    <td>{g.name}</td>
+                    <td>{g.member_count || 0}</td>
+                    <td>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => onSelectGroup(g.id)}
+                        style={{ marginRight: '10px' }}
+                      >
+                        Manage Members
+                      </button>
+                      <button
+                        className="btn btn-danger"
+                        onClick={() => onDeleteGroup(g.id)}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Mobile card view */}
+            <div className="mobile-card-list">
               {classGroups.map(g => (
-                <tr key={g.id}>
-                  <td>{g.name}</td>
-                  <td>{g.member_count || 0}</td>
-                  <td>
+                <div key={g.id} className="mobile-card">
+                  <div className="mobile-card-header">{g.name}</div>
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-label">Members</span>
+                    <span className="mobile-card-value">{g.member_count || 0}</span>
+                  </div>
+                  <div className="mobile-card-actions">
                     <button
                       className="btn btn-primary"
                       onClick={() => onSelectGroup(g.id)}
-                      style={{ marginRight: '10px' }}
                     >
                       Manage Members
                     </button>
@@ -71,11 +101,11 @@ function GroupsTab({
                     >
                       Delete
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </div>
     </>

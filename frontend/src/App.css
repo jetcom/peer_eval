@@ -3186,3 +3186,191 @@ body.dark-mode .student-class-item .student-class-semester {
     width: 100%;
   }
 }
+
+/* ==========================================
+   RESPONSIVE TABLE-TO-CARD PATTERN
+   Tables with .responsive-table class convert to cards on mobile
+   ========================================== */
+
+.responsive-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.responsive-table th,
+.responsive-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #eee;
+}
+
+body.dark-mode .responsive-table th,
+body.dark-mode .responsive-table td {
+  border-bottom-color: #333;
+}
+
+.responsive-table thead {
+  background: #f8f9fa;
+}
+
+body.dark-mode .responsive-table thead {
+  background: #1a1a1a;
+}
+
+/* Mobile cards view */
+@media (max-width: 768px) {
+  .responsive-table,
+  .responsive-table thead,
+  .responsive-table tbody,
+  .responsive-table th,
+  .responsive-table td,
+  .responsive-table tr {
+    display: block;
+  }
+
+  .responsive-table thead {
+    display: none;
+  }
+
+  .responsive-table tr {
+    margin-bottom: 12px;
+    border-radius: 8px;
+    background: #f8f9fa;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+  }
+
+  body.dark-mode .responsive-table tr {
+    background: #1f1f1f;
+    border-color: #333;
+  }
+
+  .responsive-table td {
+    padding: 8px 0;
+    border-bottom: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .responsive-table td:before {
+    content: attr(data-label);
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #666;
+    flex-shrink: 0;
+  }
+
+  body.dark-mode .responsive-table td:before {
+    color: #a0a0a0;
+  }
+
+  .responsive-table td:last-child {
+    padding-top: 12px;
+    margin-top: 8px;
+    border-top: 1px solid #e0e0e0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  body.dark-mode .responsive-table td:last-child {
+    border-top-color: #333;
+  }
+
+  .responsive-table td:last-child:before {
+    display: none;
+  }
+
+  .responsive-table td .btn {
+    width: 100%;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+
+  .responsive-table td .btn:last-child {
+    margin-bottom: 0;
+  }
+}
+
+/* ==========================================
+   MOBILE CARD LIST
+   Use .mobile-card-list for lists that should be cards on mobile
+   ========================================== */
+
+.mobile-card-list {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .desktop-table {
+    display: none !important;
+  }
+
+  .mobile-card-list {
+    display: block;
+  }
+
+  .mobile-card {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+
+  body.dark-mode .mobile-card {
+    background: #1f1f1f;
+    border-color: #333;
+  }
+
+  .mobile-card-header {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 8px;
+    color: #2c3e50;
+  }
+
+  body.dark-mode .mobile-card-header {
+    color: #f0f0f0;
+  }
+
+  .mobile-card-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 0.9rem;
+  }
+
+  .mobile-card-label {
+    color: #666;
+    font-size: 0.85rem;
+  }
+
+  body.dark-mode .mobile-card-label {
+    color: #a0a0a0;
+  }
+
+  .mobile-card-value {
+    font-weight: 500;
+  }
+
+  .mobile-card-actions {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  body.dark-mode .mobile-card-actions {
+    border-top-color: #333;
+  }
+
+  .mobile-card-actions .btn {
+    width: 100%;
+    text-align: center;
+  }
+}
