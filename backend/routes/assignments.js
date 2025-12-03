@@ -1,8 +1,24 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const { authenticateToken } = require('../middleware/auth');
+const {
+  isS3Configured,
+  validateFile,
+  generateS3Key,
+  uploadFile,
+  getPresignedUrl,
+  deleteFile,
+  MAX_FILES_PER_EVALUATION,
+} = require('../utils/s3');
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
 
 // Helper to format assignment for response
 const formatAssignment = (a) => ({
@@ -743,6 +759,294 @@ router.get('/evaluations/is-read-only', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Error checking read-only status:', error);
     res.status(500).json({ error: 'Failed to check status' });
+  }
+});
+
+// ==========================================
+// ASSIGNMENT EVALUATION ATTACHMENT ENDPOINTS
+// ==========================================
+
+// Upload image to an assignment evaluation (individual)
+router.post('/evaluations/individual/:evaluationId/attachments', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!isS3Configured()) {
+      return res.status(503).json({ error: 'Image uploads not configured' });
+    }
+
+    const evaluationId = parseInt(req.params.evaluationId);
+
+    // Verify the evaluation exists and belongs to the user
+    const evaluation = await prisma.assignmentEvaluation.findUnique({
+      where: { id: evaluationId },
+      include: { attachments: true },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    // Only the evaluator or admin can upload
+    if (evaluation.evaluatorId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Not authorized to upload to this evaluation' });
+    }
+
+    // Check attachment limit
+    if (evaluation.attachments.length >= MAX_FILES_PER_EVALUATION) {
+      return res.status(400).json({
+        error: `Maximum ${MAX_FILES_PER_EVALUATION} images allowed per evaluation`,
+      });
+    }
+
+    // Validate the file
+    const validation = validateFile(req.file);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    // Generate S3 key and upload
+    const s3Key = generateS3Key('assignment', evaluationId, req.file.originalname);
+    const uploadResult = await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
+
+    if (!uploadResult.success) {
+      return res.status(500).json({ error: uploadResult.error });
+    }
+
+    // Save attachment record
+    const attachment = await prisma.assignmentEvaluationAttachment.create({
+      data: {
+        evaluationId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        s3Key,
+      },
+    });
+
+    // Get presigned URL for immediate display
+    const url = await getPresignedUrl(s3Key);
+
+    res.json({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      fileSize: attachment.fileSize,
+      url,
+      uploadedAt: attachment.uploadedAt,
+    });
+  } catch (err) {
+    console.error('Upload attachment error:', err);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Get attachments for an assignment evaluation (individual)
+router.get('/evaluations/individual/:evaluationId/attachments', authenticateToken, async (req, res) => {
+  try {
+    const evaluationId = parseInt(req.params.evaluationId);
+
+    const evaluation = await prisma.assignmentEvaluation.findUnique({
+      where: { id: evaluationId },
+      include: { attachments: true },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    // Only evaluator, evaluatee, teacher, or admin can view
+    const isAuthorized =
+      evaluation.evaluatorId === req.user.id ||
+      evaluation.evaluateeId === req.user.id ||
+      req.user.role === 'admin' ||
+      req.user.role === 'teacher';
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Not authorized to view attachments' });
+    }
+
+    const attachmentsWithUrls = await Promise.all(
+      evaluation.attachments.map(async (att) => ({
+        id: att.id,
+        fileName: att.fileName,
+        mimeType: att.mimeType,
+        fileSize: att.fileSize,
+        url: await getPresignedUrl(att.s3Key),
+        uploadedAt: att.uploadedAt,
+      }))
+    );
+
+    res.json(attachmentsWithUrls);
+  } catch (err) {
+    console.error('Get attachments error:', err);
+    res.status(500).json({ error: 'Failed to get attachments' });
+  }
+});
+
+// Delete an assignment evaluation attachment
+router.delete('/evaluations/individual/attachments/:attachmentId', authenticateToken, async (req, res) => {
+  try {
+    const attachmentId = parseInt(req.params.attachmentId);
+
+    const attachment = await prisma.assignmentEvaluationAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { evaluation: true },
+    });
+
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    if (attachment.evaluation.evaluatorId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Not authorized to delete this attachment' });
+    }
+
+    await deleteFile(attachment.s3Key);
+    await prisma.assignmentEvaluationAttachment.delete({
+      where: { id: attachmentId },
+    });
+
+    res.json({ message: 'Attachment deleted' });
+  } catch (err) {
+    console.error('Delete attachment error:', err);
+    res.status(500).json({ error: 'Failed to delete attachment' });
+  }
+});
+
+// Upload image to a group evaluation
+router.post('/evaluations/group/:evaluationId/attachments', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!isS3Configured()) {
+      return res.status(503).json({ error: 'Image uploads not configured' });
+    }
+
+    const evaluationId = parseInt(req.params.evaluationId);
+
+    const evaluation = await prisma.groupEvaluation.findUnique({
+      where: { id: evaluationId },
+      include: { attachments: true },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    if (evaluation.evaluatorId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Not authorized to upload to this evaluation' });
+    }
+
+    if (evaluation.attachments.length >= MAX_FILES_PER_EVALUATION) {
+      return res.status(400).json({
+        error: `Maximum ${MAX_FILES_PER_EVALUATION} images allowed per evaluation`,
+      });
+    }
+
+    const validation = validateFile(req.file);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    const s3Key = generateS3Key('group', evaluationId, req.file.originalname);
+    const uploadResult = await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
+
+    if (!uploadResult.success) {
+      return res.status(500).json({ error: uploadResult.error });
+    }
+
+    const attachment = await prisma.groupEvaluationAttachment.create({
+      data: {
+        groupEvaluationId: evaluationId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        s3Key,
+      },
+    });
+
+    const url = await getPresignedUrl(s3Key);
+
+    res.json({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      fileSize: attachment.fileSize,
+      url,
+      uploadedAt: attachment.uploadedAt,
+    });
+  } catch (err) {
+    console.error('Upload attachment error:', err);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Get attachments for a group evaluation
+router.get('/evaluations/group/:evaluationId/attachments', authenticateToken, async (req, res) => {
+  try {
+    const evaluationId = parseInt(req.params.evaluationId);
+
+    const evaluation = await prisma.groupEvaluation.findUnique({
+      where: { id: evaluationId },
+      include: { attachments: true },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    // For group evals, allow evaluator, teacher, or admin
+    const isAuthorized =
+      evaluation.evaluatorId === req.user.id ||
+      req.user.role === 'admin' ||
+      req.user.role === 'teacher';
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Not authorized to view attachments' });
+    }
+
+    const attachmentsWithUrls = await Promise.all(
+      evaluation.attachments.map(async (att) => ({
+        id: att.id,
+        fileName: att.fileName,
+        mimeType: att.mimeType,
+        fileSize: att.fileSize,
+        url: await getPresignedUrl(att.s3Key),
+        uploadedAt: att.uploadedAt,
+      }))
+    );
+
+    res.json(attachmentsWithUrls);
+  } catch (err) {
+    console.error('Get attachments error:', err);
+    res.status(500).json({ error: 'Failed to get attachments' });
+  }
+});
+
+// Delete a group evaluation attachment
+router.delete('/evaluations/group/attachments/:attachmentId', authenticateToken, async (req, res) => {
+  try {
+    const attachmentId = parseInt(req.params.attachmentId);
+
+    const attachment = await prisma.groupEvaluationAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { groupEvaluation: true },
+    });
+
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    if (attachment.groupEvaluation.evaluatorId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Not authorized to delete this attachment' });
+    }
+
+    await deleteFile(attachment.s3Key);
+    await prisma.groupEvaluationAttachment.delete({
+      where: { id: attachmentId },
+    });
+
+    res.json({ message: 'Attachment deleted' });
+  } catch (err) {
+    console.error('Delete attachment error:', err);
+    res.status(500).json({ error: 'Failed to delete attachment' });
   }
 });
 

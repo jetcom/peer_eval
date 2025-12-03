@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import ImageUpload from '../components/ImageUpload';
 
 const CRITERIA = [
   { key: 'contribution', label: 'Contribution', description: 'Level of contribution to the project' },
@@ -46,6 +47,9 @@ function Evaluation() {
   const [minCommentWords, setMinCommentWords] = useState(0);
   const [previousEvaluations, setPreviousEvaluations] = useState({});
   const [expandedPrevious, setExpandedPrevious] = useState({});
+  const [evaluationIds, setEvaluationIds] = useState({}); // Map member.id -> evaluation.id
+  const [attachments, setAttachments] = useState({}); // Map member.id -> attachments array
+  const [imageUploadsEnabled, setImageUploadsEnabled] = useState(false);
 
   const autoSaveTimeoutRef = useRef(null);
   const deadlineTimeoutRef = useRef(null);
@@ -66,6 +70,14 @@ function Evaluation() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        // Check if image uploads are enabled
+        try {
+          const uploadStatusRes = await axios.get('/api/evaluations/attachments/status');
+          setImageUploadsEnabled(uploadStatusRes.data.enabled);
+        } catch (err) {
+          console.log('Image uploads not available');
+        }
+
         // Check if this specific phase is past due and get due date info (only for non-masquerade views)
         if (!masqueradeUserId) {
           try {
@@ -156,6 +168,7 @@ function Evaluation() {
 
           // Initialize evaluations state from existing data
           const evalMap = {};
+          const evalIdMap = {};
           const phaseEvals = evalRes.data.filter(e => e.phase === parseInt(phase));
 
           groupRes.data.members.forEach(member => {
@@ -169,8 +182,28 @@ function Evaluation() {
               score: 80,
               comments: ''
             };
+            // Track evaluation ID for attachments
+            if (existing?.id) {
+              evalIdMap[member.id] = existing.id;
+            }
           });
           setEvaluations(evalMap);
+          setEvaluationIds(evalIdMap);
+
+          // Fetch attachments for existing evaluations
+          const attachmentsMap = {};
+          await Promise.all(
+            Object.entries(evalIdMap).map(async ([memberId, evalId]) => {
+              try {
+                const attRes = await axios.get(`/api/evaluations/${evalId}/attachments`);
+                attachmentsMap[memberId] = attRes.data;
+              } catch (err) {
+                console.log(`No attachments for evaluation ${evalId}`);
+                attachmentsMap[memberId] = [];
+              }
+            })
+          );
+          setAttachments(attachmentsMap);
 
           // Build previous evaluations map for Phase 2+
           const currentPhase = parseInt(phase);
@@ -448,7 +481,17 @@ function Evaluation() {
             ...evaluations[member.id]
           })
         );
-        await Promise.all(promises);
+        const results = await Promise.all(promises);
+
+        // Update evaluation IDs from response (for image uploads)
+        const newEvalIdMap = { ...evaluationIds };
+        results.forEach((res, idx) => {
+          if (res.data.id) {
+            newEvalIdMap[group.members[idx].id] = res.data.id;
+          }
+        });
+        setEvaluationIds(newEvalIdMap);
+
         setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
       }
     } catch (err) {
@@ -776,6 +819,39 @@ function Evaluation() {
                   }}>
                     {countWords(evaluations[member.id]?.comments)} / {minCommentWords} words minimum
                     {countWords(evaluations[member.id]?.comments) >= minCommentWords ? ' ✓' : ''}
+                  </div>
+                )}
+
+                {/* Image upload section */}
+                {imageUploadsEnabled && (
+                  <div style={{ marginTop: '16px' }}>
+                    <label style={{ fontWeight: '500', display: 'block', marginBottom: '8px' }}>
+                      Attach Images (optional)
+                    </label>
+                    {evaluationIds[member.id] ? (
+                      <ImageUpload
+                        evaluationId={evaluationIds[member.id]}
+                        evaluationType="phase"
+                        attachments={attachments[member.id] || []}
+                        onAttachmentsChange={(newAttachments) => {
+                          setAttachments(prev => ({
+                            ...prev,
+                            [member.id]: newAttachments
+                          }));
+                        }}
+                        disabled={isReadOnly}
+                      />
+                    ) : (
+                      <div style={{
+                        padding: '12px',
+                        background: darkMode ? '#2a2a2a' : '#f8f9fa',
+                        borderRadius: '6px',
+                        color: darkMode ? '#a0a0a0' : '#666',
+                        fontSize: '0.9rem'
+                      }}>
+                        Save your evaluation first to enable image uploads
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -157,6 +157,7 @@ model Evaluation {
   evaluatee       User                       @relation("EvaluateeRelation", fields: [evaluateeId], references: [id])
   class           Class?                     @relation(fields: [classId], references: [id], onDelete: Cascade)
   criterionScores EvaluationCriterionScore[]
+  attachments     EvaluationAttachment[]
 
   @@unique([evaluatorId, evaluateeId, phase])
   @@map("evaluations")
@@ -339,10 +340,11 @@ model AssignmentEvaluation {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @default(now()) @map("updated_at")
 
-  evaluator User                        @relation("AssignmentEvaluator", fields: [evaluatorId], references: [id])
-  evaluatee User                        @relation("AssignmentEvaluatee", fields: [evaluateeId], references: [id])
-  evalType  AssignmentEvalType          @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
-  scores    AssignmentEvaluationScore[]
+  evaluator   User                              @relation("AssignmentEvaluator", fields: [evaluatorId], references: [id])
+  evaluatee   User                              @relation("AssignmentEvaluatee", fields: [evaluateeId], references: [id])
+  evalType    AssignmentEvalType                @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  scores      AssignmentEvaluationScore[]
+  attachments AssignmentEvaluationAttachment[]
 
   @@unique([evaluatorId, evaluateeId, evalTypeId])
   @@map("assignment_evaluations")
@@ -372,10 +374,11 @@ model GroupEvaluation {
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @default(now()) @map("updated_at")
 
-  evaluator User                   @relation(fields: [evaluatorId], references: [id])
-  group     Group                  @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  evalType  AssignmentEvalType     @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
-  scores    GroupEvaluationScore[]
+  evaluator   User                       @relation(fields: [evaluatorId], references: [id])
+  group       Group                      @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  evalType    AssignmentEvalType         @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  scores      GroupEvaluationScore[]
+  attachments GroupEvaluationAttachment[]
 
   @@unique([evaluatorId, groupId, evalTypeId])
   @@map("group_evaluations")
@@ -449,6 +452,55 @@ model ReminderLog {
   sentAt      DateTime @default(now()) @map("sent_at")
 
   @@map("reminder_logs")
+}
+
+// ==========================================
+// EVALUATION ATTACHMENTS (Image uploads)
+// ==========================================
+
+// Attachments for phase-based evaluations
+model EvaluationAttachment {
+  id           Int      @id @default(autoincrement())
+  evaluationId Int      @map("evaluation_id")
+  fileName     String   @map("file_name")
+  mimeType     String   @map("mime_type")
+  fileSize     Int      @map("file_size")
+  s3Key        String   @map("s3_key")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  evaluation Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@map("evaluation_attachments")
+}
+
+// Attachments for assignment-based evaluations
+model AssignmentEvaluationAttachment {
+  id           Int      @id @default(autoincrement())
+  evaluationId Int      @map("evaluation_id")
+  fileName     String   @map("file_name")
+  mimeType     String   @map("mime_type")
+  fileSize     Int      @map("file_size")
+  s3Key        String   @map("s3_key")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+
+  evaluation AssignmentEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@map("assignment_evaluation_attachments")
+}
+
+// Attachments for group evaluations
+model GroupEvaluationAttachment {
+  id                Int      @id @default(autoincrement())
+  groupEvaluationId Int      @map("group_evaluation_id")
+  fileName          String   @map("file_name")
+  mimeType          String   @map("mime_type")
+  fileSize          Int      @map("file_size")
+  s3Key             String   @map("s3_key")
+  uploadedAt        DateTime @default(now()) @map("uploaded_at")
+
+  groupEvaluation GroupEvaluation @relation(fields: [groupEvaluationId], references: [id], onDelete: Cascade)
+
+  @@map("group_evaluation_attachments")
 }
 
 // ==========================================

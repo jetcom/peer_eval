@@ -1,9 +1,25 @@
 const express = require('express');
+const multer = require('multer');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
+const {
+  isS3Configured,
+  validateFile,
+  generateS3Key,
+  uploadFile,
+  getPresignedUrl,
+  deleteFile,
+  MAX_FILES_PER_EVALUATION,
+} = require('../utils/s3');
 
 const router = express.Router();
+
+// Configure multer for memory storage (files stored in buffer)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+});
 
 // Helper function to get effective due date for a specific phase
 // Uses cascading logic: if no due date for this phase, use the next phase's due date
@@ -643,6 +659,171 @@ router.get('/summary/:userId', authenticateToken, requireAdmin, async (req, res)
   } catch (err) {
     console.error('get evaluation summary error:', err);
     res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// ==========================================
+// IMAGE ATTACHMENT ENDPOINTS
+// ==========================================
+
+// Check if image uploads are available
+router.get('/attachments/status', authenticateToken, (req, res) => {
+  res.json({
+    enabled: isS3Configured(),
+    maxFiles: MAX_FILES_PER_EVALUATION,
+  });
+});
+
+// Upload image to an evaluation
+router.post('/:evaluationId/attachments', authenticateToken, upload.single('image'), async (req, res) => {
+  try {
+    if (!isS3Configured()) {
+      return res.status(503).json({ error: 'Image uploads not configured' });
+    }
+
+    const evaluationId = parseInt(req.params.evaluationId);
+
+    // Verify the evaluation exists and belongs to the user
+    const evaluation = await prisma.evaluation.findUnique({
+      where: { id: evaluationId },
+      include: { attachments: true },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    // Only the evaluator or admin can upload
+    if (evaluation.evaluatorId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Not authorized to upload to this evaluation' });
+    }
+
+    // Check attachment limit
+    if (evaluation.attachments.length >= MAX_FILES_PER_EVALUATION) {
+      return res.status(400).json({
+        error: `Maximum ${MAX_FILES_PER_EVALUATION} images allowed per evaluation`,
+      });
+    }
+
+    // Validate the file
+    const validation = validateFile(req.file);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    // Generate S3 key and upload
+    const s3Key = generateS3Key('phase', evaluationId, req.file.originalname);
+    const uploadResult = await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
+
+    if (!uploadResult.success) {
+      return res.status(500).json({ error: uploadResult.error });
+    }
+
+    // Save attachment record
+    const attachment = await prisma.evaluationAttachment.create({
+      data: {
+        evaluationId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        s3Key,
+      },
+    });
+
+    // Get presigned URL for immediate display
+    const url = await getPresignedUrl(s3Key);
+
+    res.json({
+      id: attachment.id,
+      fileName: attachment.fileName,
+      mimeType: attachment.mimeType,
+      fileSize: attachment.fileSize,
+      url,
+      uploadedAt: attachment.uploadedAt,
+    });
+  } catch (err) {
+    console.error('Upload attachment error:', err);
+    res.status(500).json({ error: 'Failed to upload image' });
+  }
+});
+
+// Get attachments for an evaluation
+router.get('/:evaluationId/attachments', authenticateToken, async (req, res) => {
+  try {
+    const evaluationId = parseInt(req.params.evaluationId);
+
+    // Verify the evaluation exists
+    const evaluation = await prisma.evaluation.findUnique({
+      where: { id: evaluationId },
+      include: { attachments: true },
+    });
+
+    if (!evaluation) {
+      return res.status(404).json({ error: 'Evaluation not found' });
+    }
+
+    // Only the evaluator, evaluatee, teacher, or admin can view
+    const isAuthorized =
+      evaluation.evaluatorId === req.user.id ||
+      evaluation.evaluateeId === req.user.id ||
+      req.user.role === 'admin' ||
+      req.user.role === 'teacher';
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Not authorized to view attachments' });
+    }
+
+    // Generate presigned URLs for all attachments
+    const attachmentsWithUrls = await Promise.all(
+      evaluation.attachments.map(async (att) => ({
+        id: att.id,
+        fileName: att.fileName,
+        mimeType: att.mimeType,
+        fileSize: att.fileSize,
+        url: await getPresignedUrl(att.s3Key),
+        uploadedAt: att.uploadedAt,
+      }))
+    );
+
+    res.json(attachmentsWithUrls);
+  } catch (err) {
+    console.error('Get attachments error:', err);
+    res.status(500).json({ error: 'Failed to get attachments' });
+  }
+});
+
+// Delete an attachment
+router.delete('/attachments/:attachmentId', authenticateToken, async (req, res) => {
+  try {
+    const attachmentId = parseInt(req.params.attachmentId);
+
+    // Find the attachment
+    const attachment = await prisma.evaluationAttachment.findUnique({
+      where: { id: attachmentId },
+      include: { evaluation: true },
+    });
+
+    if (!attachment) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    // Only the evaluator or admin can delete
+    if (attachment.evaluation.evaluatorId !== req.user.id && req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Not authorized to delete this attachment' });
+    }
+
+    // Delete from S3
+    await deleteFile(attachment.s3Key);
+
+    // Delete from database
+    await prisma.evaluationAttachment.delete({
+      where: { id: attachmentId },
+    });
+
+    res.json({ message: 'Attachment deleted' });
+  } catch (err) {
+    console.error('Delete attachment error:', err);
+    res.status(500).json({ error: 'Failed to delete attachment' });
   }
 });
 

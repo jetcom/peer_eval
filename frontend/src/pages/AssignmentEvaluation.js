@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import ImageUpload from '../components/ImageUpload';
 
 function AssignmentEvaluation() {
   const { assignmentId, evalTypeId } = useParams();
@@ -23,6 +24,9 @@ function AssignmentEvaluation() {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [autoSaveStatus, setAutoSaveStatus] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [evaluationIds, setEvaluationIds] = useState({}); // Map targetId -> evaluation.id
+  const [attachments, setAttachments] = useState({}); // Map targetId -> attachments array
+  const [imageUploadsEnabled, setImageUploadsEnabled] = useState(false);
 
   const autoSaveTimeoutRef = useRef(null);
   const lastSavedDataRef = useRef(null);
@@ -49,6 +53,14 @@ function AssignmentEvaluation() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      // Check if image uploads are enabled
+      try {
+        const uploadStatusRes = await axios.get('/api/evaluations/attachments/status');
+        setImageUploadsEnabled(uploadStatusRes.data.enabled);
+      } catch (err) {
+        console.log('Image uploads not available');
+      }
+
       // Fetch assignment details
       const assignmentRes = await axios.get(`/api/assignments/${assignmentId}`);
       setAssignment(assignmentRes.data);
@@ -86,6 +98,7 @@ function AssignmentEvaluation() {
       if (assignmentData) {
         // Initialize evaluations state
         const evalMap = {};
+        const evalIdMap = {};
 
         if (foundEvalType.target_type === 'individual') {
           // Get group members to evaluate
@@ -109,6 +122,11 @@ function AssignmentEvaluation() {
               comments: existing?.comments || '',
               scores: defaultScores
             };
+
+            // Track evaluation ID for attachments
+            if (existing?.id) {
+              evalIdMap[member.id] = existing.id;
+            }
           });
         } else {
           // Group evaluations - exclude own group for audience evals
@@ -126,17 +144,43 @@ function AssignmentEvaluation() {
               defaultScores[c.id] = existingScore?.score ?? Math.floor((c.min_value + c.max_value) / 2);
             });
 
-            evalMap[`group_${targetGroup.id}`] = {
+            const targetId = `group_${targetGroup.id}`;
+            evalMap[targetId] = {
               comments: existing?.comments || '',
               scores: defaultScores
             };
+
+            // Track evaluation ID for attachments
+            if (existing?.id) {
+              evalIdMap[targetId] = existing.id;
+            }
           });
 
           setAllGroups(otherGroups);
         }
 
         setEvaluations(evalMap);
+        setEvaluationIds(evalIdMap);
         lastSavedDataRef.current = JSON.stringify(evalMap);
+
+        // Fetch attachments for existing evaluations
+        const attachmentsMap = {};
+        await Promise.all(
+          Object.entries(evalIdMap).map(async ([targetId, evalId]) => {
+            try {
+              const isGroup = targetId.startsWith('group_');
+              const endpoint = isGroup
+                ? `/api/assignments/evaluations/group/${evalId}/attachments`
+                : `/api/assignments/evaluations/individual/${evalId}/attachments`;
+              const attRes = await axios.get(endpoint);
+              attachmentsMap[targetId] = attRes.data;
+            } catch (err) {
+              console.log(`No attachments for evaluation ${evalId}`);
+              attachmentsMap[targetId] = [];
+            }
+          })
+        );
+        setAttachments(attachmentsMap);
       }
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -270,7 +314,7 @@ function AssignmentEvaluation() {
     }
 
     try {
-      const promises = [];
+      const promiseEntries = [];
 
       Object.entries(evaluations).forEach(([key, evalData]) => {
         const scores = Object.entries(evalData.scores).map(([criterionId, score]) => ({
@@ -280,27 +324,39 @@ function AssignmentEvaluation() {
 
         if (key.startsWith('group_')) {
           const groupId = parseInt(key.replace('group_', ''));
-          promises.push(
-            axios.post('/api/assignments/evaluations/group', {
+          promiseEntries.push({
+            key,
+            promise: axios.post('/api/assignments/evaluations/group', {
               group_id: groupId,
               eval_type_id: parseInt(evalTypeId),
               comments: evalData.comments,
               scores
             })
-          );
+          });
         } else {
-          promises.push(
-            axios.post('/api/assignments/evaluations/individual', {
+          promiseEntries.push({
+            key,
+            promise: axios.post('/api/assignments/evaluations/individual', {
               evaluatee_id: parseInt(key),
               eval_type_id: parseInt(evalTypeId),
               comments: evalData.comments,
               scores
             })
-          );
+          });
         }
       });
 
-      await Promise.all(promises);
+      const results = await Promise.all(promiseEntries.map(pe => pe.promise));
+
+      // Update evaluation IDs from response (for image uploads)
+      const newEvalIdMap = { ...evaluationIds };
+      results.forEach((res, idx) => {
+        if (res.data.id) {
+          newEvalIdMap[promiseEntries[idx].key] = res.data.id;
+        }
+      });
+      setEvaluationIds(newEvalIdMap);
+
       setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
       lastSavedDataRef.current = JSON.stringify(evaluations);
       setHasUnsavedChanges(false);
@@ -463,6 +519,39 @@ function AssignmentEvaluation() {
                   }}>
                     {countWords(evaluations[targetId]?.comments)} / {evalType.min_comment_words} words minimum
                     {countWords(evaluations[targetId]?.comments) >= evalType.min_comment_words ? ' ✓' : ''}
+                  </div>
+                )}
+
+                {/* Image upload section */}
+                {imageUploadsEnabled && (
+                  <div style={{ marginTop: '16px' }}>
+                    <label style={{ fontWeight: '500', display: 'block', marginBottom: '8px' }}>
+                      Attach Images (optional)
+                    </label>
+                    {evaluationIds[targetId] ? (
+                      <ImageUpload
+                        evaluationId={evaluationIds[targetId]}
+                        evaluationType={evalType?.target_type === 'group' ? 'group' : 'assignment'}
+                        attachments={attachments[targetId] || []}
+                        onAttachmentsChange={(newAttachments) => {
+                          setAttachments(prev => ({
+                            ...prev,
+                            [targetId]: newAttachments
+                          }));
+                        }}
+                        disabled={isReadOnly}
+                      />
+                    ) : (
+                      <div style={{
+                        padding: '12px',
+                        background: darkMode ? '#2a2a2a' : '#f8f9fa',
+                        borderRadius: '6px',
+                        color: darkMode ? '#a0a0a0' : '#666',
+                        fontSize: '0.9rem'
+                      }}>
+                        Save your evaluation first to enable image uploads
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
