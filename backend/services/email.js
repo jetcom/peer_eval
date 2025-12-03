@@ -46,6 +46,13 @@ async function sendEmail({ to, subject, html, text, from = DEFAULT_FROM }) {
 }
 
 /**
+ * Delay helper for rate limiting between batch requests
+ */
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * Strip HTML tags for plain text version
  */
 function stripHtml(html) {
@@ -324,7 +331,9 @@ async function sendBulkNudge({ students, className, assignmentName, message, ins
   });
 
   // Resend batch API supports up to 100 emails per request
+  // Rate limit: 2 requests/second, so we delay 600ms between batches
   const BATCH_SIZE = 100;
+  const DELAY_BETWEEN_BATCHES_MS = 600;
   let successful = 0;
   let failed = 0;
 
@@ -345,6 +354,11 @@ async function sendBulkNudge({ students, className, assignmentName, message, ins
     } catch (err) {
       console.error('Failed to send batch:', err);
       failed += batch.length;
+    }
+
+    // Delay before next batch to respect rate limit (except after the last batch)
+    if (i + BATCH_SIZE < emails.length) {
+      await delay(DELAY_BETWEEN_BATCHES_MS);
     }
   }
 
