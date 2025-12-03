@@ -2907,3 +2907,207 @@ body.dark-mode .student-class-item .student-class-semester {
     font-size: 1.5rem;
   }
 }
+
+/* ==========================================
+   EVALUATION PAGE MOBILE STYLES
+   ========================================== */
+
+@media (max-width: 768px) {
+  /* Evaluation section spacing */
+  .evaluation-section {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+  }
+
+  .member-name {
+    font-size: 1.1rem;
+    margin-bottom: 12px;
+  }
+
+  /* Criteria items */
+  .criteria-item {
+    margin-bottom: 16px;
+  }
+
+  .criteria-label {
+    font-size: 0.95rem;
+    display: block;
+  }
+
+  .criteria-description {
+    display: block;
+    margin-left: 0;
+    margin-top: 4px;
+    font-size: 0.8rem;
+  }
+
+  /* Likert scale - make it vertical on mobile */
+  .likert-scale {
+    flex-direction: row;
+    justify-content: space-around;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px 0;
+  }
+
+  .likert-option {
+    flex: 0 0 auto;
+    min-width: 45px;
+    padding: 4px;
+  }
+
+  .likert-option span {
+    font-size: 0.7rem;
+  }
+
+  .likert-labels {
+    font-size: 0.7rem;
+    margin-top: 4px;
+  }
+
+  /* Score input */
+  .score-input {
+    flex-wrap: wrap;
+  }
+
+  .score-input input {
+    width: 70px;
+    padding: 8px;
+  }
+
+  /* Textareas */
+  .evaluation-section textarea,
+  .form-group textarea {
+    min-height: 100px;
+    font-size: 0.9rem;
+  }
+
+  /* Phase tabs on mobile */
+  .phase-tabs {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .phase-tab {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 100px;
+    padding: 10px 8px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Very small screens - stack likert options */
+@media (max-width: 480px) {
+  .likert-scale {
+    gap: 2px;
+  }
+
+  .likert-option {
+    min-width: 40px;
+  }
+
+  .likert-option span {
+    display: none;
+  }
+
+  .phase-tab {
+    flex: 1 1 100%;
+  }
+}
+
+/* ==========================================
+   GROUPS TAB MOBILE STYLES
+   ========================================== */
+
+@media (max-width: 768px) {
+  /* Stack action buttons vertically */
+  .card table td .btn {
+    display: block;
+    width: 100%;
+    margin-right: 0 !important;
+    margin-bottom: 6px;
+    text-align: center;
+  }
+
+  .card table td .btn:last-child {
+    margin-bottom: 0;
+  }
+}
+
+/* ==========================================
+   REPORTS TAB MOBILE STYLES
+   ========================================== */
+
+@media (max-width: 768px) {
+  /* Export buttons section */
+  .card > div[style*="display: flex"][style*="justify-content: space-between"] {
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  .card > div[style*="display: flex"][style*="justify-content: space-between"] > div[style*="display: flex"] {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  /* Report student cards - full width grid */
+  .report-student-card {
+    padding: 12px;
+  }
+
+  .report-student-card h3,
+  .report-student-card h4 {
+    font-size: 1rem;
+    margin-bottom: 10px;
+  }
+
+  .report-student-card h4 span {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.85rem;
+  }
+
+  /* Progress bars */
+  .report-progress-bg {
+    height: 14px !important;
+  }
+
+  /* Phase header */
+  .report-phase-header {
+    font-size: 1.1rem;
+    margin-bottom: 15px;
+  }
+
+  /* Comments section */
+  .report-comment-border {
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
+
+  /* Grid adjustments for mobile - force single column */
+  div[style*="grid-template-columns: repeat(auto-fit, minmax(300px"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  div[style*="grid-template-columns: repeat(auto-fit, minmax(350px"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Very small screens */
+@media (max-width: 480px) {
+  .report-student-card {
+    padding: 10px;
+  }
+
+  .report-student-card h3,
+  .report-student-card h4 {
+    font-size: 0.95rem;
+  }
+
+  /* Filter dropdown */
+  select[style*="width: 100%"] {
+    font-size: 0.9rem;
+    padding: 8px;
+  }
+}
