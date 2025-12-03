@@ -1,5 +1,12 @@
+/* Prevent horizontal scroll on mobile */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 .app {
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 .loading {
@@ -16,6 +23,7 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px;
+  overflow-x: hidden;
 }
 
 .header {
@@ -2770,66 +2778,92 @@ body.dark-mode .student-class-item .student-class-semester {
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     padding: 12px 16px;
     text-align: center;
   }
 
   .header h1 {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
   }
 
   .header-right {
-    flex-wrap: wrap;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: 8px;
+    width: 100%;
   }
 
   .header-right span {
-    width: 100%;
+    grid-column: 1 / -1;
     font-size: 0.85rem;
+    text-align: center;
   }
 
-  .header-right .btn {
-    padding: 6px 12px;
-    font-size: 0.8rem;
-  }
-
+  .header-right .btn,
   .header-right .theme-toggle {
-    padding: 6px 10px;
-    font-size: 0.8rem;
+    padding: 8px 10px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .header-right select {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 
   .container {
-    padding: 12px;
+    padding: 10px;
   }
 }
 
-/* Mobile tables - horizontal scroll */
+/* Very small screens - stack header buttons */
+@media (max-width: 400px) {
+  .header-right {
+    grid-template-columns: 1fr;
+  }
+
+  .header-right .btn,
+  .header-right .theme-toggle {
+    width: 100%;
+  }
+}
+
+/* Mobile tables - responsive card layout */
 @media (max-width: 768px) {
   .card {
     padding: 12px;
-    overflow-x: auto;
   }
 
+  /* Remove min-width to prevent horizontal scroll */
   table {
-    min-width: 600px;
+    min-width: unset;
+    width: 100%;
   }
 
   table th,
   table td {
-    padding: 8px;
-    font-size: 0.85rem;
+    padding: 8px 6px;
+    font-size: 0.8rem;
+    word-wrap: break-word;
+  }
+
+  /* Hide less important columns on mobile */
+  table th:nth-child(n+4),
+  table td:nth-child(n+4) {
+    display: none;
   }
 
   .tabs {
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
     gap: 6px;
   }
 
   .tab {
-    padding: 8px 14px;
-    font-size: 0.85rem;
+    padding: 10px 8px;
+    font-size: 0.8rem;
+    text-align: center;
   }
 }
 
@@ -2886,11 +2920,12 @@ body.dark-mode .student-class-item .student-class-semester {
 /* Mobile progress indicators and heat maps */
 @media (max-width: 768px) {
   .progress-grid {
-    overflow-x: auto;
+    overflow-x: visible;
   }
 
   .heat-map {
-    min-width: 400px;
+    min-width: unset;
+    width: 100%;
   }
 }
 
@@ -3039,10 +3074,11 @@ body.dark-mode .student-class-item .student-class-semester {
    ========================================== */
 
 @media (max-width: 768px) {
-  /* Export buttons section */
+  /* Export buttons section - force column layout */
   .card > div[style*="display: flex"][style*="justify-content: space-between"] {
     flex-direction: column !important;
     gap: 12px !important;
+    align-items: stretch !important;
   }
 
   .card > div[style*="display: flex"][style*="justify-content: space-between"] > div[style*="display: flex"] {
@@ -3084,13 +3120,35 @@ body.dark-mode .student-class-item .student-class-semester {
     margin-bottom: 8px;
   }
 
-  /* Grid adjustments for mobile - force single column */
-  div[style*="grid-template-columns: repeat(auto-fit, minmax(300px"] {
+  /* Grid adjustments for mobile - force single column for all grids */
+  div[style*="grid-template-columns"] {
     grid-template-columns: 1fr !important;
   }
 
-  div[style*="grid-template-columns: repeat(auto-fit, minmax(350px"] {
-    grid-template-columns: 1fr !important;
+  /* Override all min-width constraints on dropdowns/selects */
+  select[style*="minWidth"],
+  select[style*="min-width"] {
+    min-width: unset !important;
+    width: 100% !important;
+  }
+
+  /* Tables inside cards - allow wrapping */
+  .card table {
+    min-width: unset !important;
+    width: 100% !important;
+  }
+
+  .card table th,
+  .card table td {
+    padding: 6px 4px !important;
+    font-size: 0.75rem !important;
+    word-break: break-word;
+  }
+
+  /* Hide overflow for inline tables */
+  .card div[style*="overflowX: auto"],
+  .card div[style*="overflow-x: auto"] {
+    overflow-x: visible !important;
   }
 }
 
@@ -3105,9 +3163,26 @@ body.dark-mode .student-class-item .student-class-semester {
     font-size: 0.95rem;
   }
 
-  /* Filter dropdown */
-  select[style*="width: 100%"] {
-    font-size: 0.9rem;
-    padding: 8px;
+  /* Make all dropdowns full width */
+  select {
+    width: 100% !important;
+    min-width: unset !important;
+  }
+
+  /* Smaller table text */
+  .card table th,
+  .card table td {
+    padding: 4px 2px !important;
+    font-size: 0.7rem !important;
+  }
+
+  /* Stack flex containers */
+  div[style*="display: flex"][style*="gap"] {
+    flex-direction: column !important;
+  }
+
+  /* Buttons full width */
+  .card button {
+    width: 100%;
   }
 }
