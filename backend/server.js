@@ -11,6 +11,7 @@ const ssoRoutes = require('./routes/sso');
 const classRoutes = require('./routes/classes');
 const templateRoutes = require('./routes/templates');
 const assignmentRoutes = require('./routes/assignments');
+const notificationRoutes = require('./routes/notifications');
 const { initializeDatabase } = require('./database');
 
 const app = express();
@@ -56,6 +57,7 @@ app.use('/api/sso', ssoRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/templates', templateRoutes);
 app.use('/api/assignments', assignmentRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

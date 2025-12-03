@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+import ProgressTab from '../components/admin/ProgressTab';
 
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -15,11 +16,14 @@ function TeacherDashboard() {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [evaluations, setEvaluations] = useState([]);
+  const [finalCommentsData, setFinalCommentsData] = useState([]);
+  const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
 
   // Form states
   const [newClass, setNewClass] = useState({ name: '', section: '', semester: '' });
   const [newGroup, setNewGroup] = useState({ name: '' });
-  const [activeTab, setActiveTab] = useState('students');
+  const [activeTab, setActiveTab] = useState('progress');
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -37,16 +41,34 @@ function TeacherDashboard() {
 
   const fetchClassData = useCallback(async () => {
     try {
-      const [studentsRes, groupsRes] = await Promise.all([
+      const [studentsRes, groupsRes, evalsRes, finalCommentsRes] = await Promise.all([
         axios.get(`/api/classes/${selectedClass}/students`),
-        axios.get(`/api/classes/${selectedClass}/groups`)
+        axios.get(`/api/classes/${selectedClass}/groups`),
+        axios.get('/api/evaluations/all'),
+        axios.get('/api/evaluations/all-final-comments')
       ]);
       setStudents(studentsRes.data);
       setGroups(groupsRes.data);
+      setEvaluations(evalsRes.data);
+      setFinalCommentsData(finalCommentsRes.data);
+
+      // Check if this is an assignment-based class
+      const currentClass = classes.find(c => c.id === selectedClass);
+      if (currentClass?.evaluation_mode === 'assignments') {
+        try {
+          const assignmentEvalsRes = await axios.get(`/api/assignments/evaluations/admin/${selectedClass}`);
+          setAssignmentEvaluations(assignmentEvalsRes.data);
+        } catch (err) {
+          console.error('Failed to fetch assignment evaluations:', err);
+          setAssignmentEvaluations(null);
+        }
+      } else {
+        setAssignmentEvaluations(null);
+      }
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load class data' });
     }
-  }, [selectedClass]);
+  }, [selectedClass, classes]);
 
   useEffect(() => {
     fetchClasses();
@@ -129,12 +151,11 @@ function TeacherDashboard() {
   };
 
   const handleResetPassword = async (userId, studentName) => {
-    const newPassword = window.prompt(`Enter new password for ${studentName}:`);
-    if (!newPassword) return;
+    if (!window.confirm(`Send a password reset email to ${studentName}?`)) return;
 
     try {
-      await axios.post(`/api/classes/${selectedClass}/students/${userId}/reset-password`, { password: newPassword });
-      setMessage({ type: 'success', text: `Password reset for ${studentName}. They must change it on next login.` });
+      await axios.post(`/api/classes/${selectedClass}/students/${userId}/reset-password`);
+      setMessage({ type: 'success', text: `Password reset email sent to ${studentName}.` });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reset password' });
     }
@@ -259,6 +280,12 @@ function TeacherDashboard() {
               <h2>Managing: {currentClass.name} {currentClass.section && `(${currentClass.section})`}</h2>
               <div className="tabs">
                 <button
+                  className={`tab ${activeTab === 'progress' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('progress')}
+                >
+                  Progress
+                </button>
+                <button
                   className={`tab ${activeTab === 'students' ? 'active' : ''}`}
                   onClick={() => setActiveTab('students')}
                 >
@@ -278,6 +305,19 @@ function TeacherDashboard() {
                 </button>
               </div>
             </div>
+
+            {activeTab === 'progress' && (
+              <ProgressTab
+                darkMode={darkMode}
+                selectedClass={selectedClass?.toString()}
+                classes={classes}
+                classStudents={students}
+                classGroups={groups}
+                evaluations={evaluations}
+                finalCommentsData={finalCommentsData}
+                assignmentEvaluations={assignmentEvaluations}
+              />
+            )}
 
             {activeTab === 'students' && (
               <div className="admin-grid">

@@ -248,12 +248,11 @@ function AdminDashboard() {
   };
 
   const handleResetPassword = async (userId, userName) => {
-    const newPassword = window.prompt(`Enter new password for ${userName}:`);
-    if (!newPassword) return;
+    if (!window.confirm(`Send a password reset email to ${userName}?`)) return;
 
     try {
-      await axios.post(`/api/users/${userId}/reset-password`, { password: newPassword });
-      setMessage({ type: 'success', text: `Password reset for ${userName}. They must change it on next login.` });
+      await axios.post(`/api/users/${userId}/reset-password`);
+      setMessage({ type: 'success', text: `Password reset email sent to ${userName}.` });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reset password' });
     }

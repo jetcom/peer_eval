@@ -4,6 +4,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const emailService = require('../services/email');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -48,7 +49,7 @@ router.get('/', authenticateToken, requireAdmin, async (req, res) => {
 // Create user (admin only)
 router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { email, password, first_name, last_name, role = 'student' } = req.body;
+    const { email, password, first_name, last_name, role = 'student', sendWelcomeEmail: shouldSendEmail = true } = req.body;
     const hashedPassword = bcrypt.hashSync(password, 10);
 
     const user = await prisma.user.create({
@@ -57,9 +58,26 @@ router.post('/', authenticateToken, requireAdmin, async (req, res) => {
         password: hashedPassword,
         firstName: first_name,
         lastName: last_name,
-        role
+        role,
+        mustChangePassword: 1
       }
     });
+
+    // Send welcome email with credentials
+    if (shouldSendEmail) {
+      try {
+        await emailService.sendWelcomeEmail({
+          user: {
+            firstName: first_name,
+            email,
+            role
+          },
+          temporaryPassword: password
+        });
+      } catch (emailErr) {
+        console.error('Failed to send welcome email:', emailErr);
+      }
+    }
 
     res.json({
       id: user.id,
@@ -308,6 +326,18 @@ router.post('/:id/approve-teacher', authenticateToken, requireAdmin, async (req,
       data: { role: 'teacher' }
     });
 
+    // Send approval email
+    try {
+      await emailService.notifyInstructorApproved({
+        instructor: {
+          firstName: user.firstName,
+          email: user.email
+        }
+      });
+    } catch (emailErr) {
+      console.error('Failed to send approval email:', emailErr);
+    }
+
     res.json({
       message: `${user.firstName} ${user.lastName} has been approved as an instructor`,
       user: {
@@ -328,6 +358,7 @@ router.post('/:id/approve-teacher', authenticateToken, requireAdmin, async (req,
 router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    const { reason } = req.body;
 
     const user = await prisma.user.findUnique({
       where: { id },
@@ -340,6 +371,19 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
 
     if (user.role !== 'pending_teacher') {
       return res.status(400).json({ error: 'User is not a pending teacher' });
+    }
+
+    // Send rejection email before deleting
+    try {
+      await emailService.notifyInstructorRejected({
+        instructor: {
+          firstName: user.firstName,
+          email: user.email
+        },
+        reason
+      });
+    } catch (emailErr) {
+      console.error('Failed to send rejection email:', emailErr);
     }
 
     // Delete the user
@@ -356,14 +400,36 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
   }
 });
 
-// Reset user password (admin only)
+// Generate a secure random password
+function generateTempPassword(length = 12) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+  let password = '';
+  for (let i = 0; i < length; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return password;
+}
+
+// Reset user password (admin/teacher)
 router.post('/:id/reset-password', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { password } = req.body;
-    const hashedPassword = bcrypt.hashSync(password, 10);
 
-    const result = await prisma.user.updateMany({
+    // Auto-generate a temporary password
+    const tempPassword = generateTempPassword();
+    const hashedPassword = bcrypt.hashSync(tempPassword, 10);
+
+    // Get user info for email
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { email: true, firstName: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    await prisma.user.update({
       where: { id },
       data: {
         password: hashedPassword,
@@ -371,11 +437,20 @@ router.post('/:id/reset-password', authenticateToken, requireAdmin, async (req, 
       }
     });
 
-    if (result.count === 0) {
-      return res.status(404).json({ error: 'User not found' });
+    // Send password reset email
+    try {
+      await emailService.sendPasswordReset({
+        user: {
+          firstName: user.firstName,
+          email: user.email
+        },
+        temporaryPassword: tempPassword
+      });
+    } catch (emailErr) {
+      console.error('Failed to send password reset email:', emailErr);
     }
 
-    res.json({ message: 'Password reset successfully. User must change password on next login.' });
+    res.json({ message: 'Password reset email sent. User must change password on next login.' });
   } catch (err) {
     console.error('Reset password error:', err);
     res.status(500).json({ error: 'Failed to reset password' });

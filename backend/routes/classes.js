@@ -4,6 +4,7 @@ const { parse } = require('csv-parse');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 const { authenticateToken } = require('../middleware/auth');
+const emailService = require('../services/email');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -866,13 +867,39 @@ router.post('/:id/students/:userId/reset-password', authenticateToken, requireTe
       return res.status(404).json({ error: 'Student not enrolled in this class' });
     }
 
-    const hashedPassword = bcrypt.hashSync(password, 10);
+    // Get user info for email
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true }
+    });
+
+    // Generate temp password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let tempPassword = '';
+    for (let i = 0; i < 12; i++) {
+      tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const hashedPassword = bcrypt.hashSync(tempPassword, 10);
     await prisma.user.update({
       where: { id: userId },
       data: { password: hashedPassword, mustChangePassword: 1 }
     });
 
-    res.json({ message: 'Password reset successfully. Student must change password on next login.' });
+    // Send password reset email
+    try {
+      await emailService.sendPasswordReset({
+        user: {
+          firstName: user.firstName,
+          email: user.email
+        },
+        temporaryPassword: tempPassword
+      });
+    } catch (emailErr) {
+      console.error('Failed to send password reset email:', emailErr);
+    }
+
+    res.json({ message: 'Password reset email sent. Student must change password on next login.' });
   } catch (err) {
     console.error('Reset student password error:', err);
     res.status(500).json({ error: 'Failed to reset password' });

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
+import axios from 'axios';
 
 function ProgressTab({
   darkMode,
@@ -16,6 +17,10 @@ function ProgressTab({
   // eslint-disable-next-line no-unused-vars
   const [selectedAssignment, setSelectedAssignment] = useState('');
   const confettiFired = useRef(false);
+  const [selectedStudents, setSelectedStudents] = useState(new Set());
+  const [nudgeMessage, setNudgeMessage] = useState('');
+  const [sendingNudge, setSendingNudge] = useState(false);
+  const [nudgeResult, setNudgeResult] = useState(null);
 
   // Get class config
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
@@ -222,6 +227,66 @@ function ProgressTab({
   useEffect(() => {
     confettiFired.current = false;
   }, [selectedClass]);
+
+  // Clear selected students when class changes
+  useEffect(() => {
+    setSelectedStudents(new Set());
+    setNudgeResult(null);
+  }, [selectedClass]);
+
+  // Toggle student selection for nudge
+  const toggleStudentSelection = (studentId) => {
+    setSelectedStudents(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(studentId)) {
+        newSet.delete(studentId);
+      } else {
+        newSet.add(studentId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select all incomplete students for a phase
+  const selectAllIncomplete = (phase) => {
+    const incomplete = getIncompleteStudents(phase);
+    setSelectedStudents(new Set(incomplete.map(s => s.id)));
+  };
+
+  // Clear selection
+  const clearSelection = () => {
+    setSelectedStudents(new Set());
+  };
+
+  // Send nudge emails
+  const sendNudgeEmails = async () => {
+    if (selectedStudents.size === 0) return;
+
+    setSendingNudge(true);
+    setNudgeResult(null);
+
+    try {
+      const response = await axios.post('/api/notifications/nudge', {
+        studentIds: Array.from(selectedStudents),
+        classId: parseInt(selectedClass),
+        message: nudgeMessage || undefined
+      });
+
+      setNudgeResult({
+        type: 'success',
+        message: response.data.message
+      });
+      setSelectedStudents(new Set());
+      setNudgeMessage('');
+    } catch (err) {
+      setNudgeResult({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to send nudge emails'
+      });
+    } finally {
+      setSendingNudge(false);
+    }
+  };
 
   const statusColors = {
     'complete': '#27ae60',
@@ -775,7 +840,30 @@ function ProgressTab({
 
       {/* Who Needs a Nudge */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>Who Needs a Nudge?</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{ margin: 0 }}>Who Needs a Nudge?</h3>
+          {selectedStudents.size > 0 && (
+            <span style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.9rem' }}>
+              {selectedStudents.size} student{selectedStudents.size !== 1 ? 's' : ''} selected
+            </span>
+          )}
+        </div>
+
+        {nudgeResult && (
+          <div style={{
+            padding: '10px 15px',
+            marginBottom: '15px',
+            borderRadius: '6px',
+            background: nudgeResult.type === 'success'
+              ? (darkMode ? '#1a3d1a' : '#d4edda')
+              : (darkMode ? '#3d1a1a' : '#f8d7da'),
+            color: nudgeResult.type === 'success'
+              ? (darkMode ? '#7dd87d' : '#155724')
+              : (darkMode ? '#d87d7d' : '#721c24')
+          }}>
+            {nudgeResult.message}
+          </div>
+        )}
 
         {phaseNumbers.map(phase => {
           const incomplete = getIncompleteStudents(phase);
@@ -783,9 +871,25 @@ function ProgressTab({
 
           return (
             <div key={phase} style={{ marginBottom: '20px' }}>
-              <h4 style={{ marginBottom: '10px', color: '#e74c3c' }}>
-                Phase {phase} - {incomplete.length} student{incomplete.length !== 1 ? 's' : ''} incomplete
-              </h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ margin: 0, color: '#e74c3c' }}>
+                  Phase {phase} - {incomplete.length} student{incomplete.length !== 1 ? 's' : ''} incomplete
+                </h4>
+                <button
+                  onClick={() => selectAllIncomplete(phase)}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.8rem',
+                    background: darkMode ? '#2563eb' : '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Select All
+                </button>
+              </div>
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
@@ -794,21 +898,37 @@ function ProgressTab({
                 {incomplete.map(student => (
                   <div
                     key={student.id}
+                    onClick={() => toggleStudentSelection(student.id)}
                     style={{
                       padding: '8px 12px',
-                      background: student.status === 'partial'
-                        ? (darkMode ? '#3d3510' : '#fef9e7')
-                        : (darkMode ? '#3d1515' : '#fdedec'),
+                      background: selectedStudents.has(student.id)
+                        ? (darkMode ? '#1a3a6e' : '#d4edfa')
+                        : student.status === 'partial'
+                          ? (darkMode ? '#3d3510' : '#fef9e7')
+                          : (darkMode ? '#3d1515' : '#fdedec'),
                       borderRadius: '4px',
-                      borderLeft: `4px solid ${statusColors[student.status]}`,
-                      fontSize: '0.9rem'
+                      borderLeft: `4px solid ${selectedStudents.has(student.id) ? '#3498db' : statusColors[student.status]}`,
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'background 0.2s'
                     }}
                   >
-                    <div style={{ fontWeight: '500' }}>
-                      {student.last_name}, {student.first_name}
-                    </div>
-                    <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
-                      {student.group?.name || 'No group'} · {statusLabels[student.status]}
+                    <input
+                      type="checkbox"
+                      checked={selectedStudents.has(student.id)}
+                      onChange={() => {}}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '500' }}>
+                        {student.last_name}, {student.first_name}
+                      </div>
+                      <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
+                        {student.group?.name || 'No group'} · {statusLabels[student.status]}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -823,9 +943,25 @@ function ProgressTab({
 
           return (
             <div style={{ marginBottom: '20px' }}>
-              <h4 style={{ marginBottom: '10px', color: '#e74c3c' }}>
-                Final Evaluation - {incomplete.length} student{incomplete.length !== 1 ? 's' : ''} incomplete
-              </h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ margin: 0, color: '#e74c3c' }}>
+                  Final Evaluation - {incomplete.length} student{incomplete.length !== 1 ? 's' : ''} incomplete
+                </h4>
+                <button
+                  onClick={() => selectAllIncomplete('final')}
+                  style={{
+                    padding: '4px 10px',
+                    fontSize: '0.8rem',
+                    background: darkMode ? '#2563eb' : '#3498db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Select All
+                </button>
+              </div>
               <div style={{
                 display: 'grid',
                 gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))',
@@ -834,21 +970,37 @@ function ProgressTab({
                 {incomplete.map(student => (
                   <div
                     key={student.id}
+                    onClick={() => toggleStudentSelection(student.id)}
                     style={{
                       padding: '8px 12px',
-                      background: student.status === 'partial'
-                        ? (darkMode ? '#3d3510' : '#fef9e7')
-                        : (darkMode ? '#3d1515' : '#fdedec'),
+                      background: selectedStudents.has(student.id)
+                        ? (darkMode ? '#1a3a6e' : '#d4edfa')
+                        : student.status === 'partial'
+                          ? (darkMode ? '#3d3510' : '#fef9e7')
+                          : (darkMode ? '#3d1515' : '#fdedec'),
                       borderRadius: '4px',
-                      borderLeft: `4px solid ${statusColors[student.status]}`,
-                      fontSize: '0.9rem'
+                      borderLeft: `4px solid ${selectedStudents.has(student.id) ? '#3498db' : statusColors[student.status]}`,
+                      fontSize: '0.9rem',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'background 0.2s'
                     }}
                   >
-                    <div style={{ fontWeight: '500' }}>
-                      {student.last_name}, {student.first_name}
-                    </div>
-                    <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
-                      {student.group?.name || 'No group'} · {statusLabels[student.status]}
+                    <input
+                      type="checkbox"
+                      checked={selectedStudents.has(student.id)}
+                      onChange={() => {}}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '500' }}>
+                        {student.last_name}, {student.first_name}
+                      </div>
+                      <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
+                        {student.group?.name || 'No group'} · {statusLabels[student.status]}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -860,8 +1012,75 @@ function ProgressTab({
         {phaseNumbers.every(p => getIncompleteStudents(p).length === 0) &&
          (!hasFinalEvaluation || getIncompleteStudents('final').length === 0) && (
           <p style={{ color: '#27ae60', fontWeight: '500' }}>
-            🎉 All students have completed their evaluations!
+            All students have completed their evaluations!
           </p>
+        )}
+
+        {/* Send Nudge Section */}
+        {selectedStudents.size > 0 && (
+          <div style={{
+            marginTop: '20px',
+            padding: '15px',
+            background: darkMode ? '#1a2744' : '#f0f7ff',
+            borderRadius: '8px',
+            border: `1px solid ${darkMode ? '#2563eb' : '#3498db'}`
+          }}>
+            <h4 style={{ margin: '0 0 10px 0' }}>Send Reminder Email</h4>
+            <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
+              Send a reminder email to {selectedStudents.size} selected student{selectedStudents.size !== 1 ? 's' : ''}.
+            </p>
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
+                Custom Message (optional):
+              </label>
+              <textarea
+                value={nudgeMessage}
+                onChange={(e) => setNudgeMessage(e.target.value)}
+                placeholder="Add a personal message to include in the email..."
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  borderRadius: '4px',
+                  border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
+                  background: darkMode ? '#1a1a1a' : '#fff',
+                  color: darkMode ? '#fff' : '#000',
+                  fontSize: '0.9rem',
+                  minHeight: '80px',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={sendNudgeEmails}
+                disabled={sendingNudge}
+                style={{
+                  padding: '10px 20px',
+                  background: sendingNudge ? '#666' : '#2563eb',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: sendingNudge ? 'not-allowed' : 'pointer',
+                  fontWeight: '500'
+                }}
+              >
+                {sendingNudge ? 'Sending...' : `Send Reminder to ${selectedStudents.size} Student${selectedStudents.size !== 1 ? 's' : ''}`}
+              </button>
+              <button
+                onClick={clearSelection}
+                style={{
+                  padding: '10px 20px',
+                  background: 'transparent',
+                  color: darkMode ? '#a0a0a0' : '#666',
+                  border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
+                  borderRadius: '6px',
+                  cursor: 'pointer'
+                }}
+              >
+                Clear Selection
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </>

@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
+const emailService = require('../services/email');
 
 const router = express.Router();
 
@@ -122,6 +123,31 @@ router.post('/register-instructor', async (req, res) => {
         role: 'pending_teacher'
       }
     });
+
+    // Notify admins about new instructor registration
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: 'admin' },
+        select: { email: true }
+      });
+      const adminEmails = admins.map(a => a.email);
+
+      if (adminEmails.length > 0) {
+        await emailService.notifyAdminNewInstructor({
+          adminEmails,
+          instructor: {
+            firstName: first_name,
+            lastName: last_name,
+            email,
+            university,
+            department
+          }
+        });
+      }
+    } catch (emailErr) {
+      console.error('Failed to send admin notification email:', emailErr);
+      // Don't fail registration if email fails
+    }
 
     res.json({
       message: 'Registration submitted. Your account is pending approval by an administrator.',
