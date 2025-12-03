@@ -1845,6 +1845,29 @@ body.dark-mode .student-class-item .student-class-semester {
   gap: 12px;
 }
 
+/* Landing page theme toggle - needs visibility in light mode */
+.landing-page .theme-toggle {
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  color: #2c3e50;
+}
+
+.landing-page .theme-toggle:hover {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 0, 0, 0.3);
+}
+
+.landing-page.dark .theme-toggle {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: #e0e0e0;
+}
+
+.landing-page.dark .theme-toggle:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
 /* Landing Buttons */
 .landing-btn {
   display: inline-flex;
@@ -2646,4 +2669,241 @@ body.dark-mode .student-class-item .student-class-semester {
 
 .landing-footer-copyright {
   font-size: 0.85rem;
+}
+
+/* ==========================================
+   GLOBAL MOBILE RESPONSIVE STYLES
+   ========================================== */
+
+/* Mobile navigation - Landing page */
+@media (max-width: 768px) {
+  .landing-nav-content {
+    padding: 12px 16px;
+  }
+
+  .landing-nav-actions {
+    gap: 8px;
+  }
+
+  .landing-nav-actions .landing-btn {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+
+  .landing-page .theme-toggle {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+
+  .landing-hero-title {
+    font-size: 2.2rem;
+  }
+
+  .landing-hero-subtitle {
+    font-size: 1rem;
+  }
+
+  .landing-btn-lg {
+    padding: 12px 20px;
+    font-size: 0.95rem;
+  }
+
+  .landing-section-title {
+    font-size: 1.8rem;
+  }
+
+  .landing-features-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .landing-feature-card {
+    padding: 20px;
+  }
+
+  .landing-steps {
+    gap: 24px;
+  }
+
+  .landing-step-connector {
+    display: none;
+  }
+
+  .landing-screenshot-gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-use-cases-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-cta h2 {
+    font-size: 1.6rem;
+  }
+}
+
+/* Very small screens - hide some nav items on landing */
+@media (max-width: 480px) {
+  .landing-nav-actions .landing-btn-secondary {
+    display: none;
+  }
+
+  .landing-hero-stats {
+    gap: 20px;
+  }
+
+  .landing-stat-number {
+    font-size: 1.4rem;
+  }
+
+  .landing-hero-title {
+    font-size: 1.8rem;
+  }
+
+  .landing-footer-links {
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+/* Mobile dashboard header */
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+    text-align: center;
+  }
+
+  .header h1 {
+    font-size: 1.2rem;
+  }
+
+  .header-right {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .header-right span {
+    width: 100%;
+    font-size: 0.85rem;
+  }
+
+  .header-right .btn {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+  }
+
+  .header-right .theme-toggle {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+
+  .container {
+    padding: 12px;
+  }
+}
+
+/* Mobile tables - horizontal scroll */
+@media (max-width: 768px) {
+  .card {
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  table {
+    min-width: 600px;
+  }
+
+  table th,
+  table td {
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tab {
+    padding: 8px 14px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Mobile forms */
+@media (max-width: 768px) {
+  .form-group label {
+    font-size: 0.85rem;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 10px;
+    font-size: 0.9rem;
+  }
+
+  .admin-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .btn {
+    padding: 8px 14px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Mobile student dashboard */
+@media (max-width: 768px) {
+  .evaluation-card {
+    padding: 12px;
+  }
+
+  .likert-scale {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .likert-scale label {
+    justify-content: flex-start;
+  }
+
+  .phase-indicator {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .phase-badge {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+}
+
+/* Mobile progress indicators and heat maps */
+@media (max-width: 768px) {
+  .progress-grid {
+    overflow-x: auto;
+  }
+
+  .heat-map {
+    min-width: 400px;
+  }
+}
+
+/* Login/Register pages mobile */
+@media (max-width: 480px) {
+  .login-container,
+  .register-container {
+    padding: 16px;
+    margin: 20px 16px;
+  }
+
+  .login-container h1,
+  .register-container h1 {
+    font-size: 1.5rem;
+  }
 }
