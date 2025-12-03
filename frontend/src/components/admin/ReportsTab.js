@@ -206,53 +206,106 @@ function ReportsTab({
           {students.length === 0 ? (
             <p>No students found.</p>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '10px' }}>Student</th>
-                    <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>
-                    {assignments.map(a => (
-                      <th key={a.id} style={{ textAlign: 'center', padding: '10px' }}>{a.name}</th>
-                    ))}
-                    <th style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75' }}>Overall</th>
-                    <th style={{ textAlign: 'center', padding: '10px' }}>Submitted</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {studentSummaries.map(student => (
-                    <tr key={student.id}>
-                      <td style={{ padding: '10px' }}><strong>{student.last_name}, {student.first_name}</strong></td>
-                      <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>
-                      {assignments.map(a => {
-                        const score = student.assignmentScores[a.id];
-                        return (
-                          <td key={a.id} style={{ textAlign: 'center', padding: '10px' }}>
-                            {score?.avgScore != null ? (
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '3px',
-                                background: score.avgScore >= 4 ? '#27ae60' : score.avgScore >= 3 ? '#f39c12' : '#e74c3c',
-                                color: 'white',
-                                fontSize: '0.85rem'
-                              }}>
-                                {score.avgScore.toFixed(1)}
-                              </span>
-                            ) : '-'}
-                          </td>
-                        );
-                      })}
-                      <td style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75', fontWeight: 'bold' }}>
-                        {student.overallAvg != null ? student.overallAvg.toFixed(2) : '-'}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '10px' }}>
-                        {student.submittedCount}
-                      </td>
+            <>
+              {/* Desktop table view */}
+              <div className="desktop-table" style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '10px' }}>Student</th>
+                      <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>
+                      {assignments.map(a => (
+                        <th key={a.id} style={{ textAlign: 'center', padding: '10px' }}>{a.name}</th>
+                      ))}
+                      <th style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75' }}>Overall</th>
+                      <th style={{ textAlign: 'center', padding: '10px' }}>Submitted</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {studentSummaries.map(student => (
+                      <tr key={student.id}>
+                        <td style={{ padding: '10px' }}><strong>{student.last_name}, {student.first_name}</strong></td>
+                        <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>
+                        {assignments.map(a => {
+                          const score = student.assignmentScores[a.id];
+                          return (
+                            <td key={a.id} style={{ textAlign: 'center', padding: '10px' }}>
+                              {score?.avgScore != null ? (
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '3px',
+                                  background: score.avgScore >= 4 ? '#27ae60' : score.avgScore >= 3 ? '#f39c12' : '#e74c3c',
+                                  color: 'white',
+                                  fontSize: '0.85rem'
+                                }}>
+                                  {score.avgScore.toFixed(1)}
+                                </span>
+                              ) : '-'}
+                            </td>
+                          );
+                        })}
+                        <td style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75', fontWeight: 'bold' }}>
+                          {student.overallAvg != null ? student.overallAvg.toFixed(2) : '-'}
+                        </td>
+                        <td style={{ textAlign: 'center', padding: '10px' }}>
+                          {student.submittedCount}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile card view */}
+              <div className="mobile-card-list">
+                {studentSummaries.map(student => (
+                  <div key={student.id} className="mobile-card">
+                    <div className="mobile-card-header">
+                      {student.last_name}, {student.first_name}
+                    </div>
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Group</span>
+                      <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
+                    </div>
+
+                    {/* Assignment scores */}
+                    {assignments.map(a => {
+                      const score = student.assignmentScores[a.id];
+                      return (
+                        <div key={a.id} className="mobile-card-row">
+                          <span className="mobile-card-label">{a.name}</span>
+                          {score?.avgScore != null ? (
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: '3px',
+                              background: score.avgScore >= 4 ? '#27ae60' : score.avgScore >= 3 ? '#f39c12' : '#e74c3c',
+                              color: 'white',
+                              fontSize: '0.85rem'
+                            }}>
+                              {score.avgScore.toFixed(1)}
+                            </span>
+                          ) : (
+                            <span style={{ color: '#999' }}>-</span>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* Summary row */}
+                    <div className="mobile-card-row" style={{ borderTop: '1px solid #e0e0e0', paddingTop: '8px', marginTop: '4px' }}>
+                      <span className="mobile-card-label">Overall Avg</span>
+                      <span className="mobile-card-value" style={{ fontWeight: 'bold' }}>
+                        {student.overallAvg != null ? student.overallAvg.toFixed(2) : '-'}
+                      </span>
+                    </div>
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Submitted</span>
+                      <span className="mobile-card-value">{student.submittedCount}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -684,75 +737,139 @@ function ReportsTab({
         {students.length === 0 ? (
           <p>No students found.</p>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Student</th>
-                  {phaseNumbers.map(p => (
-                    <React.Fragment key={p}>
-                      <th>P{p} Score</th>
-                      <th>P{p} Likert</th>
-                    </React.Fragment>
+          <>
+            {/* Desktop table view */}
+            <div className="desktop-table" style={{ overflowX: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Student</th>
+                    {phaseNumbers.map(p => (
+                      <React.Fragment key={p}>
+                        <th>P{p} Score</th>
+                        <th>P{p} Likert</th>
+                      </React.Fragment>
+                    ))}
+                    <th>Final Pts</th>
+                    <th style={{ borderLeft: '2px solid #586e75' }}>Submitted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {studentSummaries.map(student => (
+                    <tr key={student.id}>
+                      <td><strong>{student.last_name}, {student.first_name}</strong></td>
+                      {phaseNumbers.map((phaseNum, i) => {
+                        const phase = student.phases[i];
+                        return phase ? (
+                          <React.Fragment key={i}>
+                            <td>{phase.avgScore.toFixed(1)}</td>
+                            <td>{phase.avgLikert.toFixed(2)}</td>
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment key={i}>
+                            <td>-</td>
+                            <td>-</td>
+                          </React.Fragment>
+                        );
+                      })}
+                      <td style={{ fontWeight: 'bold', color: '#9b59b6' }}>
+                        {student.totalFinalPoints || 0}
+                      </td>
+                      <td style={{ borderLeft: '2px solid #586e75', whiteSpace: 'nowrap' }}>
+                        {phaseNumbers.map(p => {
+                          const status = student.phaseStatus[p];
+                          const color = status === 'complete' ? '#27ae60' : status === 'incomplete' ? '#f39c12' : '#e74c3c';
+                          const symbol = status === 'complete' ? '✓' : '✗';
+                          const title = status === 'complete' ? 'Submitted' : status === 'incomplete' ? 'Submitted but below word count' : 'Not submitted';
+                          return (
+                            <span
+                              key={p}
+                              title={`Phase ${p}: ${title}`}
+                              style={{ color, marginRight: '4px' }}
+                            >
+                              {symbol}
+                            </span>
+                          );
+                        })}
+                        {selectedClassData?.has_final_evaluation && (
+                          <span
+                            title={`Final: ${student.finalStatus === 'complete' ? 'Submitted' : student.finalStatus === 'incomplete' ? 'Submitted but below word count' : 'Not submitted'}`}
+                            style={{
+                              color: student.finalStatus === 'complete' ? '#27ae60' : student.finalStatus === 'incomplete' ? '#f39c12' : '#e74c3c',
+                              marginLeft: '4px'
+                            }}
+                          >
+                            F:{student.finalStatus === 'complete' ? '✓' : '✗'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                  <th>Final Pts</th>
-                  <th style={{ borderLeft: '2px solid #586e75' }}>Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {studentSummaries.map(student => (
-                  <tr key={student.id}>
-                    <td><strong>{student.last_name}, {student.first_name}</strong></td>
-                    {phaseNumbers.map((phaseNum, i) => {
-                      const phase = student.phases[i];
-                      return phase ? (
-                        <React.Fragment key={i}>
-                          <td>{phase.avgScore.toFixed(1)}</td>
-                          <td>{phase.avgLikert.toFixed(2)}</td>
-                        </React.Fragment>
-                      ) : (
-                        <React.Fragment key={i}>
-                          <td>-</td>
-                          <td>-</td>
-                        </React.Fragment>
-                      );
-                    })}
-                    <td style={{ fontWeight: 'bold', color: '#9b59b6' }}>
-                      {student.totalFinalPoints || 0}
-                    </td>
-                    <td style={{ borderLeft: '2px solid #586e75', whiteSpace: 'nowrap' }}>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile card view */}
+            <div className="mobile-card-list">
+              {studentSummaries.map(student => (
+                <div key={student.id} className="mobile-card">
+                  <div className="mobile-card-header">
+                    {student.last_name}, {student.first_name}
+                  </div>
+
+                  {/* Submission status */}
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-label">Status</span>
+                    <span>
                       {phaseNumbers.map(p => {
                         const status = student.phaseStatus[p];
                         const color = status === 'complete' ? '#27ae60' : status === 'incomplete' ? '#f39c12' : '#e74c3c';
                         const symbol = status === 'complete' ? '✓' : '✗';
-                        const title = status === 'complete' ? 'Submitted' : status === 'incomplete' ? 'Submitted but below word count' : 'Not submitted';
                         return (
-                          <span
-                            key={p}
-                            title={`Phase ${p}: ${title}`}
-                            style={{ color, marginRight: '4px' }}
-                          >
-                            {symbol}
+                          <span key={p} style={{ color, marginRight: '6px', fontWeight: 'bold' }}>
+                            P{p}:{symbol}
                           </span>
                         );
                       })}
                       {selectedClassData?.has_final_evaluation && (
-                        <span
-                          title={`Final: ${student.finalStatus === 'complete' ? 'Submitted' : student.finalStatus === 'incomplete' ? 'Submitted but below word count' : 'Not submitted'}`}
-                          style={{
-                            color: student.finalStatus === 'complete' ? '#27ae60' : student.finalStatus === 'incomplete' ? '#f39c12' : '#e74c3c',
-                            marginLeft: '4px'
-                          }}
-                        >
+                        <span style={{
+                          color: student.finalStatus === 'complete' ? '#27ae60' : student.finalStatus === 'incomplete' ? '#f39c12' : '#e74c3c',
+                          fontWeight: 'bold'
+                        }}>
                           F:{student.finalStatus === 'complete' ? '✓' : '✗'}
                         </span>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </span>
+                  </div>
+
+                  {/* Phase scores */}
+                  {phaseNumbers.map((phaseNum, i) => {
+                    const phase = student.phases[i];
+                    return (
+                      <div key={phaseNum} className="mobile-card-row">
+                        <span className="mobile-card-label">Phase {phaseNum}</span>
+                        <span className="mobile-card-value">
+                          {phase ? (
+                            <>Score: {phase.avgScore.toFixed(1)} · Likert: {phase.avgLikert.toFixed(2)}</>
+                          ) : (
+                            <span style={{ color: '#999' }}>No data</span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  {/* Final points */}
+                  <div className="mobile-card-row" style={{ borderTop: '1px solid #e0e0e0', paddingTop: '8px', marginTop: '4px' }}>
+                    <span className="mobile-card-label">Final Points</span>
+                    <span className="mobile-card-value" style={{ color: '#9b59b6', fontWeight: 'bold' }}>
+                      {student.totalFinalPoints || 0}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
 
