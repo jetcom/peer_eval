@@ -21,6 +21,8 @@ function ProgressTab({
   const [nudgeMessage, setNudgeMessage] = useState('');
   const [sendingNudge, setSendingNudge] = useState(false);
   const [nudgeResult, setNudgeResult] = useState(null);
+  const [nudgeTemplates, setNudgeTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState('');
 
   // Get class config
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
@@ -234,6 +236,24 @@ function ProgressTab({
     setNudgeResult(null);
   }, [selectedClass]);
 
+  // Fetch nudge templates
+  useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const res = await axios.get('/api/nudge-templates');
+        setNudgeTemplates(res.data);
+        // Auto-select default template if one exists
+        const defaultTemplate = res.data.find(t => t.is_default);
+        if (defaultTemplate) {
+          setSelectedTemplate(defaultTemplate.id.toString());
+        }
+      } catch (err) {
+        console.error('Failed to fetch nudge templates:', err);
+      }
+    };
+    fetchTemplates();
+  }, []);
+
   // Toggle student selection for nudge
   const toggleStudentSelection = (studentId) => {
     setSelectedStudents(prev => {
@@ -266,11 +286,19 @@ function ProgressTab({
     setNudgeResult(null);
 
     try {
-      const response = await axios.post('/api/notifications/nudge', {
+      const payload = {
         studentIds: Array.from(selectedStudents),
         classId: parseInt(selectedClass),
-        message: nudgeMessage || undefined
-      });
+      };
+
+      // Use template if selected, otherwise use custom message
+      if (selectedTemplate) {
+        payload.templateId = parseInt(selectedTemplate);
+      } else if (nudgeMessage) {
+        payload.message = nudgeMessage;
+      }
+
+      const response = await axios.post('/api/notifications/nudge', payload);
 
       setNudgeResult({
         type: 'success',
@@ -1066,27 +1094,65 @@ function ProgressTab({
             <p style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
               Send a reminder email to {selectedStudents.size} selected student{selectedStudents.size !== 1 ? 's' : ''}.
             </p>
-            <div style={{ marginBottom: '10px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
-                Custom Message (optional):
-              </label>
-              <textarea
-                value={nudgeMessage}
-                onChange={(e) => setNudgeMessage(e.target.value)}
-                placeholder="Add a personal message to include in the email..."
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '4px',
-                  border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
-                  background: darkMode ? '#1a1a1a' : '#fff',
-                  color: darkMode ? '#fff' : '#000',
-                  fontSize: '0.9rem',
-                  minHeight: '80px',
-                  resize: 'vertical'
-                }}
-              />
-            </div>
+            {nudgeTemplates.length > 0 && (
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Template:
+                </label>
+                <select
+                  value={selectedTemplate}
+                  onChange={(e) => {
+                    setSelectedTemplate(e.target.value);
+                    if (e.target.value) setNudgeMessage(''); // Clear custom message when template selected
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
+                    background: darkMode ? '#1a1a1a' : '#fff',
+                    color: darkMode ? '#fff' : '#000',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  <option value="">Custom message...</option>
+                  {nudgeTemplates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} {t.is_default ? '(Default)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedTemplate && (
+                  <p style={{ margin: '5px 0 0 0', fontSize: '0.85rem', color: darkMode ? '#888' : '#666' }}>
+                    Subject: {nudgeTemplates.find(t => t.id.toString() === selectedTemplate)?.subject}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!selectedTemplate && (
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.9rem' }}>
+                  Custom Message (optional):
+                </label>
+                <textarea
+                  value={nudgeMessage}
+                  onChange={(e) => setNudgeMessage(e.target.value)}
+                  placeholder="Add a personal message to include in the email..."
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '4px',
+                    border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
+                    background: darkMode ? '#1a1a1a' : '#fff',
+                    color: darkMode ? '#fff' : '#000',
+                    fontSize: '0.9rem',
+                    minHeight: '80px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
                 onClick={sendNudgeEmails}

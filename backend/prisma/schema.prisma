@@ -404,3 +404,47 @@ model AssignmentExtension {
   @@unique([userId, evalTypeId])
   @@map("assignment_extensions")
 }
+
+// ==========================================
+// EMAIL TEMPLATES & REMINDERS
+// ==========================================
+
+// Reusable nudge/reminder message templates
+model NudgeTemplate {
+  id          Int      @id @default(autoincrement())
+  name        String
+  subject     String   @default("Action Required: Incomplete Evaluations")
+  message     String
+  isDefault   Int      @default(0) @map("is_default")
+  createdById Int?     @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("nudge_templates")
+}
+
+// Scheduled reminder configuration per class
+model ReminderSchedule {
+  id              Int      @id @default(autoincrement())
+  classId         Int      @map("class_id")
+  hoursBeforeDue  Int      @map("hours_before_due") // e.g., 24, 48, 72
+  enabled         Int      @default(1)
+  nudgeTemplateId Int?     @map("nudge_template_id")
+  lastSentAt      DateTime? @map("last_sent_at")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@unique([classId, hoursBeforeDue])
+  @@map("reminder_schedules")
+}
+
+// Log of sent reminder emails
+model ReminderLog {
+  id          Int      @id @default(autoincrement())
+  classId     Int      @map("class_id")
+  userId      Int      @map("user_id")
+  phase       Int?
+  assignmentId Int?    @map("assignment_id")
+  sentAt      DateTime @default(now()) @map("sent_at")
+
+  @@map("reminder_logs")
+}

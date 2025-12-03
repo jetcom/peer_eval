@@ -18,7 +18,7 @@ const router = express.Router();
  */
 router.post('/nudge', authenticateToken, requireTeacher, async (req, res) => {
   try {
-    const { studentIds, classId, assignmentId, message } = req.body;
+    const { studentIds, classId, assignmentId, message, templateId } = req.body;
 
     if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
       return res.status(400).json({ error: 'studentIds array is required' });
@@ -71,13 +71,27 @@ router.post('/nudge', authenticateToken, requireTeacher, async (req, res) => {
 
     const instructorName = `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`;
 
+    // Get template if specified
+    let templateMessage = message;
+    let templateSubject = null;
+    if (templateId) {
+      const template = await prisma.nudgeTemplate.findUnique({
+        where: { id: templateId }
+      });
+      if (template) {
+        templateMessage = template.message;
+        templateSubject = template.subject;
+      }
+    }
+
     // Send emails
     const result = await emailService.sendBulkNudge({
       students,
       className: classInfo.name,
       assignmentName,
-      message,
-      instructorName
+      message: templateMessage,
+      instructorName,
+      subject: templateSubject
     });
 
     res.json({
@@ -324,6 +338,9 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
       }
     });
 
+    // Collect all students who need reminders for batch sending
+    const reminderBatches = [];
+
     for (const assignment of upcomingAssignments) {
       const dueDate = assignment.evalTypes[0]?.dueDate;
       if (!dueDate) continue;
@@ -343,20 +360,13 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
         .filter(e => !completedIds.has(e.user.id))
         .map(e => e.user);
 
-      for (const student of incompleteStudents) {
-        const emailResult = await emailService.sendEvaluationReminder({
-          student,
+      if (incompleteStudents.length > 0) {
+        reminderBatches.push({
+          students: incompleteStudents,
           className: assignment.class.name,
           dueDate,
           assignmentName: assignment.name
         });
-
-        if (emailResult.success) {
-          results.sent++;
-        } else {
-          results.failed++;
-          results.details.push({ email: student.email, error: emailResult.error });
-        }
       }
     }
 
@@ -385,21 +395,27 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
     for (const phaseDue of upcomingPhases) {
       const students = phaseDue.class.enrollments.map(e => e.user);
 
-      for (const student of students) {
-        // For simplicity, send to all students - could add logic to check completion
-        const emailResult = await emailService.sendEvaluationReminder({
-          student,
+      if (students.length > 0) {
+        reminderBatches.push({
+          students,
           className: phaseDue.class.name,
-          dueDate: phaseDue.dueDate
+          dueDate: phaseDue.dueDate,
+          assignmentName: null
         });
-
-        if (emailResult.success) {
-          results.sent++;
-        } else {
-          results.failed++;
-          results.details.push({ email: student.email, error: emailResult.error });
-        }
       }
+    }
+
+    // Send all reminders using batch API
+    for (const batch of reminderBatches) {
+      const batchResult = await emailService.sendBulkReminders({
+        students: batch.students,
+        className: batch.className,
+        dueDate: batch.dueDate,
+        assignmentName: batch.assignmentName
+      });
+
+      results.sent += batchResult.successful;
+      results.failed += batchResult.failed;
     }
 
     res.json({

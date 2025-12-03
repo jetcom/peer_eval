@@ -308,7 +308,7 @@ function buildNudgeEmailHtml({ student, className, assignmentName, message, inst
  * Send bulk nudge emails to multiple students using Resend batch API
  * Batch API allows up to 100 emails per request
  */
-async function sendBulkNudge({ students, className, assignmentName, message, instructorName }) {
+async function sendBulkNudge({ students, className, assignmentName, message, instructorName, subject }) {
   if (!process.env.RESEND_API_KEY) {
     console.warn('RESEND_API_KEY not set - bulk emails not sent');
     return { successful: 0, failed: students.length, total: students.length };
@@ -319,12 +319,13 @@ async function sendBulkNudge({ students, className, assignmentName, message, ins
   }
 
   // Build array of email objects for batch sending
+  const emailSubject = subject || `Action Required: Incomplete Evaluations for ${className}`;
   const emails = students.map(student => {
     const html = buildNudgeEmailHtml({ student, className, assignmentName, message, instructorName });
     return {
       from: DEFAULT_FROM,
       to: [student.email],
-      subject: `Action Required: Incomplete Evaluations for ${className}`,
+      subject: emailSubject,
       html,
       text: stripHtml(html),
     };
@@ -448,6 +449,107 @@ async function sendWelcomeEmail({ user, temporaryPassword }) {
 }
 
 /**
+ * Build reminder email HTML for a student
+ */
+function buildReminderEmailHtml({ student, className, dueDate, assignmentName, evaluationsRemaining }) {
+  const { firstName } = student;
+  const formattedDate = new Date(dueDate).toLocaleString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Evaluation Reminder</h2>
+      <p>Hi ${firstName},</p>
+      <p>This is a friendly reminder that you have peer evaluations due soon:</p>
+
+      <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+        <p style="margin: 5px 0;"><strong>Class:</strong> ${className}</p>
+        ${assignmentName ? `<p style="margin: 5px 0;"><strong>Assignment:</strong> ${assignmentName}</p>` : ''}
+        <p style="margin: 5px 0;"><strong>Due:</strong> ${formattedDate}</p>
+        ${evaluationsRemaining ? `<p style="margin: 5px 0;"><strong>Evaluations Remaining:</strong> ${evaluationsRemaining}</p>` : ''}
+      </div>
+
+      <p>
+        <a href="${APP_URL}/evaluations"
+           style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+          Complete Your Evaluations
+        </a>
+      </p>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — PeerEvals System
+      </p>
+    </div>
+  `;
+}
+
+/**
+ * Send bulk reminder emails to multiple students using Resend batch API
+ */
+async function sendBulkReminders({ students, className, dueDate, assignmentName }) {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set - bulk reminders not sent');
+    return { successful: 0, failed: students.length, total: students.length };
+  }
+
+  if (students.length === 0) {
+    return { successful: 0, failed: 0, total: 0 };
+  }
+
+  // Build array of email objects for batch sending
+  const emails = students.map(student => {
+    const html = buildReminderEmailHtml({ student, className, dueDate, assignmentName });
+    return {
+      from: DEFAULT_FROM,
+      to: [student.email],
+      subject: `Reminder: Peer Evaluations Due for ${className}`,
+      html,
+      text: stripHtml(html),
+    };
+  });
+
+  // Resend batch API supports up to 100 emails per request
+  // Rate limit: 2 requests/second, so we delay 600ms between batches
+  const BATCH_SIZE = 100;
+  const DELAY_BETWEEN_BATCHES_MS = 600;
+  let successful = 0;
+  let failed = 0;
+
+  for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+    const batch = emails.slice(i, i + BATCH_SIZE);
+
+    try {
+      const { data, error } = await resend.batch.send(batch);
+
+      if (error) {
+        console.error('Resend batch error:', error);
+        failed += batch.length;
+      } else {
+        successful += data?.length || batch.length;
+        console.log(`Reminder batch sent: ${data?.length || batch.length} emails`);
+      }
+    } catch (err) {
+      console.error('Failed to send reminder batch:', err);
+      failed += batch.length;
+    }
+
+    // Delay before next batch to respect rate limit (except after the last batch)
+    if (i + BATCH_SIZE < emails.length) {
+      await delay(DELAY_BETWEEN_BATCHES_MS);
+    }
+  }
+
+  return { successful, failed, total: students.length };
+}
+
+/**
  * Send evaluation completion confirmation
  */
 async function sendEvaluationConfirmation({ student, className, assignmentName, phase }) {
@@ -487,6 +589,7 @@ module.exports = {
   sendEvaluationReminder,
   sendNudgeEmail,
   sendBulkNudge,
+  sendBulkReminders,
   sendPasswordReset,
   sendWelcomeEmail,
   sendEvaluationConfirmation,

@@ -274,6 +274,15 @@ function QuickStats({
         <div className="admin-stat-sublabel">Manage eval templates</div>
       </div>
 
+      <div
+        className="admin-stat-card mobile-nav-card clickable"
+        onClick={() => onNavigate && onNavigate('email')}
+        title="View Email tab"
+      >
+        <div className="admin-stat-label">Email</div>
+        <div className="admin-stat-sublabel">Nudge templates</div>
+      </div>
+
       {currentUserRole === 'admin' && (
         <div
           className="admin-stat-card mobile-nav-card clickable"
