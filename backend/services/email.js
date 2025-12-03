@@ -260,19 +260,95 @@ async function sendNudgeEmail({ student, className, assignmentName, message, ins
 }
 
 /**
- * Send bulk nudge emails to multiple students
+ * Build nudge email HTML for a student
+ */
+function buildNudgeEmailHtml({ student, className, assignmentName, message, instructorName }) {
+  const { firstName } = student;
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">A Message About Your Peer Evaluations</h2>
+      <p>Hi ${firstName},</p>
+
+      <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 5px 0;"><strong>Class:</strong> ${className}</p>
+        ${assignmentName ? `<p style="margin: 5px 0;"><strong>Assignment:</strong> ${assignmentName}</p>` : ''}
+      </div>
+
+      ${message ? `
+        <div style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2563eb;">
+          <p style="margin: 0; white-space: pre-wrap;">${message}</p>
+        </div>
+      ` : `
+        <p>You have incomplete peer evaluations that need your attention. Please log in and complete them as soon as possible.</p>
+      `}
+
+      <p>
+        <a href="${APP_URL}/evaluations"
+           style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+          Complete Your Evaluations
+        </a>
+      </p>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — ${instructorName || 'Your Instructor'}
+      </p>
+    </div>
+  `;
+}
+
+/**
+ * Send bulk nudge emails to multiple students using Resend batch API
+ * Batch API allows up to 100 emails per request
  */
 async function sendBulkNudge({ students, className, assignmentName, message, instructorName }) {
-  const results = await Promise.allSettled(
-    students.map(student =>
-      sendNudgeEmail({ student, className, assignmentName, message, instructorName })
-    )
-  );
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('RESEND_API_KEY not set - bulk emails not sent');
+    return { successful: 0, failed: students.length, total: students.length };
+  }
 
-  const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
-  const failed = results.length - successful;
+  if (students.length === 0) {
+    return { successful: 0, failed: 0, total: 0 };
+  }
 
-  return { successful, failed, total: results.length };
+  // Build array of email objects for batch sending
+  const emails = students.map(student => {
+    const html = buildNudgeEmailHtml({ student, className, assignmentName, message, instructorName });
+    return {
+      from: DEFAULT_FROM,
+      to: [student.email],
+      subject: `Action Required: Incomplete Evaluations for ${className}`,
+      html,
+      text: stripHtml(html),
+    };
+  });
+
+  // Resend batch API supports up to 100 emails per request
+  const BATCH_SIZE = 100;
+  let successful = 0;
+  let failed = 0;
+
+  for (let i = 0; i < emails.length; i += BATCH_SIZE) {
+    const batch = emails.slice(i, i + BATCH_SIZE);
+
+    try {
+      const { data, error } = await resend.batch.send(batch);
+
+      if (error) {
+        console.error('Resend batch error:', error);
+        failed += batch.length;
+      } else {
+        // data is an array of results for each email
+        successful += data?.length || batch.length;
+        console.log(`Batch sent: ${data?.length || batch.length} emails`);
+      }
+    } catch (err) {
+      console.error('Failed to send batch:', err);
+      failed += batch.length;
+    }
+  }
+
+  return { successful, failed, total: students.length };
 }
 
 /**
