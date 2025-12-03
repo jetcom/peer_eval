@@ -706,6 +706,7 @@ function AdminDashboard() {
           finalCommentsData={finalCommentsData}
           assignmentEvaluations={assignmentEvaluations}
           onNavigate={setActiveTab}
+          currentUserRole={user?.role}
         />
 
         <div className="admin-tabs">

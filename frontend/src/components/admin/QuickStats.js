@@ -8,7 +8,8 @@ function QuickStats({
   evaluations,
   finalCommentsData,
   assignmentEvaluations,
-  onNavigate
+  onNavigate,
+  currentUserRole
 }) {
   if (!selectedClass) {
     return null;
@@ -253,6 +254,36 @@ function QuickStats({
         <div className="admin-stat-label">Evaluations</div>
         <div className="admin-stat-sublabel">submitted total</div>
       </div>
+
+      {/* Mobile-only nav buttons for tabs not covered by stat cards */}
+      <div
+        className="admin-stat-card mobile-nav-card clickable"
+        onClick={() => onNavigate && onNavigate('reports')}
+        title="View Reports tab"
+      >
+        <div className="admin-stat-label">Reports</div>
+        <div className="admin-stat-sublabel">View score reports</div>
+      </div>
+
+      <div
+        className="admin-stat-card mobile-nav-card clickable"
+        onClick={() => onNavigate && onNavigate('templates')}
+        title="View Templates tab"
+      >
+        <div className="admin-stat-label">Templates</div>
+        <div className="admin-stat-sublabel">Manage eval templates</div>
+      </div>
+
+      {currentUserRole === 'admin' && (
+        <div
+          className="admin-stat-card mobile-nav-card clickable"
+          onClick={() => onNavigate && onNavigate('instructors')}
+          title="View Instructors tab"
+        >
+          <div className="admin-stat-label">Instructors</div>
+          <div className="admin-stat-sublabel">Pending requests</div>
+        </div>
+      )}
     </div>
   );
 }

@@ -874,6 +874,22 @@ body.dark-mode .admin-stat-sublabel {
   color: #666;
 }
 
+/* Mobile-only navigation cards (hidden on desktop) */
+.mobile-nav-card {
+  display: none;
+}
+
+.mobile-nav-card .admin-stat-label {
+  font-size: 1rem;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.mobile-nav-card .admin-stat-sublabel {
+  font-size: 0.8rem;
+}
+
 /* Improved Tabs */
 .admin-tabs {
   display: flex;
@@ -3308,6 +3324,11 @@ body.dark-mode .responsive-table thead {
   }
 
   .mobile-card-list {
+    display: block;
+  }
+
+  /* Show mobile nav cards on small screens */
+  .mobile-nav-card {
     display: block;
   }
 
