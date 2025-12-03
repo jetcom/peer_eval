@@ -15,18 +15,20 @@ datasource db {
 // ==========================================
 
 model User {
-  id                 Int      @id @default(autoincrement())
-  email              String   @unique
+  id                 Int       @id @default(autoincrement())
+  email              String    @unique
   password           String
-  firstName          String   @default("") @map("first_name")
-  lastName           String   @default("") @map("last_name")
-  universityId       String?  @map("university_id")
-  role               String   @default("student")
-  mustChangePassword Int      @default(0) @map("must_change_password")
-  protected          Int      @default(0)
+  firstName          String    @default("") @map("first_name")
+  lastName           String    @default("") @map("last_name")
+  universityId       String?   @map("university_id")
+  role               String    @default("student")
+  mustChangePassword Int       @default(0) @map("must_change_password")
+  protected          Int       @default(0)
   university         String?
   department         String?
-  createdAt          DateTime @default(now()) @map("created_at")
+  resetToken         String?   @map("reset_token")
+  resetTokenExpires  DateTime? @map("reset_token_expires")
+  createdAt          DateTime  @default(now()) @map("created_at")
 
   // Relations
   enrollments                ClassEnrollment[]

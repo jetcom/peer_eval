@@ -623,6 +623,54 @@ ${studentList}
   });
 }
 
+/**
+ * Send forgot password email with reset link
+ */
+async function sendForgotPasswordEmail({ user, resetToken }) {
+  const { firstName, email } = user;
+  const resetUrl = `${APP_URL}/reset-password?token=${resetToken}`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Password Reset Request</h2>
+      <p>Hi ${firstName || 'there'},</p>
+      <p>We received a request to reset your password. Click the button below to create a new password:</p>
+
+      <p style="margin: 30px 0;">
+        <a href="${resetUrl}"
+           style="display: inline-block; background: #2563eb; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 500;">
+          Reset Password
+        </a>
+      </p>
+
+      <p style="color: #666; font-size: 14px;">
+        This link will expire in 1 hour.
+      </p>
+
+      <p style="color: #666; font-size: 14px;">
+        If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
+      </p>
+
+      <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;" />
+
+      <p style="color: #999; font-size: 12px;">
+        If the button doesn't work, copy and paste this link into your browser:<br />
+        <a href="${resetUrl}" style="color: #2563eb; word-break: break-all;">${resetUrl}</a>
+      </p>
+
+      <p style="color: #666; font-size: 14px;">
+        — PeerEvals System
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: 'Reset Your PeerEvals Password',
+    html,
+  });
+}
+
 module.exports = {
   sendEmail,
   notifyAdminNewInstructor,
@@ -633,6 +681,7 @@ module.exports = {
   sendBulkNudge,
   sendBulkReminders,
   sendPasswordReset,
+  sendForgotPasswordEmail,
   sendWelcomeEmail,
   sendEvaluationConfirmation,
   notifyTeacherOfNudges,

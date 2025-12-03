@@ -93,7 +93,13 @@ function Login() {
           </button>
         </form>
 
-        <div style={{ marginTop: '20px', textAlign: 'center', borderTop: `1px solid ${darkMode ? '#2d4a6f' : '#e0e0e0'}`, paddingTop: '20px' }}>
+        <div style={{ marginTop: '15px', textAlign: 'center' }}>
+          <Link to="/forgot-password" style={{ color: darkMode ? '#268bd2' : '#3498db', textDecoration: 'none', fontSize: '0.9rem' }}>
+            Forgot your password?
+          </Link>
+        </div>
+
+        <div style={{ marginTop: '15px', textAlign: 'center', borderTop: `1px solid ${darkMode ? '#2d4a6f' : '#e0e0e0'}`, paddingTop: '15px' }}>
           <Link to="/register-instructor" style={{ color: darkMode ? '#268bd2' : '#3498db', textDecoration: 'none', fontSize: '0.9rem' }}>
             Instructor? Register for access
           </Link>
