@@ -1175,7 +1175,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
               ))}
             </select>
             <small style={{ display: 'block', marginTop: '6px', color: darkMode ? '#888' : '#888' }}>
-              Create templates from the Email tab in Admin Dashboard
+              Create and edit templates in the Email tab
             </small>
           </div>
 
