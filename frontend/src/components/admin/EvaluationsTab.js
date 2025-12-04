@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 
 function EvaluationsTab({
   selectedClass,
@@ -11,6 +12,48 @@ function EvaluationsTab({
 }) {
   const [filterAssignment, setFilterAssignment] = useState('all');
   const [filterEvalType, setFilterEvalType] = useState('all');
+  const [expandedEval, setExpandedEval] = useState(null); // { type: 'individual'|'group'|'phase', id: number }
+  const [attachments, setAttachments] = useState([]); // Attachments for expanded eval
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+
+  // Fetch attachments when an evaluation is expanded
+  useEffect(() => {
+    if (!expandedEval) {
+      setAttachments([]);
+      return;
+    }
+
+    const fetchAttachments = async () => {
+      setLoadingAttachments(true);
+      try {
+        let endpoint;
+        if (expandedEval.type === 'phase') {
+          endpoint = `/api/evaluations/${expandedEval.id}/attachments`;
+        } else if (expandedEval.type === 'individual') {
+          endpoint = `/api/assignments/evaluations/individual/${expandedEval.id}/attachments`;
+        } else if (expandedEval.type === 'group') {
+          endpoint = `/api/assignments/evaluations/group/${expandedEval.id}/attachments`;
+        }
+        const res = await axios.get(endpoint);
+        setAttachments(res.data);
+      } catch (err) {
+        console.log('No attachments or error fetching:', err);
+        setAttachments([]);
+      } finally {
+        setLoadingAttachments(false);
+      }
+    };
+
+    fetchAttachments();
+  }, [expandedEval]);
+
+  const toggleExpand = (type, id) => {
+    if (expandedEval?.type === type && expandedEval?.id === id) {
+      setExpandedEval(null);
+    } else {
+      setExpandedEval({ type, id });
+    }
+  };
 
   if (!selectedClass) {
     return (
@@ -116,39 +159,144 @@ function EvaluationsTab({
                 </tr>
               </thead>
               <tbody>
-                {allEvals.map((e, idx) => (
-                  <tr key={`${e.type}-${e.id}`} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.05)' }}>
-                    <td style={{ padding: '10px' }}>{e.assignment_name}</td>
-                    <td style={{ padding: '10px' }}>
-                      <span style={{
-                        padding: '2px 8px',
-                        borderRadius: '3px',
-                        fontSize: '0.8rem',
-                        background: e.type === 'individual' ? '#3498db' : '#9b59b6',
-                        color: 'white'
-                      }}>
-                        {e.eval_type}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px' }}>{e.evaluator_name}</td>
-                    <td style={{ padding: '10px' }}>
-                      {e.type === 'individual' ? e.evaluatee_name : e.group_name}
-                    </td>
-                    <td style={{ textAlign: 'center', padding: '10px' }}>
-                      {e.avg_score != null ? e.avg_score.toFixed(1) : '-'}
-                    </td>
-                    <td style={{ textAlign: 'center', padding: '10px' }}>
-                      {e.is_late ? (
-                        <span style={{ color: '#e74c3c' }}>Yes</span>
-                      ) : (
-                        <span style={{ color: '#27ae60' }}>No</span>
+                {allEvals.map((e, idx) => {
+                  const isExpanded = expandedEval?.type === e.type && expandedEval?.id === e.id;
+                  return (
+                    <React.Fragment key={`${e.type}-${e.id}`}>
+                      <tr
+                        style={{
+                          background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.05)',
+                          cursor: 'pointer'
+                        }}
+                        onClick={() => toggleExpand(e.type, e.id)}
+                        title="Click to view details"
+                      >
+                        <td style={{ padding: '10px' }}>
+                          <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>
+                          {e.assignment_name}
+                        </td>
+                        <td style={{ padding: '10px' }}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '3px',
+                            fontSize: '0.8rem',
+                            background: e.type === 'individual' ? '#3498db' : '#9b59b6',
+                            color: 'white'
+                          }}>
+                            {e.eval_type}
+                          </span>
+                        </td>
+                        <td style={{ padding: '10px' }}>{e.evaluator_name}</td>
+                        <td style={{ padding: '10px' }}>
+                          {e.type === 'individual' ? e.evaluatee_name : e.group_name}
+                        </td>
+                        <td style={{ textAlign: 'center', padding: '10px' }}>
+                          {e.avg_score != null ? e.avg_score.toFixed(1) : '-'}
+                        </td>
+                        <td style={{ textAlign: 'center', padding: '10px' }}>
+                          {e.is_late ? (
+                            <span style={{ color: '#e74c3c' }}>Yes</span>
+                          ) : (
+                            <span style={{ color: '#27ae60' }}>No</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', fontSize: '0.85rem' }}>
+                          {e.submitted_at ? new Date(e.submitted_at).toLocaleString() : '-'}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
+                          <td colSpan="7" style={{ padding: '15px 20px' }}>
+                            {/* Scores */}
+                            {e.scores && e.scores.length > 0 && (
+                              <div style={{ marginBottom: '15px' }}>
+                                <strong>Scores:</strong>
+                                <div style={{ display: 'flex', gap: '15px', marginTop: '8px', flexWrap: 'wrap' }}>
+                                  {e.scores.map(s => (
+                                    <div key={s.criterion_id} style={{
+                                      padding: '8px 12px',
+                                      background: 'rgba(0,0,0,0.05)',
+                                      borderRadius: '4px',
+                                      fontSize: '0.9rem'
+                                    }}>
+                                      <span style={{ fontWeight: '500' }}>{s.criterion_name}:</span> {s.score}/{s.max_value}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Comments */}
+                            <div style={{ marginBottom: '15px' }}>
+                              <strong>Comments:</strong>
+                              <div style={{
+                                marginTop: '8px',
+                                padding: '12px',
+                                background: 'rgba(0,0,0,0.03)',
+                                borderRadius: '4px',
+                                whiteSpace: 'pre-wrap',
+                                fontStyle: e.comments ? 'normal' : 'italic',
+                                color: e.comments ? 'inherit' : '#888'
+                              }}>
+                                {e.comments || 'No comments provided'}
+                              </div>
+                            </div>
+
+                            {/* Attachments */}
+                            <div>
+                              <strong>Attached Images:</strong>
+                              {loadingAttachments ? (
+                                <div style={{ marginTop: '8px', color: '#888' }}>Loading...</div>
+                              ) : attachments.length > 0 ? (
+                                <div style={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                                  gap: '12px',
+                                  marginTop: '10px'
+                                }}>
+                                  {attachments.map(att => (
+                                    <div key={att.id} style={{
+                                      border: '1px solid #ddd',
+                                      borderRadius: '6px',
+                                      overflow: 'hidden',
+                                      background: '#fff'
+                                    }}>
+                                      <a href={att.url} target="_blank" rel="noopener noreferrer">
+                                        <img
+                                          src={att.url}
+                                          alt={att.fileName}
+                                          style={{
+                                            width: '100%',
+                                            height: '120px',
+                                            objectFit: 'cover'
+                                          }}
+                                        />
+                                      </a>
+                                      <div style={{
+                                        padding: '6px 8px',
+                                        fontSize: '0.75rem',
+                                        color: '#666',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}>
+                                        {att.fileName}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div style={{ marginTop: '8px', color: '#888', fontStyle: 'italic' }}>
+                                  No images attached
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                    <td style={{ padding: '10px', fontSize: '0.85rem' }}>
-                      {e.submitted_at ? new Date(e.submitted_at).toLocaleString() : '-'}
-                    </td>
-                  </tr>
-                ))}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -200,15 +348,118 @@ function EvaluationsTab({
                 (e.contribution + e.communication + e.reliability +
                  e.quality_of_work + e.collaboration) / 5
               ).toFixed(1);
+              const isExpanded = expandedEval?.type === 'phase' && expandedEval?.id === e.id;
               return (
-                <tr key={e.id}>
-                  <td>{e.group_name || 'N/A'}</td>
-                  <td>{e.phase}</td>
-                  <td>{e.evaluator_name}</td>
-                  <td>{e.evaluatee_name}</td>
-                  <td>{e.score}/100</td>
-                  <td>{avgLikert}/5</td>
-                </tr>
+                <React.Fragment key={e.id}>
+                  <tr
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => toggleExpand('phase', e.id)}
+                    title="Click to view details"
+                  >
+                    <td>
+                      <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>
+                      {e.group_name || 'N/A'}
+                    </td>
+                    <td>{e.phase}</td>
+                    <td>{e.evaluator_name}</td>
+                    <td>{e.evaluatee_name}</td>
+                    <td>{e.score}/100</td>
+                    <td>{avgLikert}/5</td>
+                  </tr>
+                  {isExpanded && (
+                    <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
+                      <td colSpan="6" style={{ padding: '15px 20px' }}>
+                        {/* Criteria Scores */}
+                        <div style={{ marginBottom: '15px' }}>
+                          <strong>Criteria Scores:</strong>
+                          <div style={{ display: 'flex', gap: '15px', marginTop: '8px', flexWrap: 'wrap' }}>
+                            <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '0.9rem' }}>
+                              <span style={{ fontWeight: '500' }}>Contribution:</span> {e.contribution}/5
+                            </div>
+                            <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '0.9rem' }}>
+                              <span style={{ fontWeight: '500' }}>Communication:</span> {e.communication}/5
+                            </div>
+                            <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '0.9rem' }}>
+                              <span style={{ fontWeight: '500' }}>Reliability:</span> {e.reliability}/5
+                            </div>
+                            <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '0.9rem' }}>
+                              <span style={{ fontWeight: '500' }}>Quality of Work:</span> {e.quality_of_work}/5
+                            </div>
+                            <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.05)', borderRadius: '4px', fontSize: '0.9rem' }}>
+                              <span style={{ fontWeight: '500' }}>Collaboration:</span> {e.collaboration}/5
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Comments */}
+                        <div style={{ marginBottom: '15px' }}>
+                          <strong>Comments:</strong>
+                          <div style={{
+                            marginTop: '8px',
+                            padding: '12px',
+                            background: 'rgba(0,0,0,0.03)',
+                            borderRadius: '4px',
+                            whiteSpace: 'pre-wrap',
+                            fontStyle: e.comments ? 'normal' : 'italic',
+                            color: e.comments ? 'inherit' : '#888'
+                          }}>
+                            {e.comments || 'No comments provided'}
+                          </div>
+                        </div>
+
+                        {/* Attachments */}
+                        <div>
+                          <strong>Attached Images:</strong>
+                          {loadingAttachments ? (
+                            <div style={{ marginTop: '8px', color: '#888' }}>Loading...</div>
+                          ) : attachments.length > 0 ? (
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                              gap: '12px',
+                              marginTop: '10px'
+                            }}>
+                              {attachments.map(att => (
+                                <div key={att.id} style={{
+                                  border: '1px solid #ddd',
+                                  borderRadius: '6px',
+                                  overflow: 'hidden',
+                                  background: '#fff'
+                                }}>
+                                  <a href={att.url} target="_blank" rel="noopener noreferrer">
+                                    <img
+                                      src={att.url}
+                                      alt={att.fileName}
+                                      style={{
+                                        width: '100%',
+                                        height: '120px',
+                                        objectFit: 'cover'
+                                      }}
+                                    />
+                                  </a>
+                                  <div style={{
+                                    padding: '6px 8px',
+                                    fontSize: '0.75rem',
+                                    color: '#666',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap'
+                                  }}>
+                                    {att.fileName}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ marginTop: '8px', color: '#888', fontStyle: 'italic' }}>
+                              No images attached
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               );
             })}
           </tbody>
