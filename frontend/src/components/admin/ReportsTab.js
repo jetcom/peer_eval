@@ -91,9 +91,10 @@ function ReportsTab({
           assignmentScores[assignment.id] = {
             avgScore,
             count: assignmentEvals.length,
-            comments: assignmentEvals.filter(e => e.comments).map(e => ({
+            comments: assignmentEvals.filter(e => e.comments || (e.attachments && e.attachments.length > 0)).map(e => ({
               from: e.evaluator_name,
-              text: e.comments
+              text: e.comments,
+              attachments: e.attachments || []
             }))
           };
         }
@@ -346,10 +347,11 @@ function ReportsTab({
                       if (e.avg_score != null) {
                         groupSummaries[key].scores.push(e.avg_score);
                       }
-                      if (e.comments) {
+                      if (e.comments || (e.attachments && e.attachments.length > 0)) {
                         groupSummaries[key].comments.push({
                           from: e.evaluator_name,
-                          text: e.comments
+                          text: e.comments,
+                          attachments: e.attachments || []
                         });
                       }
                     });
@@ -382,8 +384,17 @@ function ReportsTab({
                                 <summary style={{ cursor: 'pointer' }}>{summary.comments.length} comment(s)</summary>
                                 <div style={{ marginTop: '8px' }}>
                                   {summary.comments.map((c, i) => (
-                                    <div key={i} style={{ marginBottom: '6px', paddingLeft: '10px', borderLeft: '2px solid #ddd' }}>
+                                    <div key={i} style={{ marginBottom: '10px', paddingLeft: '10px', borderLeft: '2px solid #ddd' }}>
                                       <span style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>{c.from}:</span> {c.text}
+                                      {c.attachments && c.attachments.length > 0 && (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                                          {c.attachments.map(att => (
+                                            <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer">
+                                              <img src={att.url} alt={att.fileName} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }} />
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   ))}
                                 </div>
@@ -441,6 +452,42 @@ function ReportsTab({
                               From: {comment.from}
                             </div>
                             <div style={{ fontSize: '0.9rem' }}>{comment.text}</div>
+                            {/* Display attached images */}
+                            {comment.attachments && comment.attachments.length > 0 && (
+                              <div style={{
+                                display: 'flex',
+                                flexWrap: 'wrap',
+                                gap: '8px',
+                                marginTop: '10px'
+                              }}>
+                                {comment.attachments.map(att => (
+                                  <a
+                                    key={att.id}
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                      display: 'block',
+                                      width: '80px',
+                                      height: '80px',
+                                      borderRadius: '4px',
+                                      overflow: 'hidden',
+                                      border: `1px solid ${darkMode ? '#444' : '#ddd'}`
+                                    }}
+                                  >
+                                    <img
+                                      src={att.url}
+                                      alt={att.fileName}
+                                      style={{
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'cover'
+                                      }}
+                                    />
+                                  </a>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

@@ -642,7 +642,8 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
             include: {
               criterion: true
             }
-          }
+          },
+          attachments: true
         }
       }),
       prisma.groupEvaluation.findMany({
@@ -661,61 +662,91 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
             include: {
               criterion: true
             }
-          }
+          },
+          attachments: true
         }
       })
     ]);
 
-    // Format individual evaluations
-    const formattedIndividual = individualEvals.map(e => ({
-      id: e.id,
-      assignment_id: e.evalType.assignmentId,
-      assignment_name: e.evalType.assignment.name,
-      eval_type_id: e.evalTypeId,
-      eval_type: e.evalType.evalType,
-      eval_type_name: e.evalType.name,
-      evaluator_id: e.evaluatorId,
-      evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`,
-      evaluatee_id: e.evaluateeId,
-      evaluatee_name: `${e.evaluatee.firstName} ${e.evaluatee.lastName}`,
-      comments: e.comments,
-      submitted_at: e.submittedAt,
-      is_late: e.isLate === 1,
-      scores: e.scores.map(s => ({
-        criterion_id: s.criterionId,
-        criterion_name: s.criterion.name,
-        score: s.score,
-        max_value: s.criterion.maxValue
-      })),
-      avg_score: e.scores.length > 0
-        ? e.scores.reduce((sum, s) => sum + s.score, 0) / e.scores.length
-        : null
+    // Format individual evaluations with attachments
+    const formattedIndividual = await Promise.all(individualEvals.map(async (e) => {
+      // Generate presigned URLs for attachments
+      const attachmentsWithUrls = await Promise.all(
+        (e.attachments || []).map(async (att) => ({
+          id: att.id,
+          fileName: att.fileName,
+          mimeType: att.mimeType,
+          fileSize: att.fileSize,
+          url: await getPresignedUrl(att.s3Key),
+          uploadedAt: att.uploadedAt
+        }))
+      );
+
+      return {
+        id: e.id,
+        assignment_id: e.evalType.assignmentId,
+        assignment_name: e.evalType.assignment.name,
+        eval_type_id: e.evalTypeId,
+        eval_type: e.evalType.evalType,
+        eval_type_name: e.evalType.name,
+        evaluator_id: e.evaluatorId,
+        evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`,
+        evaluatee_id: e.evaluateeId,
+        evaluatee_name: `${e.evaluatee.firstName} ${e.evaluatee.lastName}`,
+        comments: e.comments,
+        submitted_at: e.submittedAt,
+        is_late: e.isLate === 1,
+        scores: e.scores.map(s => ({
+          criterion_id: s.criterionId,
+          criterion_name: s.criterion.name,
+          score: s.score,
+          max_value: s.criterion.maxValue
+        })),
+        avg_score: e.scores.length > 0
+          ? e.scores.reduce((sum, s) => sum + s.score, 0) / e.scores.length
+          : null,
+        attachments: attachmentsWithUrls
+      };
     }));
 
-    // Format group evaluations
-    const formattedGroup = groupEvals.map(e => ({
-      id: e.id,
-      assignment_id: e.evalType.assignmentId,
-      assignment_name: e.evalType.assignment.name,
-      eval_type_id: e.evalTypeId,
-      eval_type: e.evalType.evalType,
-      eval_type_name: e.evalType.name,
-      evaluator_id: e.evaluatorId,
-      evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`,
-      group_id: e.groupId,
-      group_name: e.group.name,
-      comments: e.comments,
-      submitted_at: e.submittedAt,
-      is_late: e.isLate === 1,
-      scores: e.scores.map(s => ({
-        criterion_id: s.criterionId,
-        criterion_name: s.criterion.name,
-        score: s.score,
-        max_value: s.criterion.maxValue
-      })),
-      avg_score: e.scores.length > 0
-        ? e.scores.reduce((sum, s) => sum + s.score, 0) / e.scores.length
-        : null
+    // Format group evaluations with attachments
+    const formattedGroup = await Promise.all(groupEvals.map(async (e) => {
+      const attachmentsWithUrls = await Promise.all(
+        (e.attachments || []).map(async (att) => ({
+          id: att.id,
+          fileName: att.fileName,
+          mimeType: att.mimeType,
+          fileSize: att.fileSize,
+          url: await getPresignedUrl(att.s3Key),
+          uploadedAt: att.uploadedAt
+        }))
+      );
+
+      return {
+        id: e.id,
+        assignment_id: e.evalType.assignmentId,
+        assignment_name: e.evalType.assignment.name,
+        eval_type_id: e.evalTypeId,
+        eval_type: e.evalType.evalType,
+        eval_type_name: e.evalType.name,
+        evaluator_id: e.evaluatorId,
+        evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`,
+        group_id: e.groupId,
+        group_name: e.group.name,
+        comments: e.comments,
+        submitted_at: e.submittedAt,
+        is_late: e.isLate === 1,
+        scores: e.scores.map(s => ({
+          criterion_id: s.criterionId,
+          criterion_name: s.criterion.name,
+          score: s.score,
+          max_value: s.criterion.maxValue
+        })),
+        avg_score: e.scores.length > 0
+          ? e.scores.reduce((sum, s) => sum + s.score, 0) / e.scores.length
+          : null,
+        attachments: attachmentsWithUrls
+      };
     }));
 
     res.json({
