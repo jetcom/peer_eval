@@ -149,12 +149,13 @@ async function processSchedule(schedule, now) {
       }
     } else {
       // Phase-based mode
+      // dueDate is stored as String (ISO format), so convert DateTime to strings for comparison
       const phaseDueDates = await prisma.phaseDueDate.findMany({
         where: {
           classId,
           dueDate: {
-            gte: reminderWindowStart,
-            lte: reminderWindowEnd
+            gte: reminderWindowStart.toISOString(),
+            lte: reminderWindowEnd.toISOString()
           }
         }
       });
