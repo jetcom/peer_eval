@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import ImageViewer from '../ImageViewer';
 
 // Helper to escape CSV values
 function escapeCSV(value) {
@@ -34,6 +35,26 @@ function ReportsTab({
   setReportGroup,
   assignmentEvaluations
 }) {
+  // Image viewer state
+  const [viewerImages, setViewerImages] = useState(null);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  // Open image viewer with a set of images
+  const openImageViewer = (attachments, startIndex = 0) => {
+    const images = attachments.map(att => ({
+      id: att.id,
+      url: att.url,
+      fileName: att.fileName
+    }));
+    setViewerImages(images);
+    setViewerIndex(startIndex);
+  };
+
+  const closeImageViewer = () => {
+    setViewerImages(null);
+    setViewerIndex(0);
+  };
+
   if (!selectedClass) {
     return (
       <div className="card">
@@ -388,10 +409,22 @@ function ReportsTab({
                                       <span style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>{c.from}:</span> {c.text}
                                       {c.attachments && c.attachments.length > 0 && (
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                                          {c.attachments.map(att => (
-                                            <a key={att.id} href={att.url} target="_blank" rel="noopener noreferrer">
+                                          {c.attachments.map((att, attIdx) => (
+                                            <button
+                                              key={att.id}
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                openImageViewer(c.attachments, attIdx);
+                                              }}
+                                              style={{
+                                                padding: 0,
+                                                border: 'none',
+                                                background: 'none',
+                                                cursor: 'pointer'
+                                              }}
+                                            >
                                               <img src={att.url} alt={att.fileName} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }} />
-                                            </a>
+                                            </button>
                                           ))}
                                         </div>
                                       )}
@@ -460,19 +493,20 @@ function ReportsTab({
                                 gap: '8px',
                                 marginTop: '10px'
                               }}>
-                                {comment.attachments.map(att => (
-                                  <a
+                                {comment.attachments.map((att, attIdx) => (
+                                  <button
                                     key={att.id}
-                                    href={att.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
+                                    onClick={() => openImageViewer(comment.attachments, attIdx)}
                                     style={{
                                       display: 'block',
                                       width: '80px',
                                       height: '80px',
                                       borderRadius: '4px',
                                       overflow: 'hidden',
-                                      border: `1px solid ${darkMode ? '#444' : '#ddd'}`
+                                      border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
+                                      padding: 0,
+                                      background: 'none',
+                                      cursor: 'pointer'
                                     }}
                                   >
                                     <img
@@ -484,7 +518,7 @@ function ReportsTab({
                                         objectFit: 'cover'
                                       }}
                                     />
-                                  </a>
+                                  </button>
                                 ))}
                               </div>
                             )}
@@ -498,6 +532,15 @@ function ReportsTab({
             );
           })}
         </div>
+
+        {/* Image Viewer */}
+        {viewerImages && (
+          <ImageViewer
+            images={viewerImages}
+            initialIndex={viewerIndex}
+            onClose={closeImageViewer}
+          />
+        )}
       </>
     );
   }
@@ -1040,19 +1083,20 @@ function ReportsTab({
                               gap: '8px',
                               marginTop: '10px'
                             }}>
-                              {comment.attachments.map(att => (
-                                <a
+                              {comment.attachments.map((att, attIdx) => (
+                                <button
                                   key={att.id}
-                                  href={att.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
+                                  onClick={() => openImageViewer(comment.attachments, attIdx)}
                                   style={{
                                     display: 'block',
                                     width: '80px',
                                     height: '80px',
                                     borderRadius: '4px',
                                     overflow: 'hidden',
-                                    border: `1px solid ${darkMode ? '#444' : '#ddd'}`
+                                    border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
+                                    padding: 0,
+                                    background: 'none',
+                                    cursor: 'pointer'
                                   }}
                                 >
                                   <img
@@ -1064,7 +1108,7 @@ function ReportsTab({
                                       objectFit: 'cover'
                                     }}
                                   />
-                                </a>
+                                </button>
                               ))}
                             </div>
                           )}
@@ -1106,6 +1150,15 @@ function ReportsTab({
           ))}
         </div>
       </div>
+
+      {/* Image Viewer */}
+      {viewerImages && (
+        <ImageViewer
+          images={viewerImages}
+          initialIndex={viewerIndex}
+          onClose={closeImageViewer}
+        />
+      )}
     </>
   );
 }
