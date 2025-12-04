@@ -517,7 +517,8 @@ router.get('/all', authenticateToken, requireAdmin, async (req, res) => {
               take: 1
             }
           }
-        }
+        },
+        attachments: true
       },
       orderBy: [
         { phase: 'asc' },
@@ -526,25 +527,42 @@ router.get('/all', authenticateToken, requireAdmin, async (req, res) => {
       ]
     });
 
-    res.json(evaluations.map(e => ({
-      id: e.id,
-      evaluator_id: e.evaluatorId,
-      evaluatee_id: e.evaluateeId,
-      class_id: e.classId,
-      phase: e.phase,
-      contribution: e.contribution,
-      communication: e.communication,
-      reliability: e.reliability,
-      quality_of_work: e.qualityOfWork,
-      collaboration: e.collaboration,
-      score: e.score,
-      comments: e.comments,
-      created_at: e.createdAt,
-      updated_at: e.updatedAt,
-      evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`.trim(),
-      evaluatee_name: `${e.evaluatee.firstName} ${e.evaluatee.lastName}`.trim(),
-      group_name: e.evaluatee.groupMemberships[0]?.group?.name || null
-    })));
+    // Generate presigned URLs for attachments
+    const evalsWithUrls = await Promise.all(evaluations.map(async (e) => {
+      const attachmentsWithUrls = await Promise.all(
+        (e.attachments || []).map(async (att) => ({
+          id: att.id,
+          fileName: att.fileName,
+          mimeType: att.mimeType,
+          fileSize: att.fileSize,
+          url: await getPresignedUrl(att.s3Key),
+          uploadedAt: att.uploadedAt
+        }))
+      );
+
+      return {
+        id: e.id,
+        evaluator_id: e.evaluatorId,
+        evaluatee_id: e.evaluateeId,
+        class_id: e.classId,
+        phase: e.phase,
+        contribution: e.contribution,
+        communication: e.communication,
+        reliability: e.reliability,
+        quality_of_work: e.qualityOfWork,
+        collaboration: e.collaboration,
+        score: e.score,
+        comments: e.comments,
+        created_at: e.createdAt,
+        updated_at: e.updatedAt,
+        evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`.trim(),
+        evaluatee_name: `${e.evaluatee.firstName} ${e.evaluatee.lastName}`.trim(),
+        group_name: e.evaluatee.groupMemberships[0]?.group?.name || null,
+        attachments: attachmentsWithUrls
+      };
+    }));
+
+    res.json(evalsWithUrls);
   } catch (err) {
     console.error('get all evaluations error:', err);
     res.status(500).json({ error: 'Database error' });

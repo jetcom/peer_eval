@@ -591,8 +591,9 @@ function ReportsTab({
 
       const comments = phaseEvals.map(e => ({
         from: e.evaluator_name,
-        text: e.comments
-      })).filter(c => c.text);
+        text: e.comments,
+        attachments: e.attachments || []
+      })).filter(c => c.text || (c.attachments && c.attachments.length > 0));
 
       return { phase, avgScore, avgLikert, criteria, comments, count: phaseEvals.length };
     });
@@ -1031,6 +1032,42 @@ function ReportsTab({
                             From: {comment.from}
                           </div>
                           <div style={{ fontSize: '0.9rem' }}>{comment.text}</div>
+                          {/* Display attached images */}
+                          {comment.attachments && comment.attachments.length > 0 && (
+                            <div style={{
+                              display: 'flex',
+                              flexWrap: 'wrap',
+                              gap: '8px',
+                              marginTop: '10px'
+                            }}>
+                              {comment.attachments.map(att => (
+                                <a
+                                  key={att.id}
+                                  href={att.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{
+                                    display: 'block',
+                                    width: '80px',
+                                    height: '80px',
+                                    borderRadius: '4px',
+                                    overflow: 'hidden',
+                                    border: `1px solid ${darkMode ? '#444' : '#ddd'}`
+                                  }}
+                                >
+                                  <img
+                                    src={att.url}
+                                    alt={att.fileName}
+                                    style={{
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'cover'
+                                    }}
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))
                     )}
