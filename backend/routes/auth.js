@@ -326,4 +326,29 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// Test email endpoint (admin only)
+router.post('/test-email', authenticateToken, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const result = await emailService.notifyAdminNewInstructor({
+      adminEmails: [req.user.email],
+      instructor: {
+        firstName: 'Test',
+        lastName: 'Instructor',
+        email: 'test@example.com',
+        university: 'Test University',
+        department: 'Test Department'
+      }
+    });
+
+    res.json({ message: 'Test email sent', result });
+  } catch (err) {
+    console.error('Test email error:', err);
+    res.status(500).json({ error: 'Failed to send test email', details: err.message });
+  }
+});
+
 module.exports = router;
