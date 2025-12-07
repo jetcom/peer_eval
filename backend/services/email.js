@@ -4,7 +4,7 @@ const { Resend } = require('resend');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Default from address - use your verified domain
-const DEFAULT_FROM = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || 'PeerEvals <noreply@peerevals.app>';
+const DEFAULT_FROM = process.env.RESEND_FROM_EMAIL || process.env.EMAIL_FROM || 'PeerEvals <hello@peerevals.app>';
 const APP_URL = process.env.FRONTEND_URL || 'http://localhost:3002';
 
 /**
