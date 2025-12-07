@@ -140,9 +140,10 @@ router.post('/register-instructor', async (req, res) => {
         select: { email: true }
       });
       const adminEmails = admins.map(a => a.email);
+      console.log('Found admins for new instructor notification:', adminEmails);
 
       if (adminEmails.length > 0) {
-        await emailService.notifyAdminNewInstructor({
+        const result = await emailService.notifyAdminNewInstructor({
           adminEmails,
           instructor: {
             firstName: first_name,
@@ -152,6 +153,9 @@ router.post('/register-instructor', async (req, res) => {
             department
           }
         });
+        console.log('Admin notification email result:', result);
+      } else {
+        console.warn('No admin users found to notify about new instructor registration');
       }
     } catch (emailErr) {
       console.error('Failed to send admin notification email:', emailErr);

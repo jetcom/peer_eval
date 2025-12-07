@@ -66,9 +66,13 @@ function AdminDashboard() {
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
   const [showCopyClassModal, setShowCopyClassModal] = useState(false);
   const [copyingClass, setCopyingClass] = useState(null);
+  const [pendingInstructorCount, setPendingInstructorCount] = useState(0);
 
   useEffect(() => {
     fetchData();
+    if (user?.role === 'admin') {
+      fetchPendingInstructorCount();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -151,6 +155,15 @@ function AdminDashboard() {
       setMessage({ type: 'error', text: 'Failed to load data' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPendingInstructorCount = async () => {
+    try {
+      const res = await axios.get('/api/users/pending-teachers');
+      setPendingInstructorCount(res.data.length);
+    } catch (err) {
+      console.error('Failed to fetch pending instructors:', err);
     }
   };
 
@@ -766,6 +779,9 @@ function AdminDashboard() {
               onClick={() => setActiveTab('instructors')}
             >
               Instructors
+              {pendingInstructorCount > 0 && (
+                <span className="tab-badge">{pendingInstructorCount}</span>
+              )}
             </button>
           )}
         </div>
@@ -873,7 +889,10 @@ function AdminDashboard() {
         {activeTab === 'instructors' && user?.role === 'admin' && (
           <PendingInstructorsTab
             darkMode={darkMode}
-            onRefreshUsers={fetchData}
+            onRefreshUsers={() => {
+              fetchData();
+              fetchPendingInstructorCount();
+            }}
           />
         )}
       </div>

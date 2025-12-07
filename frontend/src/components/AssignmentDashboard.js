@@ -154,6 +154,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                 {/* Assignment Header */}
                 <div
                   onClick={() => setExpandedAssignment(isExpanded ? null : assignment.id)}
+                  className="assignment-header"
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -161,14 +162,17 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                     padding: '15px 20px',
                     background: darkMode ? '#2a2a2a' : '#f8f9fa',
                     cursor: 'pointer',
-                    borderBottom: isExpanded ? `1px solid ${darkMode ? '#444' : '#ddd'}` : 'none'
+                    borderBottom: isExpanded ? `1px solid ${darkMode ? '#444' : '#ddd'}` : 'none',
+                    flexWrap: 'wrap',
+                    gap: '10px'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: '1 1 auto', minWidth: '200px' }}>
                     <span style={{
                       transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
                       transition: 'transform 0.2s',
-                      display: 'inline-block'
+                      display: 'inline-block',
+                      flexShrink: 0
                     }}>
                       ▶
                     </span>
@@ -181,7 +185,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                       )}
                     </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
                     {assignment.due_date && (
                       <span style={{
                         fontSize: '0.85rem',
@@ -193,13 +197,13 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                         })}
                       </span>
                     )}
-                    <div style={{
-                      minWidth: '90px',
+                    <div className="assignment-status-badge" style={{
                       padding: '6px 12px',
                       borderRadius: '20px',
                       textAlign: 'center',
                       fontSize: '0.85rem',
                       fontWeight: '500',
+                      whiteSpace: 'nowrap',
                       background: progress.percentage === 100
                         ? (darkMode ? '#1a3d1a' : '#d4edda')
                         : progress.percentage > 0
@@ -231,6 +235,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                           return (
                             <div
                               key={evalType.id}
+                              className="eval-type-row"
                               onClick={() => navigate(`/evaluate-assignment/${assignment.id}/${evalType.id}?class_id=${classId}${masqueradeUser ? `&user_id=${masqueradeUser}` : ''}`)}
                               style={{
                                 display: 'flex',
@@ -241,12 +246,14 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                                 border: `1px solid ${darkMode ? '#444' : '#e0e0e0'}`,
                                 borderRadius: '6px',
                                 cursor: 'pointer',
-                                transition: 'background 0.2s'
+                                transition: 'background 0.2s',
+                                flexWrap: 'wrap',
+                                gap: '10px'
                               }}
                               onMouseEnter={(e) => e.currentTarget.style.background = darkMode ? '#3a3a3a' : '#f5f5f5'}
                               onMouseLeave={(e) => e.currentTarget.style.background = darkMode ? '#333' : '#fff'}
                             >
-                              <div>
+                              <div style={{ flex: '1 1 auto', minWidth: '150px' }}>
                                 <div style={{ fontWeight: '500' }}>
                                   {evalType.name}
                                 </div>
@@ -265,7 +272,8 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                               <div style={{
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '8px'
+                                gap: '8px',
+                                flexWrap: 'wrap'
                               }}>
                                 {evalType.due_date && (
                                   <span style={{
@@ -283,6 +291,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                                   borderRadius: '12px',
                                   fontSize: '0.8rem',
                                   fontWeight: '500',
+                                  whiteSpace: 'nowrap',
                                   background: status.color === '#27ae60'
                                     ? (darkMode ? '#1a3d1a' : '#d4edda')
                                     : status.color === '#f39c12'

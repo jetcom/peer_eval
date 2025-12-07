@@ -62,12 +62,12 @@ function Landing() {
             <span className="landing-logo-text">PeerEval</span>
           </div>
           <div className="landing-nav-actions">
+            <a href="https://peerevals.app/login" className="landing-login-link">
+              Login
+            </a>
             <button className="theme-toggle" onClick={toggleDarkMode}>
               {darkMode ? '☀️ Light' : '🌙 Dark'}
             </button>
-            <a href="https://peerevals.app/login" className="landing-btn landing-btn-secondary">
-              Sign In
-            </a>
             <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-primary">
               Get Started
             </a>

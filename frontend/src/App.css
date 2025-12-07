@@ -955,6 +955,25 @@ body.dark-mode .admin-stat-sublabel {
   color: white;
 }
 
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  margin-left: 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e74c3c;
+  color: white;
+}
+
+body.dark-mode .tab-badge {
+  background: #c0392b;
+}
+
 /* Dark mode tabs */
 body.dark-mode .admin-tabs {
   background: #1f1f1f;
@@ -1867,6 +1886,28 @@ body.dark-mode .student-class-item .student-class-semester {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.landing-login-link {
+  color: #2563eb;
+  font-weight: 600;
+  text-decoration: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.landing-login-link:hover {
+  background: rgba(37, 99, 235, 0.1);
+  text-decoration: underline;
+}
+
+.dark .landing-login-link {
+  color: #60a5fa;
+}
+
+.dark .landing-login-link:hover {
+  background: rgba(96, 165, 250, 0.15);
 }
 
 /* Landing page theme toggle - needs visibility in light mode */
@@ -2973,16 +3014,32 @@ body.dark-mode .student-class-item .student-class-semester {
   .member-name {
     font-size: 1.1rem;
     margin-bottom: 12px;
+    padding: 10px 12px;
+    background: linear-gradient(135deg, rgba(52, 152, 219, 0.1), rgba(52, 152, 219, 0.05));
+    border-radius: 8px;
+    border-left: 3px solid #3498db;
+  }
+
+  body.dark-mode .member-name {
+    background: linear-gradient(135deg, rgba(52, 152, 219, 0.15), rgba(52, 152, 219, 0.05));
   }
 
   /* Criteria items */
   .criteria-item {
-    margin-bottom: 16px;
+    margin-bottom: 20px;
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+  }
+
+  body.dark-mode .criteria-item {
+    background: #1f1f1f;
   }
 
   .criteria-label {
     font-size: 0.95rem;
     display: block;
+    font-weight: 600;
   }
 
   .criteria-description {
@@ -2992,77 +3049,129 @@ body.dark-mode .student-class-item .student-class-semester {
     font-size: 0.8rem;
   }
 
-  /* Likert scale - make it vertical on mobile */
+  /* Likert scale - touch-friendly buttons on mobile */
   .likert-scale {
-    flex-direction: row;
-    justify-content: space-around;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 8px 0;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 6px;
+    padding: 10px 0;
   }
 
   .likert-option {
-    flex: 0 0 auto;
-    min-width: 45px;
-    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 4px;
+    background: #fff;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 50px;
+  }
+
+  body.dark-mode .likert-option {
+    background: #2a2a2a;
+    border-color: #444;
+  }
+
+  .likert-option:has(input:checked) {
+    background: #3498db;
+    border-color: #3498db;
+  }
+
+  .likert-option:has(input:checked) span {
+    color: white;
+  }
+
+  .likert-option input[type="radio"] {
+    width: 18px;
+    height: 18px;
+    margin-bottom: 4px;
   }
 
   .likert-option span {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: center;
   }
 
   .likert-labels {
     font-size: 0.7rem;
-    margin-top: 4px;
+    margin-top: 6px;
+    padding: 0 4px;
   }
 
   /* Score input */
   .score-input {
     flex-wrap: wrap;
+    gap: 10px;
   }
 
   .score-input input {
-    width: 70px;
-    padding: 8px;
+    width: 80px;
+    padding: 12px;
+    font-size: 1.1rem;
+    text-align: center;
+    border-radius: 8px;
   }
 
   /* Textareas */
   .evaluation-section textarea,
   .form-group textarea {
-    min-height: 100px;
-    font-size: 0.9rem;
+    min-height: 120px;
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    border-radius: 8px;
+    padding: 12px;
   }
 
-  /* Phase tabs on mobile */
+  /* Phase tabs on mobile - make them more tappable */
   .phase-tabs {
-    flex-wrap: wrap;
-    gap: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
   .phase-tab {
-    flex: 1 1 calc(50% - 8px);
-    min-width: 100px;
-    padding: 10px 8px;
-    font-size: 0.85rem;
+    padding: 14px 10px;
+    font-size: 0.9rem;
+    border-radius: 10px;
+    font-weight: 500;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .phase-tab.past-due {
+    opacity: 0.7;
   }
 }
 
-/* Very small screens - stack likert options */
+/* Very small screens */
 @media (max-width: 480px) {
   .likert-scale {
-    gap: 2px;
+    gap: 4px;
   }
 
   .likert-option {
-    min-width: 40px;
+    padding: 10px 2px;
+    min-height: 45px;
   }
 
   .likert-option span {
-    display: none;
+    font-size: 0.65rem;
+  }
+
+  /* Stack phase tabs on very small screens */
+  .phase-tabs {
+    grid-template-columns: 1fr;
   }
 
   .phase-tab {
-    flex: 1 1 100%;
+    padding: 12px;
   }
 }
 
@@ -3393,5 +3502,387 @@ body.dark-mode .responsive-table thead {
   .mobile-card-actions .btn {
     width: 100%;
     text-align: center;
+  }
+}
+
+/* ==========================================
+   STUDENT DASHBOARD MOBILE STYLES
+   ========================================== */
+
+/* Progress table - convert to stacked cards on mobile */
+@media (max-width: 768px) {
+  /* Student progress table - make it scrollable with sticky first column */
+  .card table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .card table thead,
+  .card table tbody,
+  .card table tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  /* Student dashboard specific - progress table */
+  .student-progress-table {
+    font-size: 0.8rem;
+  }
+
+  .student-progress-table th,
+  .student-progress-table td {
+    padding: 8px 6px;
+    white-space: nowrap;
+  }
+
+  .student-progress-table th:first-child,
+  .student-progress-table td:first-child {
+    position: sticky;
+    left: 0;
+    background: #fff;
+    z-index: 1;
+    min-width: 120px;
+  }
+
+  body.dark-mode .student-progress-table th:first-child,
+  body.dark-mode .student-progress-table td:first-child {
+    background: #1a1a1a;
+  }
+
+  /* Group members list - more compact */
+  .card ul {
+    padding-left: 20px;
+    margin: 10px 0;
+  }
+
+  .card ul li {
+    padding: 6px 0;
+    font-size: 0.9rem;
+  }
+
+  /* Congratulations banner - responsive */
+  .card div[style*="textAlign: center"] {
+    padding: 12px !important;
+  }
+
+  .card div[style*="textAlign: center"] p {
+    font-size: 1rem !important;
+  }
+}
+
+/* ==========================================
+   ASSIGNMENT DASHBOARD MOBILE STYLES
+   ========================================== */
+
+/* Assignment header - base styles for mobile detection */
+.assignment-header {
+  transition: all 0.2s;
+}
+
+.eval-type-row {
+  transition: all 0.2s;
+}
+
+@media (max-width: 768px) {
+  /* Assignment accordion header - responsive layout */
+  .assignment-header {
+    padding: 12px 15px !important;
+  }
+
+  .assignment-header h3 {
+    font-size: 1rem !important;
+  }
+
+  /* Assignment status badge - full width on mobile */
+  .assignment-status-badge {
+    flex: 1 1 100%;
+    text-align: center !important;
+  }
+
+  /* Eval type rows - stack description and status */
+  .eval-type-row {
+    padding: 14px !important;
+    border-radius: 10px !important;
+  }
+
+  .eval-type-row > div:first-child {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  .eval-type-row > div:last-child {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* Overall progress table */
+  .card > div[style*="overflowX"] table {
+    font-size: 0.85rem;
+  }
+
+  .card > div[style*="overflowX"] th,
+  .card > div[style*="overflowX"] td {
+    padding: 10px 8px;
+  }
+}
+
+/* Very small screens - assignment dashboard */
+@media (max-width: 480px) {
+  .assignment-header {
+    padding: 10px 12px !important;
+  }
+
+  .assignment-header h3 {
+    font-size: 0.95rem !important;
+  }
+
+  .eval-type-row {
+    padding: 12px !important;
+  }
+
+  /* Stack all elements vertically */
+  .eval-type-row > div:last-child {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+}
+
+/* ==========================================
+   STUDENT MOBILE HEADER IMPROVEMENTS
+   ========================================== */
+
+@media (max-width: 768px) {
+  /* Make save button more prominent and full-width on mobile */
+  .container > div[style*="textAlign: center"] {
+    padding: 0 10px;
+  }
+
+  .container > div[style*="textAlign: center"] .btn-success {
+    width: 100%;
+    padding: 16px 20px !important;
+    font-size: 1.1rem !important;
+    border-radius: 10px;
+    position: sticky;
+    bottom: 20px;
+    box-shadow: 0 4px 15px rgba(39, 174, 96, 0.4);
+  }
+
+  /* Auto-save status - make more visible */
+  .container > div[style*="textAlign: center"] > div[style*="marginBottom"] {
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    display: inline-block;
+  }
+
+  body.dark-mode .container > div[style*="textAlign: center"] > div[style*="marginBottom"] {
+    background: #1f1f1f;
+  }
+}
+
+/* ==========================================
+   MOBILE STICKY SAVE BUTTON
+   ========================================== */
+
+@media (max-width: 768px) {
+  .mobile-sticky-save {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px 16px;
+    background: #fff;
+    border-top: 1px solid #e0e0e0;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+  }
+
+  body.dark-mode .mobile-sticky-save {
+    background: #1a1a1a;
+    border-top-color: #333;
+  }
+
+  .mobile-sticky-save .btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 1rem;
+    border-radius: 8px;
+  }
+
+  .mobile-sticky-save .save-status {
+    text-align: center;
+    font-size: 0.8rem;
+    margin-bottom: 8px;
+  }
+
+  /* Add padding to bottom of page to account for sticky button */
+  .has-sticky-save {
+    padding-bottom: 100px;
+  }
+}
+
+/* ==========================================
+   MOBILE TOUCH TARGETS
+   Ensure all interactive elements are at least 44px
+   ========================================== */
+
+@media (max-width: 768px) {
+  /* Buttons */
+  .btn {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Radio buttons and checkboxes */
+  input[type="radio"],
+  input[type="checkbox"] {
+    min-width: 20px;
+    min-height: 20px;
+  }
+
+  /* Links in cards */
+  .card a {
+    display: inline-block;
+    min-height: 44px;
+    line-height: 44px;
+  }
+
+  /* Select dropdowns */
+  select {
+    min-height: 44px;
+    font-size: 16px; /* Prevents iOS zoom */
+  }
+
+  /* Text inputs */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"] {
+    min-height: 44px;
+    font-size: 16px; /* Prevents iOS zoom */
+  }
+}
+
+/* ==========================================
+   MOBILE PROGRESS INDICATOR
+   Visual progress for multi-step evaluations
+   ========================================== */
+
+.mobile-progress-bar {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-progress-bar {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: #fff;
+    padding: 10px 16px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  body.dark-mode .mobile-progress-bar {
+    background: #1a1a1a;
+    border-bottom-color: #333;
+  }
+
+  .mobile-progress-bar-inner {
+    height: 4px;
+    background: #e0e0e0;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  body.dark-mode .mobile-progress-bar-inner {
+    background: #333;
+  }
+
+  .mobile-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #27ae60);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .mobile-progress-text {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    font-size: 0.75rem;
+    color: #666;
+  }
+
+  body.dark-mode .mobile-progress-text {
+    color: #999;
+  }
+}
+
+/* ==========================================
+   MOBILE-FIRST CARD IMPROVEMENTS
+   ========================================== */
+
+@media (max-width: 768px) {
+  .card {
+    border-radius: 12px;
+    margin-bottom: 16px;
+  }
+
+  .card h2 {
+    font-size: 1.15rem;
+    margin-bottom: 12px;
+  }
+
+  .card h3 {
+    font-size: 1rem;
+  }
+
+  .card p {
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  /* Card with instructions - make more prominent */
+  .card:has(h2:contains("Instructions")) {
+    background: linear-gradient(135deg, #f8f9fa, #fff);
+    border-left: 4px solid #3498db;
+  }
+
+  body.dark-mode .card:has(h2:contains("Instructions")) {
+    background: linear-gradient(135deg, #1f1f1f, #1a1a1a);
+  }
+}
+
+/* ==========================================
+   PREVENT HORIZONTAL SCROLL ON MOBILE
+   ========================================== */
+
+@media (max-width: 768px) {
+  /* Force all potentially wide elements to respect viewport */
+  .container,
+  .card,
+  .card > div,
+  .card > table,
+  form {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Allow horizontal scroll only for actual tables */
+  .card > div:has(> table) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Pre-formatted text should wrap */
+  pre, code {
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 }

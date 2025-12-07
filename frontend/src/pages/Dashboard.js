@@ -490,49 +490,51 @@ function Dashboard() {
                       </p>
                     </div>
                   )}
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Team Member</th>
-                        {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => (
-                          <th key={phase}>Phase {phase}</th>
-                        ))}
-                        {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
-                          <th>Final</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.members.map(member => (
-                        <tr key={member.id}>
-                          <td>{member.last_name}, {member.first_name} {member.id === (masqueradeUser || user?.id) && '(You)'}</td>
-                          {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => {
-                            const hasEval = evaluations.some(
-                              e => e.evaluatee_id === member.id && e.phase === phase
-                            );
-                            return (
-                              <td key={phase}>
-                                {hasEval ? (
-                                  <span style={{ color: '#27ae60' }}>✓ Complete</span>
-                                ) : (
-                                  <span style={{ color: '#95a5a6' }}>Pending</span>
-                                )}
-                              </td>
-                            );
-                          })}
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table className="student-progress-table">
+                      <thead>
+                        <tr>
+                          <th>Team Member</th>
+                          {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => (
+                            <th key={phase}>P{phase}</th>
+                          ))}
                           {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
-                            <td>
-                              {finalComments.some(fc => fc.evaluatee_id === member.id) ? (
-                                <span style={{ color: '#27ae60' }}>✓ Complete</span>
-                              ) : (
-                                <span style={{ color: '#95a5a6' }}>Pending</span>
-                              )}
-                            </td>
+                            <th>Final</th>
                           )}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {group.members.map(member => (
+                          <tr key={member.id}>
+                            <td>{member.last_name}, {member.first_name} {member.id === (masqueradeUser || user?.id) && '(You)'}</td>
+                            {Array.from({ length: currentClass?.num_phases || 3 }, (_, i) => i + 1).map(phase => {
+                              const hasEval = evaluations.some(
+                                e => e.evaluatee_id === member.id && e.phase === phase
+                              );
+                              return (
+                                <td key={phase}>
+                                  {hasEval ? (
+                                    <span style={{ color: '#27ae60' }}>✓</span>
+                                  ) : (
+                                    <span style={{ color: '#95a5a6' }}>—</span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            {(currentClass?.has_final_evaluation === 1 || currentClass?.has_final_evaluation === true || currentClass?.has_final_evaluation === undefined) && (
+                              <td>
+                                {finalComments.some(fc => fc.evaluatee_id === member.id) ? (
+                                  <span style={{ color: '#27ae60' }}>✓</span>
+                                ) : (
+                                  <span style={{ color: '#95a5a6' }}>—</span>
+                                )}
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </>
             )}
