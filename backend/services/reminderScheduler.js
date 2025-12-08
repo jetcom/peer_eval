@@ -243,12 +243,17 @@ async function processSchedule(schedule, now) {
         if (teammateIds.length === 0) continue;
 
         // Check completions for this phase
+        // Note: Some older evaluations might have classId: null if submitted without class_id in URL
+        // So we check for either the specific classId OR null
         const submitted = await prisma.evaluation.findMany({
           where: {
             evaluatorId: student.id,
             evaluateeId: { in: teammateIds },
             phase,
-            classId
+            OR: [
+              { classId },
+              { classId: null }
+            ]
           },
           select: { evaluateeId: true }
         });
