@@ -2,11 +2,25 @@ import React, { useState, useRef, useEffect } from 'react';
 
 function CustomDropdown({ value, onChange, options, darkMode, style, placeholder }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const dropdownRef = useRef(null);
+  const buttonRef = useRef(null);
 
   const selectedOption = options.find(opt => opt.value === value);
   // Use headerLabel if provided, otherwise fall back to label
   const displayLabel = selectedOption ? (selectedOption.headerLabel || selectedOption.label) : null;
+
+  // Update dropdown position when opening
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width
+      });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -38,10 +52,10 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
   return (
     <div ref={dropdownRef} style={{
       position: 'relative',
-      zIndex: isOpen ? 9999 : 'auto',
       ...style
     }}>
       <div
+        ref={buttonRef}
         onClick={handleToggle}
         onTouchEnd={handleToggle}
         role="button"
@@ -89,18 +103,17 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
       {isOpen && (
         <div
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            marginTop: '4px',
+            position: 'fixed',
+            top: dropdownPosition.top,
+            left: dropdownPosition.left,
+            width: dropdownPosition.width,
             backgroundColor: darkMode ? '#2a3a5a' : '#fff',
             border: '1px solid #ccc',
             borderRadius: '4px',
             maxHeight: '300px',
             overflowY: 'auto',
-            zIndex: 9999,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            zIndex: 99999,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)',
             WebkitOverflowScrolling: 'touch'
           }}
         >
