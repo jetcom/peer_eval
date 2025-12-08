@@ -79,7 +79,6 @@ function ActivityLogsTab({
 
     // For older entries, show the actual date/time
     const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-    const dateOptions = { month: 'short', day: 'numeric' };
 
     // Check if it's yesterday (calendar day)
     const yesterday = new Date(now);
