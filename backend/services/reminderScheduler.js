@@ -12,6 +12,26 @@ const emailService = require('./email');
 let schedulerTask = null;
 
 /**
+ * Convert a Date to a string in the format used for due dates (YYYY-MM-DDTHH:MM)
+ * in the specified timezone
+ */
+function formatDateInTimezone(date, timezone) {
+  const tz = timezone || 'America/New_York';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+
+  const getPart = (type) => parts.find(p => p.type === type)?.value;
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
+}
+
+/**
  * Check and send reminders for all active schedules
  */
 async function processReminders() {
@@ -57,10 +77,20 @@ async function processSchedule(schedule, now) {
       return;
     }
 
+    // Get the class timezone for proper date comparison
+    const classTimezone = classInfo.dueDateTimezone || 'America/New_York';
+
     // Calculate the reminder window
     // We look for due dates that are within hoursBeforeDue hours from now
     const reminderWindowStart = new Date(now.getTime() + (hoursBeforeDue - 0.25) * 60 * 60 * 1000);
     const reminderWindowEnd = new Date(now.getTime() + (hoursBeforeDue + 0.25) * 60 * 60 * 1000);
+
+    // Convert to strings in class timezone for comparison with stored due dates
+    // Due dates are stored as "YYYY-MM-DDTHH:MM" strings in the class's local timezone
+    const windowStartStr = formatDateInTimezone(reminderWindowStart, classTimezone);
+    const windowEndStr = formatDateInTimezone(reminderWindowEnd, classTimezone);
+
+    console.log(`[ReminderScheduler] Class ${classId} (${classTimezone}): checking window ${windowStartStr} to ${windowEndStr}`);
 
     // Check if this is assignment-based or phase-based
     const isAssignmentMode = classInfo.evaluationMode === 'assignments';
@@ -71,14 +101,15 @@ async function processSchedule(schedule, now) {
 
     if (isAssignmentMode) {
       // Find assignments with eval types due within the window
+      // Use timezone-aware string comparison
       const assignments = await prisma.assignment.findMany({
         where: {
           classId,
           evalTypes: {
             some: {
               dueDate: {
-                gte: reminderWindowStart,
-                lte: reminderWindowEnd
+                gte: windowStartStr,
+                lte: windowEndStr
               }
             }
           }
@@ -87,8 +118,8 @@ async function processSchedule(schedule, now) {
           evalTypes: {
             where: {
               dueDate: {
-                gte: reminderWindowStart,
-                lte: reminderWindowEnd
+                gte: windowStartStr,
+                lte: windowEndStr
               }
             }
           }
@@ -149,13 +180,14 @@ async function processSchedule(schedule, now) {
       }
     } else {
       // Phase-based mode
-      // dueDate is stored as String (ISO format), so convert DateTime to strings for comparison
+      // dueDate is stored as String in class timezone format (YYYY-MM-DDTHH:MM)
+      // Use timezone-aware string comparison
       const phaseDueDates = await prisma.phaseDueDate.findMany({
         where: {
           classId,
           dueDate: {
-            gte: reminderWindowStart.toISOString(),
-            lte: reminderWindowEnd.toISOString()
+            gte: windowStartStr,
+            lte: windowEndStr
           }
         }
       });
