@@ -298,17 +298,8 @@ async function processSchedule(schedule, now) {
       }
     }
 
-    // Send reminders
-    const result = await emailService.sendBulkNudge({
-      students: studentsToRemind,
-      className: classInfo.name,
-      assignmentName,
-      message: templateMessage,
-      instructorName: `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`,
-      subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
-    });
-
-    // Log the reminders
+    // Log the reminders BEFORE sending to prevent duplicates during deployments
+    // If server crashes after logging but before sending, we skip a reminder (better than duplicates)
     const logsToCreate = studentsToRemind.map(student => ({
       classId,
       userId: student.id,
@@ -325,6 +316,16 @@ async function processSchedule(schedule, now) {
     await prisma.reminderSchedule.update({
       where: { id },
       data: { lastSentAt: now }
+    });
+
+    // Now send the reminders (logs already written, so no duplicates if this crashes)
+    const result = await emailService.sendBulkNudge({
+      students: studentsToRemind,
+      className: classInfo.name,
+      assignmentName,
+      message: templateMessage,
+      instructorName: `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`,
+      subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
     });
 
     // Notify teacher
