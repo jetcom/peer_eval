@@ -221,12 +221,12 @@ router.get('/:classId/summary', authenticateToken, requireTeacher, async (req, r
       };
     });
 
-    // Sort by last login (null = never logged in, sorted to bottom)
+    // Sort by last activity (null = no activity, sorted to bottom)
     summary.sort((a, b) => {
-      if (!a.last_login && !b.last_login) return 0;
-      if (!a.last_login) return 1;
-      if (!b.last_login) return -1;
-      return new Date(b.last_login) - new Date(a.last_login);
+      if (!a.last_class_activity && !b.last_class_activity) return 0;
+      if (!a.last_class_activity) return 1;
+      if (!b.last_class_activity) return -1;
+      return new Date(b.last_class_activity) - new Date(a.last_class_activity);
     });
 
     res.json(summary);

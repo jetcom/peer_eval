@@ -106,10 +106,10 @@ function ActivityLogsTab({
   };
 
   const getActivityStatus = (student) => {
-    if (!student.last_login) return 'never';
-    const lastLogin = new Date(student.last_login);
+    if (!student.last_class_activity) return 'never';
+    const lastActivity = new Date(student.last_class_activity);
     const now = new Date();
-    const diffDays = Math.floor((now - lastLogin) / 86400000);
+    const diffDays = Math.floor((now - lastActivity) / 86400000);
 
     if (diffDays < 1) return 'active';
     if (diffDays < 7) return 'recent';
@@ -172,7 +172,7 @@ function ActivityLogsTab({
             'recent': 'Recent (this week)',
             'inactive': 'Inactive (1-30 days)',
             'dormant': 'Dormant (30+ days)',
-            'never': 'Never logged in'
+            'never': 'No activity'
           };
           return (
             <div
@@ -210,7 +210,7 @@ function ActivityLogsTab({
                 <thead>
                   <tr>
                     <th>Student</th>
-                    <th>Last Login</th>
+                    <th>Last Activity</th>
                     <th>Submissions</th>
                     <th>Status</th>
                   </tr>
@@ -218,18 +218,18 @@ function ActivityLogsTab({
                 <tbody>
                   {activitySummary
                     .sort((a, b) => {
-                      // Sort by status priority, then by last login
+                      // Sort by status priority, then by last activity
                       const statusOrder = { never: 0, dormant: 1, inactive: 2, recent: 3, active: 4 };
                       const aStatus = getActivityStatus(a);
                       const bStatus = getActivityStatus(b);
                       if (statusOrder[aStatus] !== statusOrder[bStatus]) {
                         return statusOrder[aStatus] - statusOrder[bStatus];
                       }
-                      // Then by last login (null last)
-                      if (!a.last_login && !b.last_login) return 0;
-                      if (!a.last_login) return 1;
-                      if (!b.last_login) return -1;
-                      return new Date(b.last_login) - new Date(a.last_login);
+                      // Then by last activity (null last)
+                      if (!a.last_class_activity && !b.last_class_activity) return 0;
+                      if (!a.last_class_activity) return 1;
+                      if (!b.last_class_activity) return -1;
+                      return new Date(b.last_class_activity) - new Date(a.last_class_activity);
                     })
                     .map(student => {
                       const status = getActivityStatus(student);
@@ -253,9 +253,14 @@ function ActivityLogsTab({
                             </div>
                           </td>
                           <td>
-                            <span title={formatDateTime(student.last_login)}>
-                              {formatRelativeTime(student.last_login)}
+                            <span title={formatDateTime(student.last_class_activity)}>
+                              {formatRelativeTime(student.last_class_activity)}
                             </span>
+                            {student.last_action && (
+                              <div style={{ fontSize: '0.7rem', color: '#888' }}>
+                                {formatAction(student.last_action)}
+                              </div>
+                            )}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             {student.evaluation_submissions}
