@@ -72,16 +72,31 @@ function ActivityLogsTab({
     const diffMs = now - date;
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    const remainingHours = diffHours % 24;
 
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays === 1) {
-      return includeTime ? `Yesterday at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : `1 day, ${remainingHours}h ago`;
+
+    // For older entries, show the actual date/time
+    const timeStr = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+    const dateOptions = { month: 'short', day: 'numeric' };
+
+    // Check if it's yesterday (calendar day)
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+
+    if (isYesterday) {
+      return includeTime ? `Yesterday at ${timeStr}` : `Yesterday`;
     }
-    if (diffDays < 7) return `${diffDays} days ago`;
+
+    // For this week, show day name
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffDays < 7) {
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+      return includeTime ? `${dayName} at ${timeStr}` : `${diffDays} days ago`;
+    }
+
     return formatDateTime(dateStr);
   };
 
