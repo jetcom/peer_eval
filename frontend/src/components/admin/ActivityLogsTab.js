@@ -12,6 +12,9 @@ function ActivityLogsTab({
   const [userLogs, setUserLogs] = useState([]);
   const [loadingUserLogs, setLoadingUserLogs] = useState(false);
   const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState('status'); // 'name', 'activity', 'submissions', 'status'
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' or 'desc'
 
   const fetchActivitySummary = async () => {
     setLoading(true);
@@ -31,6 +34,9 @@ function ActivityLogsTab({
   useEffect(() => {
     if (selectedClass) {
       fetchActivitySummary();
+      setSearchTerm(''); // Clear search when switching classes
+      setSelectedUser(null);
+      setUserLogs([]);
     } else {
       setActivitySummary([]);
     }
@@ -144,6 +150,68 @@ function ActivityLogsTab({
 
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
 
+  // Handle column header click for sorting
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Get sort indicator arrow
+  const getSortIndicator = (field) => {
+    if (sortField !== field) return '';
+    return sortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
+
+  // Filter and sort the activity summary
+  const filteredAndSortedStudents = activitySummary
+    .filter(student => {
+      if (!searchTerm) return true;
+      const search = searchTerm.toLowerCase();
+      const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
+      const email = student.email.toLowerCase();
+      return fullName.includes(search) || email.includes(search);
+    })
+    .sort((a, b) => {
+      const statusOrder = { never: 0, dormant: 1, inactive: 2, recent: 3, active: 4 };
+      let comparison = 0;
+
+      switch (sortField) {
+        case 'name':
+          const nameA = `${a.first_name} ${a.last_name}`.toLowerCase();
+          const nameB = `${b.first_name} ${b.last_name}`.toLowerCase();
+          comparison = nameA.localeCompare(nameB);
+          break;
+        case 'activity':
+          if (!a.last_class_activity && !b.last_class_activity) comparison = 0;
+          else if (!a.last_class_activity) comparison = 1;
+          else if (!b.last_class_activity) comparison = -1;
+          else comparison = new Date(b.last_class_activity) - new Date(a.last_class_activity);
+          break;
+        case 'submissions':
+          comparison = (a.evaluation_submissions || 0) - (b.evaluation_submissions || 0);
+          break;
+        case 'status':
+        default:
+          const aStatus = getActivityStatus(a);
+          const bStatus = getActivityStatus(b);
+          comparison = statusOrder[aStatus] - statusOrder[bStatus];
+          // Secondary sort by last activity for same status
+          if (comparison === 0) {
+            if (!a.last_class_activity && !b.last_class_activity) comparison = 0;
+            else if (!a.last_class_activity) comparison = 1;
+            else if (!b.last_class_activity) comparison = -1;
+            else comparison = new Date(b.last_class_activity) - new Date(a.last_class_activity);
+          }
+          break;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
   if (!selectedClass) {
     return (
       <div className="admin-section">
@@ -213,39 +281,69 @@ function ActivityLogsTab({
       <div style={{ display: 'grid', gridTemplateColumns: selectedUser ? '1fr 1fr' : '1fr', gap: '1.5rem' }}>
         {/* Student List */}
         <div>
-          <h3 style={{ marginBottom: '0.75rem' }}>Students ({activitySummary.length})</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ margin: 0 }}>
+              Students ({filteredAndSortedStudents.length}{searchTerm && ` of ${activitySummary.length}`})
+            </h3>
+            <input
+              type="text"
+              placeholder="Search by name or email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                padding: '0.5rem 0.75rem',
+                borderRadius: '4px',
+                border: `1px solid ${darkMode ? '#4a5568' : '#ccc'}`,
+                backgroundColor: darkMode ? '#2d3748' : '#fff',
+                color: darkMode ? '#e2e8f0' : '#000',
+                fontSize: '0.875rem',
+                width: '200px'
+              }}
+            />
+          </div>
           {loading ? (
             <p>Loading...</p>
           ) : activitySummary.length === 0 ? (
             <p style={{ color: '#666', fontStyle: 'italic' }}>No students enrolled in this class.</p>
+          ) : filteredAndSortedStudents.length === 0 ? (
+            <p style={{ color: '#666', fontStyle: 'italic' }}>No students match "{searchTerm}"</p>
           ) : (
             <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
               <table className="admin-table" style={{ fontSize: '0.875rem' }}>
                 <thead>
                   <tr>
-                    <th>Student</th>
-                    <th>Last Activity</th>
-                    <th>Submissions</th>
-                    <th>Status</th>
+                    <th
+                      onClick={() => handleSort('name')}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                      title="Sort by name"
+                    >
+                      Student{getSortIndicator('name')}
+                    </th>
+                    <th
+                      onClick={() => handleSort('activity')}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                      title="Sort by last activity"
+                    >
+                      Last Activity{getSortIndicator('activity')}
+                    </th>
+                    <th
+                      onClick={() => handleSort('submissions')}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                      title="Sort by submissions"
+                    >
+                      Submissions{getSortIndicator('submissions')}
+                    </th>
+                    <th
+                      onClick={() => handleSort('status')}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                      title="Sort by status"
+                    >
+                      Status{getSortIndicator('status')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activitySummary
-                    .sort((a, b) => {
-                      // Sort by status priority, then by last activity
-                      const statusOrder = { never: 0, dormant: 1, inactive: 2, recent: 3, active: 4 };
-                      const aStatus = getActivityStatus(a);
-                      const bStatus = getActivityStatus(b);
-                      if (statusOrder[aStatus] !== statusOrder[bStatus]) {
-                        return statusOrder[aStatus] - statusOrder[bStatus];
-                      }
-                      // Then by last activity (null last)
-                      if (!a.last_class_activity && !b.last_class_activity) return 0;
-                      if (!a.last_class_activity) return 1;
-                      if (!b.last_class_activity) return -1;
-                      return new Date(b.last_class_activity) - new Date(a.last_class_activity);
-                    })
-                    .map(student => {
+                  {filteredAndSortedStudents.map(student => {
                       const status = getActivityStatus(student);
                       return (
                         <tr
