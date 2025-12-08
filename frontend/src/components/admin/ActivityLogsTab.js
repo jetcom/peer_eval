@@ -18,17 +18,23 @@ function ActivityLogsTab({
   const [statusFilter, setStatusFilter] = useState(null); // null = all, or 'active', 'recent', etc.
   const [autoRefresh, setAutoRefresh] = useState(true);
 
-  const fetchActivitySummary = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchActivitySummary = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await axios.get(`/api/activity-logs/${selectedClass}/summary`);
       setActivitySummary(res.data);
     } catch (err) {
       console.error('Failed to fetch activity summary:', err);
-      setError('Failed to load activity data');
+      if (!silent) {
+        setError('Failed to load activity data');
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -46,12 +52,12 @@ function ActivityLogsTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClass]);
 
-  // Auto-refresh activity summary every 30 seconds
+  // Auto-refresh activity summary every 30 seconds (silent to avoid UI flicker)
   useEffect(() => {
     if (!selectedClass || !autoRefresh) return;
 
     const intervalId = setInterval(() => {
-      fetchActivitySummary();
+      fetchActivitySummary(true);
     }, 30000); // 30 seconds
 
     return () => clearInterval(intervalId);
