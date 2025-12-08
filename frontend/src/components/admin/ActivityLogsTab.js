@@ -65,7 +65,7 @@ function ActivityLogsTab({
     });
   };
 
-  const formatRelativeTime = (dateStr) => {
+  const formatRelativeTime = (dateStr, includeTime = false) => {
     if (!dateStr) return 'Never';
     const date = new Date(dateStr);
     const now = new Date();
@@ -73,11 +73,15 @@ function ActivityLogsTab({
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
+    const remainingHours = diffHours % 24;
 
     if (diffMins < 1) return 'Just now';
-    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    if (diffDays === 1) {
+      return includeTime ? `Yesterday at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : `1 day, ${remainingHours}h ago`;
+    }
+    if (diffDays < 7) return `${diffDays} days ago`;
     return formatDateTime(dateStr);
   };
 
@@ -327,8 +331,8 @@ function ActivityLogsTab({
                       <div style={{ fontWeight: 500 }}>
                         {formatAction(log.action)}
                       </div>
-                      <div style={{ fontSize: '0.75rem', color: '#666' }}>
-                        {formatRelativeTime(log.created_at)}
+                      <div style={{ fontSize: '0.75rem', color: '#666' }} title={formatDateTime(log.created_at)}>
+                        {formatRelativeTime(log.created_at, true)}
                       </div>
                     </div>
                     {log.details && (
