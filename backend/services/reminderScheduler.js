@@ -28,7 +28,10 @@ function formatDateInTimezone(date, timezone) {
   }).formatToParts(date);
 
   const getPart = (type) => parts.find(p => p.type === type)?.value;
-  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
+  // Handle case where midnight might be formatted as "24:00" instead of "00:00"
+  let hour = getPart('hour');
+  if (hour === '24') hour = '00';
+  return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${hour}:${getPart('minute')}`;
 }
 
 /**

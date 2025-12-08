@@ -168,11 +168,14 @@ async function checkIfPhasePastDue(userId, phase, classId) {
     }).formatToParts(now);
 
     const getPart = (parts, type) => parts.find(p => p.type === type)?.value;
-    const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${getPart(nowParts, 'hour')}:${getPart(nowParts, 'minute')}`;
+    // Handle case where midnight might be formatted as "24:00" instead of "00:00"
+    let hour = getPart(nowParts, 'hour');
+    if (hour === '24') hour = '00';
+    const nowInTz = `${getPart(nowParts, 'year')}-${getPart(nowParts, 'month')}-${getPart(nowParts, 'day')}T${hour}:${getPart(nowParts, 'minute')}`;
 
     // Compare as strings (both in the same timezone context)
     const isPastDue = nowInTz > effectiveDueDate;
-    console.log('Due date comparison:', { nowInTz, effectiveDueDate, isPastDue, hasExtension: !!extension });
+    console.log('Due date comparison:', { timezone, nowInTz, effectiveDueDate, isPastDue, hasExtension: !!extension });
 
     return { isPastDue, effectiveDueDate };
   } catch (err) {
