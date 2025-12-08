@@ -203,7 +203,7 @@ async function sendEvaluationReminder({ student, className, dueDate, assignmentN
       </div>
 
       <p>
-        <a href="${APP_URL}/evaluations"
+        <a href="${APP_URL}/dashboard"
            style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
           Complete Your Evaluations
         </a>
@@ -247,7 +247,7 @@ async function sendNudgeEmail({ student, className, assignmentName, message, ins
       `}
 
       <p>
-        <a href="${APP_URL}/evaluations"
+        <a href="${APP_URL}/dashboard"
            style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
           Complete Your Evaluations
         </a>
@@ -291,7 +291,7 @@ function buildNudgeEmailHtml({ student, className, assignmentName, message, inst
       `}
 
       <p>
-        <a href="${APP_URL}/evaluations"
+        <a href="${APP_URL}/dashboard"
            style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
           Complete Your Evaluations
         </a>
@@ -477,7 +477,7 @@ function buildReminderEmailHtml({ student, className, dueDate, assignmentName, e
       </div>
 
       <p>
-        <a href="${APP_URL}/evaluations"
+        <a href="${APP_URL}/dashboard"
            style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
           Complete Your Evaluations
         </a>
