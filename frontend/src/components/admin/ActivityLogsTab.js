@@ -15,6 +15,7 @@ function ActivityLogsTab({
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('status'); // 'name', 'activity', 'submissions', 'status'
   const [sortDirection, setSortDirection] = useState('asc'); // 'asc' or 'desc'
+  const [statusFilter, setStatusFilter] = useState(null); // null = all, or 'active', 'recent', etc.
 
   const fetchActivitySummary = async () => {
     setLoading(true);
@@ -35,6 +36,7 @@ function ActivityLogsTab({
     if (selectedClass) {
       fetchActivitySummary();
       setSearchTerm(''); // Clear search when switching classes
+      setStatusFilter(null); // Clear status filter
       setSelectedUser(null);
       setUserLogs([]);
     } else {
@@ -169,6 +171,11 @@ function ActivityLogsTab({
   // Filter and sort the activity summary
   const filteredAndSortedStudents = activitySummary
     .filter(student => {
+      // Status filter
+      if (statusFilter && getActivityStatus(student) !== statusFilter) {
+        return false;
+      }
+      // Text search filter
       if (!searchTerm) return true;
       const search = searchTerm.toLowerCase();
       const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
@@ -256,16 +263,24 @@ function ActivityLogsTab({
             'dormant': 'Dormant (30+ days)',
             'never': 'No activity'
           };
+          const isSelected = statusFilter === status;
           return (
             <div
               key={status}
+              onClick={() => setStatusFilter(isSelected ? null : status)}
               style={{
                 padding: '1rem',
                 borderRadius: '8px',
-                backgroundColor: darkMode ? '#1e293b' : '#f8fafc',
+                backgroundColor: isSelected
+                  ? (darkMode ? '#334155' : '#e0f2fe')
+                  : (darkMode ? '#1e293b' : '#f8fafc'),
                 border: `2px solid ${getStatusColor(status)}`,
-                textAlign: 'center'
+                textAlign: 'center',
+                cursor: 'pointer',
+                transition: 'background-color 0.15s',
+                opacity: count === 0 ? 0.5 : 1
               }}
+              title={`Click to ${isSelected ? 'show all' : `filter by ${labels[status]}`}`}
             >
               <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: getStatusColor(status) }}>
                 {count}
@@ -283,7 +298,31 @@ function ActivityLogsTab({
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <h3 style={{ margin: 0 }}>
-              Students ({filteredAndSortedStudents.length}{searchTerm && ` of ${activitySummary.length}`})
+              Students ({filteredAndSortedStudents.length}{(searchTerm || statusFilter) && ` of ${activitySummary.length}`})
+              {statusFilter && (
+                <button
+                  onClick={() => setStatusFilter(null)}
+                  style={{
+                    marginLeft: '0.5rem',
+                    padding: '0.125rem 0.5rem',
+                    fontSize: '0.75rem',
+                    backgroundColor: getStatusColor(statusFilter),
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '12px',
+                    cursor: 'pointer'
+                  }}
+                  title="Clear filter"
+                >
+                  {{
+                    'active': 'Active',
+                    'recent': 'Recent',
+                    'inactive': 'Inactive',
+                    'dormant': 'Dormant',
+                    'never': 'No activity'
+                  }[statusFilter]} ×
+                </button>
+              )}
             </h3>
             <input
               type="text"
@@ -379,13 +418,21 @@ function ActivityLogsTab({
                           </td>
                           <td>
                             <span
+                              title={{
+                                'active': 'Active (today)',
+                                'recent': 'Recent (this week)',
+                                'inactive': 'Inactive (1-30 days)',
+                                'dormant': 'Dormant (30+ days)',
+                                'never': 'No activity'
+                              }[status]}
                               style={{
                                 display: 'inline-block',
                                 width: '10px',
                                 height: '10px',
                                 borderRadius: '50%',
                                 backgroundColor: getStatusColor(status),
-                                marginRight: '0.5rem'
+                                marginRight: '0.5rem',
+                                cursor: 'help'
                               }}
                             />
                           </td>
