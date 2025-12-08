@@ -16,6 +16,7 @@ function ActivityLogsTab({
   const [sortField, setSortField] = useState('status'); // 'name', 'activity', 'submissions', 'status'
   const [sortDirection, setSortDirection] = useState('asc'); // 'asc' or 'desc'
   const [statusFilter, setStatusFilter] = useState(null); // null = all, or 'active', 'recent', etc.
+  const [autoRefresh, setAutoRefresh] = useState(true);
 
   const fetchActivitySummary = async () => {
     setLoading(true);
@@ -44,6 +45,18 @@ function ActivityLogsTab({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClass]);
+
+  // Auto-refresh activity summary every 30 seconds
+  useEffect(() => {
+    if (!selectedClass || !autoRefresh) return;
+
+    const intervalId = setInterval(() => {
+      fetchActivitySummary();
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClass, autoRefresh]);
 
   const fetchUserLogs = async (userId) => {
     setLoadingUserLogs(true);
@@ -234,13 +247,24 @@ function ActivityLogsTab({
     <div className="admin-section">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2>Activity Logs - {selectedClassData?.name}</h2>
-        <button
-          className="btn btn-secondary"
-          onClick={fetchActivitySummary}
-          disabled={loading}
-        >
-          {loading ? 'Refreshing...' : 'Refresh'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              style={{ cursor: 'pointer' }}
+            />
+            Auto-refresh
+          </label>
+          <button
+            className="btn btn-secondary"
+            onClick={fetchActivitySummary}
+            disabled={loading}
+          >
+            {loading ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       {error && (
