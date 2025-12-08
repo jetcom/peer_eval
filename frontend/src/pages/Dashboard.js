@@ -373,7 +373,13 @@ function Dashboard() {
 
             {/* Masquerade selector for admins/teachers */}
             {isTeacherOrAdmin && selectedClass && (
-              <div className="card" style={{ background: darkMode ? '#2a4a6a' : '#fff3cd', borderLeft: '4px solid #f39c12' }}>
+              <div className="card" style={{
+                background: darkMode ? '#2a4a6a' : '#fff3cd',
+                borderLeft: '4px solid #f39c12',
+                position: 'relative',
+                zIndex: 100,
+                overflow: 'visible'
+              }}>
                 <h2 style={{ marginBottom: '10px' }}>👁️ View as Student</h2>
                 <p style={{ marginBottom: '15px', color: darkMode ? '#e0e0e0' : '#666' }}>
                   Select a student to view their dashboard experience.
