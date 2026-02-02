@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import axios from 'axios';
+import PaperReviewManager from '../PaperReviewManager';
 
 function ProgressTab({
   darkMode,
@@ -521,6 +522,24 @@ function ProgressTab({
             })}
           </div>
         </div>
+
+        {/* Paper Review Management - show for paper_review eval types */}
+        {assignments.map(assignment => {
+          const paperReviewEvalType = assignment.eval_types?.find(et => et.eval_type === 'paper_review');
+          if (!paperReviewEvalType) return null;
+
+          return (
+            <div key={`pr-${assignment.id}`} className="card">
+              <h3 style={{ marginTop: 0 }}>Paper Review: {assignment.name}</h3>
+              <PaperReviewManager
+                roundId={paperReviewEvalType.id}
+                onUpdate={() => {
+                  // Refresh data when round status changes
+                }}
+              />
+            </div>
+          );
+        })}
 
         {/* Student Progress Table */}
         <div className="card">

@@ -12,9 +12,9 @@ function normalizeDateTime(value) {
 }
 
 const EVAL_TYPES = [
-  { value: 'peer', label: 'Peer Evaluation', desc: 'Teammates rate each other' },
-  { value: 'audience', label: 'Audience Evaluation', desc: 'Class rates presenting groups' },
-  { value: 'paper_review', label: 'Paper Review', desc: 'Students review papers/submissions' }
+  { value: 'peer', label: 'Peer Evaluation', desc: 'Teammates rate each other', group: 'rating' },
+  { value: 'audience', label: 'Audience Evaluation', desc: 'Class rates presenting groups', group: 'rating' },
+  { value: 'paper_review', label: 'Paper Review', desc: 'Upload papers, 1:1 peer review with annotations', group: 'paper', exclusive: true }
 ];
 
 // Helper function to calculate effective due date for a phase using cascading logic
@@ -400,12 +400,22 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
 
   const toggleEvalType = (type) => {
     const types = newAssignment.eval_types;
+
     if (types.includes(type)) {
+      // Unchecking - only allow if there's at least one other type selected
       if (types.length > 1) {
         setNewAssignment({ ...newAssignment, eval_types: types.filter(t => t !== type) });
       }
     } else {
-      setNewAssignment({ ...newAssignment, eval_types: [...types, type] });
+      // Checking - paper_review is mutually exclusive with peer/audience
+      if (type === 'paper_review') {
+        // Selecting paper_review - clear peer and audience
+        setNewAssignment({ ...newAssignment, eval_types: ['paper_review'] });
+      } else {
+        // Selecting peer or audience - remove paper_review if present
+        const newTypes = types.filter(t => t !== 'paper_review');
+        setNewAssignment({ ...newAssignment, eval_types: [...newTypes, type] });
+      }
     }
   };
 
@@ -600,9 +610,58 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
           </div>
 
           <div className="form-group" style={{ marginTop: '15px', marginBottom: '15px' }}>
-            <label>Evaluation Types</label>
-            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginTop: '8px' }}>
-              {EVAL_TYPES.map(type => (
+            <label>Evaluation Type</label>
+            <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginTop: '8px', alignItems: 'flex-start' }}>
+              {/* Rating-based eval types (can be combined) */}
+              {EVAL_TYPES.filter(t => t.group === 'rating').map(type => (
+                <label
+                  key={type.value}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    padding: '8px 12px',
+                    borderRadius: '4px',
+                    background: newAssignment.eval_types.includes(type.value)
+                      ? (darkMode ? 'rgba(38, 139, 210, 0.2)' : 'rgba(52, 152, 219, 0.15)')
+                      : 'transparent',
+                    border: `1px solid ${newAssignment.eval_types.includes(type.value)
+                      ? '#3498db'
+                      : (darkMode ? '#586e75' : '#ddd')}`
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={newAssignment.eval_types.includes(type.value)}
+                    onChange={() => toggleEvalType(type.value)}
+                    style={{ width: 'auto' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 500 }}>{type.label}</div>
+                    <div style={{
+                      fontSize: '0.8rem',
+                      color: darkMode ? '#888' : '#888'
+                    }}>
+                      {type.desc}
+                    </div>
+                  </div>
+                </label>
+              ))}
+
+              {/* Separator */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                color: darkMode ? '#666' : '#999',
+                fontSize: '0.85rem',
+                padding: '0 5px'
+              }}>
+                or
+              </div>
+
+              {/* Paper review (exclusive) */}
+              {EVAL_TYPES.filter(t => t.group === 'paper').map(type => (
                 <label
                   key={type.value}
                   style={{
