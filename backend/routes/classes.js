@@ -325,6 +325,16 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
               }
             });
 
+            // Create PaperReviewRound for paper_review eval types
+            if (evalTypeStr === 'paper_review') {
+              await prisma.paperReviewRound.create({
+                data: {
+                  evalTypeId: createdEvalType.id,
+                  submissionDeadline: assignment.due_date || null
+                }
+              });
+            }
+
             // Copy criteria from template
             if (template && template.criteria && template.criteria.length > 0) {
               for (let k = 0; k < template.criteria.length; k++) {

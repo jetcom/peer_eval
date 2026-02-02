@@ -15,6 +15,7 @@ const notificationRoutes = require('./routes/notifications');
 const nudgeTemplateRoutes = require('./routes/nudgeTemplates');
 const reminderScheduleRoutes = require('./routes/reminderSchedules');
 const activityLogRoutes = require('./routes/activityLogs');
+const paperReviewRoutes = require('./routes/paperReview');
 const { initializeDatabase } = require('./database');
 const { startScheduler } = require('./services/reminderScheduler');
 
@@ -65,6 +66,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/nudge-templates', nudgeTemplateRoutes);
 app.use('/api/reminder-schedules', reminderScheduleRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
+app.use('/api/paper-review', paperReviewRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

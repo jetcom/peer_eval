@@ -44,6 +44,8 @@ model User {
   assignmentEvalsGiven       AssignmentEvaluation[] @relation("AssignmentEvaluator")
   assignmentEvalsReceived    AssignmentEvaluation[] @relation("AssignmentEvaluatee")
   groupEvalsGiven            GroupEvaluation[]
+  papersAuthored             Paper[]                @relation("PaperAuthor")
+  paperReviewsAssigned       PaperReviewAssignment[] @relation("PaperReviewer")
 
   @@map("users")
 }
@@ -308,6 +310,7 @@ model AssignmentEvalType {
   evaluations      AssignmentEvaluation[]
   groupEvaluations GroupEvaluation[]
   extensions       AssignmentExtension[]
+  paperReviewRound PaperReviewRound?
 
   @@unique([assignmentId, evalType])
   @@map("assignment_eval_types")
@@ -522,4 +525,98 @@ model ActivityLog {
   @@index([classId])
   @@index([createdAt])
   @@map("activity_logs")
+}
+
+// ==========================================
+// PAPER REVIEW SYSTEM
+// ==========================================
+
+// A paper review round within an assignment (evalType='paper_review')
+model PaperReviewRound {
+  id                        Int       @id @default(autoincrement())
+  evalTypeId                Int       @unique @map("eval_type_id")
+  status                    String    @default("submission") // 'submission', 'review', 'completed'
+  submissionDeadline        String?   @map("submission_deadline")
+  reviewStartedAt           DateTime? @map("review_started_at")
+  reviewDeadline            String?   @map("review_deadline")
+  reviewDurationHours       Int       @default(48) @map("review_duration_hours")
+  feedbackReleasedAt        DateTime? @map("feedback_released_at")
+  autoReleaseFeedback       Int       @default(1) @map("auto_release_feedback")
+  anonymousReviews          Int       @default(1) @map("anonymous_reviews")
+  requireSubmissionToReview Int       @default(1) @map("require_submission_to_review")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @default(now()) @map("updated_at")
+
+  evalType    AssignmentEvalType      @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  papers      Paper[]
+  assignments PaperReviewAssignment[]
+
+  @@map("paper_review_rounds")
+}
+
+// A student's submitted paper
+model Paper {
+  id          Int      @id @default(autoincrement())
+  roundId     Int      @map("round_id")
+  authorId    Int      @map("author_id")
+  fileName    String   @map("file_name")
+  mimeType    String   @map("mime_type")
+  fileSize    Int      @map("file_size")
+  s3Key       String   @map("s3_key")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  isLate      Int      @default(0) @map("is_late")
+
+  round          PaperReviewRound       @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  author         User                   @relation("PaperAuthor", fields: [authorId], references: [id])
+  assignedReview PaperReviewAssignment? @relation("PaperToReview")
+
+  @@unique([roundId, authorId])
+  @@map("papers")
+}
+
+// 1:1 reviewer-author assignment
+model PaperReviewAssignment {
+  id         Int      @id @default(autoincrement())
+  roundId    Int      @map("round_id")
+  reviewerId Int      @map("reviewer_id")
+  paperId    Int      @unique @map("paper_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  round    PaperReviewRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  reviewer User             @relation("PaperReviewer", fields: [reviewerId], references: [id])
+  paper    Paper            @relation("PaperToReview", fields: [paperId], references: [id], onDelete: Cascade)
+  review   PaperReview?
+
+  @@unique([roundId, reviewerId])
+  @@map("paper_review_assignments")
+}
+
+// The actual review with annotations
+model PaperReview {
+  id              Int       @id @default(autoincrement())
+  assignmentId    Int       @unique @map("assignment_id")
+  overallComments String?   @map("overall_comments")
+  submittedAt     DateTime? @map("submitted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @map("updated_at")
+
+  assignment  PaperReviewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  annotations PaperAnnotation[]
+
+  @@map("paper_reviews")
+}
+
+// PDF annotations (highlights, comments, drawings)
+model PaperAnnotation {
+  id             Int      @id @default(autoincrement())
+  reviewId       Int      @map("review_id")
+  annotationType String   @map("annotation_type") // 'highlight', 'comment', 'area_comment'
+  positionData   String   @map("position_data") // JSON: {page, rects/x,y/boundingRect}
+  content        String?
+  color          String?  @default("#ffff00")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  review PaperReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("paper_annotations")
 }

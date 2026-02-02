@@ -13,6 +13,9 @@ import Evaluation from './pages/Evaluation';
 import AssignmentEvaluation from './pages/AssignmentEvaluation';
 import SSOCallback from './pages/SSOCallback';
 import InstructorRegistration from './pages/InstructorRegistration';
+import PaperSubmission from './pages/PaperSubmission';
+import PaperReview from './pages/PaperReview';
+import PaperFeedback from './pages/PaperFeedback';
 import './App.css';
 
 function PrivateRoute({ children, adminOnly = false, teacherOnly = false }) {
@@ -109,6 +112,30 @@ function App() {
                 element={
                   <PrivateRoute>
                     <AssignmentEvaluation />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/paper-review/:roundId/submit"
+                element={
+                  <PrivateRoute>
+                    <PaperSubmission />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/paper-review/:roundId/review"
+                element={
+                  <PrivateRoute>
+                    <PaperReview />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/paper-review/:roundId/feedback"
+                element={
+                  <PrivateRoute>
+                    <PaperFeedback />
                   </PrivateRoute>
                 }
               />

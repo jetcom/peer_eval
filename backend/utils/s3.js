@@ -16,9 +16,12 @@ const S3_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID || process.env.S3_ACCESS_
 const S3_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY || process.env.S3_SECRET_ACCESS_KEY;
 const S3_REGION = process.env.AWS_REGION || process.env.S3_REGION || 'us-east-1';
 
-// Allowed image types and size limit
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+// Allowed file types and size limits
+const ALLOWED_MIME_TYPES_IMAGE = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_MIME_TYPES_PDF = ['application/pdf'];
+const ALLOWED_MIME_TYPES = ALLOWED_MIME_TYPES_IMAGE; // For backwards compatibility
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB for images
+const MAX_FILE_SIZE_PDF = 25 * 1024 * 1024; // 25MB for PDFs
 const MAX_FILES_PER_EVALUATION = 5;
 
 // Create S3 client (singleton)
@@ -74,6 +77,27 @@ function validateFile(file) {
 }
 
 /**
+ * Validate PDF file for upload
+ * @param {Object} file - Multer file object
+ * @returns {{ valid: boolean, error?: string }}
+ */
+function validatePdfFile(file) {
+  if (!file) {
+    return { valid: false, error: 'No file provided' };
+  }
+
+  if (!ALLOWED_MIME_TYPES_PDF.includes(file.mimetype)) {
+    return { valid: false, error: 'File must be a PDF' };
+  }
+
+  if (file.size > MAX_FILE_SIZE_PDF) {
+    return { valid: false, error: `File too large. Maximum size: ${MAX_FILE_SIZE_PDF / 1024 / 1024}MB` };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Generate a unique S3 key for an upload
  * @param {string} evaluationType - 'phase', 'assignment', or 'group'
  * @param {number} evaluationId - The evaluation ID
@@ -86,6 +110,21 @@ function generateS3Key(evaluationType, evaluationId, originalFilename) {
   const timestamp = Date.now();
 
   return `evaluations/${evaluationType}/${evaluationId}/${timestamp}-${hash}${ext}`;
+}
+
+/**
+ * Generate a unique S3 key for a paper upload
+ * @param {number} roundId - The paper review round ID
+ * @param {number} authorId - The author's user ID
+ * @param {string} originalFilename - Original filename
+ * @returns {string} S3 key
+ */
+function generatePaperS3Key(roundId, authorId, originalFilename) {
+  const ext = path.extname(originalFilename).toLowerCase();
+  const hash = crypto.randomBytes(8).toString('hex');
+  const timestamp = Date.now();
+
+  return `papers/${roundId}/${authorId}/${timestamp}-${hash}${ext}`;
 }
 
 /**
@@ -172,11 +211,16 @@ async function deleteFile(key) {
 module.exports = {
   isS3Configured,
   validateFile,
+  validatePdfFile,
   generateS3Key,
+  generatePaperS3Key,
   uploadFile,
   getPresignedUrl,
   deleteFile,
   ALLOWED_MIME_TYPES,
+  ALLOWED_MIME_TYPES_IMAGE,
+  ALLOWED_MIME_TYPES_PDF,
   MAX_FILE_SIZE,
+  MAX_FILE_SIZE_PDF,
   MAX_FILES_PER_EVALUATION,
 };
