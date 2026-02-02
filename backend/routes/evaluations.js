@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const prisma = require('../lib/prisma');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, requireTeacher } = require('../middleware/auth');
 const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
 const {
   isS3Configured,
@@ -501,10 +501,21 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
   }
 });
 
-// Get all evaluations (admin only)
-router.get('/all', authenticateToken, requireAdmin, async (req, res) => {
+// Get all evaluations (admin sees all, teacher sees their classes only)
+router.get('/all', authenticateToken, requireTeacher, async (req, res) => {
   try {
+    // Build class filter for teachers
+    let classFilter = {};
+    if (req.user.role !== 'admin') {
+      const teacherClasses = await prisma.class.findMany({
+        where: { teacherId: req.user.id },
+        select: { id: true }
+      });
+      classFilter = { classId: { in: teacherClasses.map(c => c.id) } };
+    }
+
     const evaluations = await prisma.evaluation.findMany({
+      where: classFilter,
       include: {
         evaluator: {
           select: { firstName: true, lastName: true }
@@ -572,10 +583,21 @@ router.get('/all', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// Get all final comments (admin only)
-router.get('/all-final-comments', authenticateToken, requireAdmin, async (req, res) => {
+// Get all final comments (admin sees all, teacher sees their classes only)
+router.get('/all-final-comments', authenticateToken, requireTeacher, async (req, res) => {
   try {
+    // Build class filter for teachers
+    let classFilter = {};
+    if (req.user.role !== 'admin') {
+      const teacherClasses = await prisma.class.findMany({
+        where: { teacherId: req.user.id },
+        select: { id: true }
+      });
+      classFilter = { classId: { in: teacherClasses.map(c => c.id) } };
+    }
+
     const comments = await prisma.finalComment.findMany({
+      where: classFilter,
       include: {
         evaluator: {
           select: { firstName: true, lastName: true }
