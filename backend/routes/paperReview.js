@@ -294,9 +294,24 @@ router.get('/:roundId/status', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const totalStudents = round.evalType.assignment.class.enrollments.length;
+    const enrolledStudents = round.evalType.assignment.class.enrollments;
+    const totalStudents = enrolledStudents.length;
     const submittedCount = round.papers.length;
     const reviewsCompleted = round.assignments.filter(a => a.review?.submittedAt).length;
+
+    // Get list of students who haven't submitted
+    const submittedAuthorIds = new Set(round.papers.map(p => p.authorId));
+    const studentsNotSubmitted = enrolledStudents
+      .filter(e => !submittedAuthorIds.has(e.userId))
+      .map(e => e.userId);
+
+    // Fetch student details for those who haven't submitted
+    const notSubmittedStudents = studentsNotSubmitted.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: studentsNotSubmitted } },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        })
+      : [];
 
     res.json({
       id: round.id,
@@ -336,6 +351,11 @@ router.get('/:roundId/status', authenticateToken, async (req, res) => {
           name: `${a.paper.author.firstName} ${a.paper.author.lastName}`.trim()
         },
         review_submitted: !!a.review?.submittedAt
+      })),
+      students_not_submitted: notSubmittedStudents.map(s => ({
+        id: s.id,
+        name: `${s.firstName} ${s.lastName}`.trim(),
+        email: s.email
       }))
     });
   } catch (error) {
@@ -486,6 +506,128 @@ router.post('/:roundId/release-feedback', authenticateToken, async (req, res) =>
   } catch (error) {
     console.error('Release feedback error:', error);
     res.status(500).json({ error: 'Failed to release feedback' });
+  }
+});
+
+// Upload paper on behalf of a student (teacher)
+router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const studentId = parseInt(req.params.studentId);
+
+    // Check S3 is configured
+    if (!isS3Configured()) {
+      return res.status(503).json({ error: 'File storage not configured' });
+    }
+
+    // Validate file
+    const validation = validatePdfFile(req.file);
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error });
+    }
+
+    // Get round and verify teacher access
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { classId: true } }
+          }
+        }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Paper review round not found' });
+    }
+
+    // Check user is teacher/admin
+    const classId = round.evalType.assignment.classId;
+    const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
+    if (!canAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (round.status !== 'submission') {
+      return res.status(400).json({ error: 'Submission period has ended' });
+    }
+
+    // Check student is enrolled in this class
+    const enrollment = await prisma.classEnrollment.findUnique({
+      where: { classId_userId: { classId, userId: studentId } }
+    });
+    if (!enrollment) {
+      return res.status(400).json({ error: 'Student is not enrolled in this class' });
+    }
+
+    // Check if past deadline (mark as late but still allow teacher upload)
+    let isLate = 0;
+    if (round.submissionDeadline) {
+      const deadline = new Date(round.submissionDeadline);
+      if (new Date() > deadline) {
+        isLate = 1;
+      }
+    }
+
+    // Check for existing paper (to replace)
+    const existingPaper = await prisma.paper.findUnique({
+      where: { roundId_authorId: { roundId, authorId: studentId } }
+    });
+
+    // Delete old file from S3 if replacing
+    if (existingPaper) {
+      await deleteFile(existingPaper.s3Key);
+    }
+
+    // Upload to S3
+    const s3Key = generatePaperS3Key(roundId, studentId, req.file.originalname);
+    const uploadResult = await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
+
+    if (!uploadResult.success) {
+      return res.status(500).json({ error: 'Failed to upload file' });
+    }
+
+    // Create or update paper record
+    const paper = await prisma.paper.upsert({
+      where: { roundId_authorId: { roundId, authorId: studentId } },
+      update: {
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        s3Key,
+        submittedAt: new Date(),
+        isLate
+      },
+      create: {
+        roundId,
+        authorId: studentId,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        s3Key,
+        isLate
+      },
+      include: {
+        author: { select: { id: true, firstName: true, lastName: true, email: true } }
+      }
+    });
+
+    res.json({
+      id: paper.id,
+      file_name: paper.fileName,
+      file_size: paper.fileSize,
+      submitted_at: paper.submittedAt,
+      is_late: paper.isLate === 1,
+      author: {
+        id: paper.author.id,
+        name: `${paper.author.firstName} ${paper.author.lastName}`.trim(),
+        email: paper.author.email
+      }
+    });
+  } catch (error) {
+    console.error('Teacher paper upload error:', error);
+    res.status(500).json({ error: 'Failed to upload paper' });
   }
 });
 

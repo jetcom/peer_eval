@@ -14,6 +14,10 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
   const [error, setError] = useState(null);
   const [durationHours, setDurationHours] = useState(48);
   const [showSettings, setShowSettings] = useState(false);
+  const [showUploadForm, setShowUploadForm] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [settings, setSettings] = useState({
     submission_deadline: '',
     review_duration_hours: 48,
@@ -90,6 +94,36 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
     }
   };
 
+  const handleUploadForStudent = async (e) => {
+    e.preventDefault();
+    if (!selectedStudent || !uploadFile) {
+      setError('Please select a student and choose a file');
+      return;
+    }
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadFile);
+
+      await axios.post(`/api/paper-review/${roundId}/papers/${selectedStudent}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setShowUploadForm(false);
+      setSelectedStudent('');
+      setUploadFile(null);
+      fetchStatus();
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to upload paper');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (loading) {
     return <div className="prm-loading">Loading...</div>;
   }
@@ -148,15 +182,22 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
         </div>
       )}
 
-      {/* Settings Button */}
+      {/* Settings & Upload Buttons */}
       {status?.status === 'submission' && (
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={() => setShowSettings(!showSettings)}
-          style={{ marginBottom: '1rem' }}
-        >
-          {showSettings ? 'Hide Settings' : 'Settings'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => { setShowSettings(!showSettings); setShowUploadForm(false); }}
+          >
+            {showSettings ? 'Hide Settings' : 'Settings'}
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => { setShowUploadForm(!showUploadForm); setShowSettings(false); }}
+          >
+            {showUploadForm ? 'Hide Upload' : 'Upload for Student'}
+          </button>
+        </div>
       )}
 
       {/* Settings Panel */}
@@ -213,6 +254,60 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
           <button className="btn btn-primary btn-sm" onClick={handleSaveSettings}>
             Save Settings
           </button>
+        </div>
+      )}
+
+      {/* Upload for Student Panel */}
+      {showUploadForm && status?.status === 'submission' && (
+        <div className="prm-settings">
+          <h5 style={{ marginTop: 0, marginBottom: '1rem' }}>Upload Paper for Student</h5>
+          <form onSubmit={handleUploadForStudent}>
+            <div className="form-group">
+              <label>Select Student</label>
+              <select
+                value={selectedStudent}
+                onChange={(e) => setSelectedStudent(e.target.value)}
+                style={{ width: '100%', padding: '0.5rem', borderRadius: '4px', border: '1px solid #ddd' }}
+              >
+                <option value="">-- Select a student --</option>
+                {/* Students who haven't submitted */}
+                {status.students_not_submitted?.length > 0 && (
+                  <optgroup label="Not Yet Submitted">
+                    {status.students_not_submitted.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.email})</option>
+                    ))}
+                  </optgroup>
+                )}
+                {/* Students who already submitted (for replacement) */}
+                {status.papers?.length > 0 && (
+                  <optgroup label="Already Submitted (Replace)">
+                    {status.papers.map(p => (
+                      <option key={p.author.id} value={p.author.id}>{p.author.name} ({p.author.email})</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>PDF File</label>
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={(e) => setUploadFile(e.target.files[0])}
+                style={{ display: 'block', marginTop: '0.25rem' }}
+              />
+              {uploadFile && (
+                <small style={{ color: '#666' }}>{uploadFile.name} ({(uploadFile.size / 1024 / 1024).toFixed(2)} MB)</small>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="btn btn-primary btn-sm"
+              disabled={uploading || !selectedStudent || !uploadFile}
+            >
+              {uploading ? 'Uploading...' : 'Upload Paper'}
+            </button>
+          </form>
         </div>
       )}
 
