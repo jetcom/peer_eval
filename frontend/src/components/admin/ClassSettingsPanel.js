@@ -242,25 +242,29 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
         </div>
       )}
 
-      {/* Evaluation Mode Info */}
-      <div style={{
-        marginTop: '20px',
-        padding: '15px',
-        borderRadius: '6px',
-        background: darkMode ? 'rgba(38, 139, 210, 0.1)' : 'rgba(52, 152, 219, 0.1)',
-        border: `1px solid #3498db`
-      }}>
-        <strong>Evaluation Mode:</strong> {isPhaseBased ? 'Phase-Based' : 'Assignment-Based'}
-        <p style={{
-          margin: '8px 0 0',
-          fontSize: '0.85rem',
-          color: darkMode ? '#a0a0a0' : '#666'
+      {/* Evaluation Mode */}
+      <div className="form-group" style={{ marginTop: '20px' }}>
+        <label>Evaluation Mode</label>
+        <select
+          value={editingClass.evaluation_mode || 'phases'}
+          onChange={(e) => setEditingClass({ ...editingClass, evaluation_mode: e.target.value })}
+          style={{ maxWidth: '300px' }}
+        >
+          <option value="phases">Phase-Based</option>
+          <option value="assignments">Assignment-Based</option>
+        </select>
+        <small style={{
+          display: 'block',
+          marginTop: '6px',
+          color: darkMode ? '#888' : '#888'
         }}>
-          {isPhaseBased
+          {(editingClass.evaluation_mode || 'phases') === 'phases'
             ? 'Students evaluate teammates at scheduled phase checkpoints.'
             : 'Students evaluate based on specific assignments (presentations, papers, etc.).'
           }
-        </p>
+          <br />
+          <em>Note: Cannot be changed after evaluations are submitted.</em>
+        </small>
       </div>
     </div>
   );
