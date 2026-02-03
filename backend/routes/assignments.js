@@ -164,6 +164,18 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     });
 
+    // Create PaperReviewRound for any paper_review eval types
+    for (const evalType of assignment.evalTypes) {
+      if (evalType.evalType === 'paper_review') {
+        await prisma.paperReviewRound.create({
+          data: {
+            evalTypeId: evalType.id,
+            submissionDeadline: due_date || null
+          }
+        });
+      }
+    }
+
     res.status(201).json(formatAssignment(assignment));
   } catch (error) {
     console.error('Error creating assignment:', error);
