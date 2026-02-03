@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 /**
@@ -9,6 +10,7 @@ import axios from 'axios';
  * - onUpdate: Callback when round status changes
  */
 const PaperReviewManager = ({ roundId, onUpdate }) => {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState(null);
   const [error, setError] = useState(null);
@@ -124,14 +126,9 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
     }
   };
 
-  const handleViewPaper = async (paperId) => {
-    try {
-      const res = await axios.get(`/api/paper-review/${roundId}/papers/${paperId}/view`);
-      // Open PDF in new tab
-      window.open(res.data.url, '_blank');
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to get paper');
-    }
+  const handleViewPaper = (paperId) => {
+    // Navigate to teacher review page
+    navigate(`/paper-review/${roundId}/teacher/${paperId}`);
   };
 
   if (loading) {
@@ -390,7 +387,7 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
                       className="btn-link"
                       onClick={() => handleViewPaper(paper.id)}
                     >
-                      View
+                      Review
                     </button>
                   </td>
                 </tr>

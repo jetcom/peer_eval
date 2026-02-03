@@ -435,6 +435,282 @@ router.get('/:roundId/papers/:paperId/view', authenticateToken, async (req, res)
   }
 });
 
+// Get teacher review for a paper (or create if doesn't exist)
+router.get('/:roundId/papers/:paperId/teacher-review', authenticateToken, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const paperId = parseInt(req.params.paperId);
+
+    // Get round and verify teacher access
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { classId: true } }
+          }
+        }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
+    const classId = round.evalType.assignment.classId;
+    const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
+    if (!canAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get the paper
+    const paper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      include: {
+        author: { select: { id: true, firstName: true, lastName: true } }
+      }
+    });
+
+    if (!paper || paper.roundId !== round.id) {
+      return res.status(404).json({ error: 'Paper not found' });
+    }
+
+    // Get or create teacher review
+    let review = await prisma.paperReview.findUnique({
+      where: { paperId_teacherId: { paperId, teacherId: req.user.id } },
+      include: { annotations: true }
+    });
+
+    if (!review) {
+      review = await prisma.paperReview.create({
+        data: {
+          paperId,
+          teacherId: req.user.id
+        },
+        include: { annotations: true }
+      });
+    }
+
+    const url = await getPresignedUrl(paper.s3Key);
+
+    res.json({
+      paper: {
+        id: paper.id,
+        file_name: paper.fileName,
+        file_size: paper.fileSize,
+        url,
+        author: {
+          id: paper.author.id,
+          name: `${paper.author.firstName} ${paper.author.lastName}`.trim()
+        }
+      },
+      review: {
+        id: review.id,
+        overall_comments: review.overallComments,
+        submitted_at: review.submittedAt,
+        annotations: review.annotations.map(a => ({
+          id: a.id,
+          type: a.annotationType,
+          position: JSON.parse(a.positionData),
+          content: a.content,
+          color: a.color
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Get teacher review error:', error);
+    res.status(500).json({ error: 'Failed to get teacher review' });
+  }
+});
+
+// Save teacher review
+router.post('/:roundId/papers/:paperId/teacher-review', authenticateToken, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const paperId = parseInt(req.params.paperId);
+    const { overall_comments } = req.body;
+
+    // Verify teacher access
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { classId: true } }
+          }
+        }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
+    const classId = round.evalType.assignment.classId;
+    const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
+    if (!canAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Update or create review
+    const review = await prisma.paperReview.upsert({
+      where: { paperId_teacherId: { paperId, teacherId: req.user.id } },
+      update: {
+        overallComments: overall_comments,
+        updatedAt: new Date()
+      },
+      create: {
+        paperId,
+        teacherId: req.user.id,
+        overallComments: overall_comments
+      }
+    });
+
+    res.json({
+      id: review.id,
+      overall_comments: review.overallComments
+    });
+  } catch (error) {
+    console.error('Save teacher review error:', error);
+    res.status(500).json({ error: 'Failed to save teacher review' });
+  }
+});
+
+// Add annotation to teacher review
+router.post('/:roundId/papers/:paperId/teacher-review/annotations', authenticateToken, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const paperId = parseInt(req.params.paperId);
+    const { type, position, content, color } = req.body;
+
+    // Verify teacher access
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { classId: true } }
+          }
+        }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
+    const classId = round.evalType.assignment.classId;
+    const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
+    if (!canAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get or create teacher review
+    let review = await prisma.paperReview.findUnique({
+      where: { paperId_teacherId: { paperId, teacherId: req.user.id } }
+    });
+
+    if (!review) {
+      review = await prisma.paperReview.create({
+        data: {
+          paperId,
+          teacherId: req.user.id
+        }
+      });
+    }
+
+    const annotation = await prisma.paperAnnotation.create({
+      data: {
+        reviewId: review.id,
+        annotationType: type,
+        positionData: JSON.stringify(position),
+        content,
+        color: color || '#ffff00'
+      }
+    });
+
+    res.json({
+      id: annotation.id,
+      type: annotation.annotationType,
+      position: JSON.parse(annotation.positionData),
+      content: annotation.content,
+      color: annotation.color
+    });
+  } catch (error) {
+    console.error('Add teacher annotation error:', error);
+    res.status(500).json({ error: 'Failed to add annotation' });
+  }
+});
+
+// Update teacher annotation
+router.put('/:roundId/papers/:paperId/teacher-review/annotations/:annotationId', authenticateToken, async (req, res) => {
+  try {
+    const annotationId = parseInt(req.params.annotationId);
+    const { content, color, position } = req.body;
+
+    // Verify ownership through the chain
+    const annotation = await prisma.paperAnnotation.findUnique({
+      where: { id: annotationId },
+      include: {
+        review: true
+      }
+    });
+
+    if (!annotation || annotation.review.teacherId !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const updateData = {};
+    if (content !== undefined) updateData.content = content;
+    if (color !== undefined) updateData.color = color;
+    if (position !== undefined) updateData.positionData = JSON.stringify(position);
+
+    const updated = await prisma.paperAnnotation.update({
+      where: { id: annotationId },
+      data: updateData
+    });
+
+    res.json({
+      id: updated.id,
+      type: updated.annotationType,
+      position: JSON.parse(updated.positionData),
+      content: updated.content,
+      color: updated.color
+    });
+  } catch (error) {
+    console.error('Update teacher annotation error:', error);
+    res.status(500).json({ error: 'Failed to update annotation' });
+  }
+});
+
+// Delete teacher annotation
+router.delete('/:roundId/papers/:paperId/teacher-review/annotations/:annotationId', authenticateToken, async (req, res) => {
+  try {
+    const annotationId = parseInt(req.params.annotationId);
+
+    // Verify ownership
+    const annotation = await prisma.paperAnnotation.findUnique({
+      where: { id: annotationId },
+      include: {
+        review: true
+      }
+    });
+
+    if (!annotation || annotation.review.teacherId !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    await prisma.paperAnnotation.delete({
+      where: { id: annotationId }
+    });
+
+    res.json({ message: 'Annotation deleted' });
+  } catch (error) {
+    console.error('Delete teacher annotation error:', error);
+    res.status(500).json({ error: 'Failed to delete annotation' });
+  }
+});
+
 // Start review period (teacher)
 router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
   try {

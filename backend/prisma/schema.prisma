@@ -46,6 +46,7 @@ model User {
   groupEvalsGiven            GroupEvaluation[]
   papersAuthored             Paper[]                @relation("PaperAuthor")
   paperReviewsAssigned       PaperReviewAssignment[] @relation("PaperReviewer")
+  teacherPaperReviews        PaperReview[]          @relation("TeacherPaperReviews")
 
   @@map("users")
 }
@@ -569,6 +570,7 @@ model Paper {
   round          PaperReviewRound       @relation(fields: [roundId], references: [id], onDelete: Cascade)
   author         User                   @relation("PaperAuthor", fields: [authorId], references: [id])
   assignedReview PaperReviewAssignment? @relation("PaperToReview")
+  teacherReviews PaperReview[]          @relation("TeacherReviews")
 
   @@unique([roundId, authorId])
   @@map("papers")
@@ -592,17 +594,23 @@ model PaperReviewAssignment {
 }
 
 // The actual review with annotations
+// Can be linked to either a student assignment OR directly to a paper (for teacher reviews)
 model PaperReview {
   id              Int       @id @default(autoincrement())
-  assignmentId    Int       @unique @map("assignment_id")
+  assignmentId    Int?      @unique @map("assignment_id")
+  paperId         Int?      @map("paper_id")           // For teacher reviews (no assignment)
+  teacherId       Int?      @map("teacher_id")         // The teacher who created this review
   overallComments String?   @map("overall_comments")
   submittedAt     DateTime? @map("submitted_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @default(now()) @map("updated_at")
 
-  assignment  PaperReviewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignment  PaperReviewAssignment? @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  paper       Paper?                 @relation("TeacherReviews", fields: [paperId], references: [id], onDelete: Cascade)
+  teacher     User?                  @relation("TeacherPaperReviews", fields: [teacherId], references: [id])
   annotations PaperAnnotation[]
 
+  @@unique([paperId, teacherId])  // One teacher review per paper
   @@map("paper_reviews")
 }
 

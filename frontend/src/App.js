@@ -15,6 +15,7 @@ import SSOCallback from './pages/SSOCallback';
 import InstructorRegistration from './pages/InstructorRegistration';
 import PaperSubmission from './pages/PaperSubmission';
 import PaperReview from './pages/PaperReview';
+import TeacherPaperReview from './pages/TeacherPaperReview';
 import PaperFeedback from './pages/PaperFeedback';
 import './App.css';
 
@@ -128,6 +129,14 @@ function App() {
                 element={
                   <PrivateRoute>
                     <PaperReview />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/paper-review/:roundId/teacher/:paperId"
+                element={
+                  <PrivateRoute teacherOnly>
+                    <TeacherPaperReview />
                   </PrivateRoute>
                 }
               />
