@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Viewer, Worker } from '@react-pdf-viewer/core';
 import '@react-pdf-viewer/core/lib/styles/index.css';
 
@@ -63,52 +63,68 @@ const PdfAnnotationViewer = ({
   }, [currentPage, readOnly, selectedTool]);
 
   // Handle text selection for highlights
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e) => {
     if (readOnly || selectedTool !== 'highlight') return;
 
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed) return;
+    // Small delay to ensure selection is complete
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
 
-    const selectedText = selection.toString().trim();
-    if (!selectedText) return;
+      const selectedText = selection.toString().trim();
+      if (!selectedText) return;
 
-    // Get selection range info
-    const range = selection.getRangeAt(0);
-    const rects = range.getClientRects();
+      // Get selection range info
+      const range = selection.getRangeAt(0);
+      const rects = range.getClientRects();
 
-    if (rects.length === 0) return;
+      if (rects.length === 0) return;
 
-    const container = containerRef.current;
-    if (!container) return;
+      const container = containerRef.current;
+      if (!container) return;
 
-    const containerRect = container.getBoundingClientRect();
+      // Check if selection is within our container
+      const containerRect = container.getBoundingClientRect();
+      const firstRect = rects[0];
+      if (firstRect.left < containerRect.left || firstRect.right > containerRect.right + 50) {
+        return; // Selection is outside our PDF container
+      }
 
-    // Convert rects to percentages
-    const normalizedRects = Array.from(rects).map((rect) => ({
-      x1: ((rect.left - containerRect.left) / containerRect.width) * 100,
-      y1: ((rect.top - containerRect.top) / containerRect.height) * 100,
-      x2: ((rect.right - containerRect.left) / containerRect.width) * 100,
-      y2: ((rect.bottom - containerRect.top) / containerRect.height) * 100,
-      width: (rect.width / containerRect.width) * 100,
-      height: (rect.height / containerRect.height) * 100,
-    }));
+      // Convert rects to percentages relative to the container
+      const normalizedRects = Array.from(rects).map((rect) => ({
+        x1: ((rect.left - containerRect.left + container.scrollLeft) / container.scrollWidth) * 100,
+        y1: ((rect.top - containerRect.top + container.scrollTop) / container.scrollHeight) * 100,
+        x2: ((rect.right - containerRect.left + container.scrollLeft) / container.scrollWidth) * 100,
+        y2: ((rect.bottom - containerRect.top + container.scrollTop) / container.scrollHeight) * 100,
+        width: (rect.width / container.scrollWidth) * 100,
+        height: (rect.height / container.scrollHeight) * 100,
+      }));
 
-    // Create highlight annotation
-    if (onAnnotationAdd) {
-      onAnnotationAdd({
-        type: 'highlight',
-        position: {
-          page: currentPage,
-          rects: normalizedRects,
-          selectedText,
-        },
-        content: '',
-        color: '#ffff00',
-      });
-    }
+      // Create highlight annotation
+      if (onAnnotationAdd) {
+        onAnnotationAdd({
+          type: 'highlight',
+          position: {
+            page: currentPage,
+            rects: normalizedRects,
+            selectedText,
+          },
+          content: '',
+          color: '#ffff00',
+        });
+      }
 
-    selection.removeAllRanges();
+      selection.removeAllRanges();
+    }, 10);
   }, [currentPage, readOnly, selectedTool, onAnnotationAdd]);
+
+  // Attach mouseup listener to document for better selection capture
+  useEffect(() => {
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [handleMouseUp]);
 
   // Add comment
   const handleAddComment = () => {
@@ -278,9 +294,8 @@ const PdfAnnotationViewer = ({
       {/* PDF Container */}
       <div
         ref={containerRef}
-        className="pav-container"
+        className={`pav-container ${selectedTool === 'highlight' ? 'highlight-mode' : ''}`}
         onClick={handlePdfClick}
-        onMouseUp={handleMouseUp}
       >
         <Worker workerUrl={`https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`}>
           <Viewer
@@ -531,6 +546,31 @@ const PdfAnnotationViewer = ({
 
         .rpv-core__inner-page {
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        /* Ensure text layer is selectable */
+        .rpv-core__text-layer {
+          user-select: text !important;
+          -webkit-user-select: text !important;
+        }
+
+        .rpv-core__text-layer span {
+          user-select: text !important;
+          -webkit-user-select: text !important;
+        }
+
+        /* Highlight cursor when in highlight mode */
+        .pav-container.highlight-mode {
+          cursor: text;
+        }
+
+        .pav-container.highlight-mode .rpv-core__text-layer {
+          cursor: text;
+        }
+
+        /* Visual feedback for selection */
+        .rpv-core__text-layer ::selection {
+          background: rgba(255, 255, 0, 0.5);
         }
       `}</style>
     </div>
