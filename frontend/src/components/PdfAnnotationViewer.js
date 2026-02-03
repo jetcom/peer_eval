@@ -155,7 +155,7 @@ const PdfAnnotationViewer = ({
             onMouseLeave={(e) => e.currentTarget.style.transform = 'translate(-50%, -50%)'}
             title={annotation.content || 'Click to view'}
           >
-            📌
+            💬
           </div>
         ))}
 
