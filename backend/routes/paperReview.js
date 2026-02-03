@@ -376,6 +376,65 @@ router.get('/:roundId/status', authenticateToken, async (req, res) => {
   }
 });
 
+// Get paper URL for viewing (teacher)
+router.get('/:roundId/papers/:paperId/view', authenticateToken, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const paperId = parseInt(req.params.paperId);
+
+    // Get round and verify teacher access
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { classId: true } }
+          }
+        }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
+    // Check user is teacher/admin
+    const classId = round.evalType.assignment.classId;
+    const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
+    if (!canAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get the paper
+    const paper = await prisma.paper.findUnique({
+      where: { id: paperId },
+      include: {
+        author: { select: { id: true, firstName: true, lastName: true } }
+      }
+    });
+
+    if (!paper || paper.roundId !== round.id) {
+      return res.status(404).json({ error: 'Paper not found' });
+    }
+
+    const url = await getPresignedUrl(paper.s3Key);
+
+    res.json({
+      id: paper.id,
+      file_name: paper.fileName,
+      file_size: paper.fileSize,
+      author: {
+        id: paper.author.id,
+        name: `${paper.author.firstName} ${paper.author.lastName}`.trim()
+      },
+      url
+    });
+  } catch (error) {
+    console.error('Get paper view error:', error);
+    res.status(500).json({ error: 'Failed to get paper' });
+  }
+});
+
 // Start review period (teacher)
 router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
   try {

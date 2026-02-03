@@ -124,6 +124,16 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
     }
   };
 
+  const handleViewPaper = async (paperId) => {
+    try {
+      const res = await axios.get(`/api/paper-review/${roundId}/papers/${paperId}/view`);
+      // Open PDF in new tab
+      window.open(res.data.url, '_blank');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to get paper');
+    }
+  };
+
   if (loading) {
     return <div className="prm-loading">Loading...</div>;
   }
@@ -359,6 +369,7 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
                 <th>File</th>
                 <th>Submitted</th>
                 <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -373,6 +384,14 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
                     ) : (
                       <span className="on-time-badge">On time</span>
                     )}
+                  </td>
+                  <td>
+                    <button
+                      className="btn-link"
+                      onClick={() => handleViewPaper(paper.id)}
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -576,6 +595,20 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+        }
+
+        .prm-table .btn-link {
+          background: none;
+          border: none;
+          color: #007bff;
+          cursor: pointer;
+          padding: 0;
+          font-size: 0.85rem;
+          text-decoration: underline;
+        }
+
+        .prm-table .btn-link:hover {
+          color: #0056b3;
         }
 
         .late-badge,
