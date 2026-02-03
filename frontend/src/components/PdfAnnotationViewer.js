@@ -19,14 +19,14 @@ const PdfAnnotationViewer = ({
   const [commentText, setCommentText] = useState('');
   const [selectedAnnotation, setSelectedAnnotation] = useState(null);
   const containerRef = useRef(null);
-  const [, forceUpdate] = useState(0);
+  const [renderKey, setRenderKey] = useState(0);
 
   // Force re-render when pages load to position markers
   useEffect(() => {
     const timer = setInterval(() => {
       const pages = containerRef.current?.querySelectorAll('.rpv-core__page-layer');
       if (pages && pages.length > 0) {
-        forceUpdate(n => n + 1);
+        setRenderKey(n => n + 1);
         clearInterval(timer);
       }
     }, 200);
@@ -40,14 +40,31 @@ const PdfAnnotationViewer = ({
     }
   }, [onPageChange]);
 
-  // Handle click on PDF to add annotation
-  const handlePageClick = useCallback((e, pageIndex) => {
+  // Handle click on PDF container to add annotation
+  const handleContainerClick = useCallback((e) => {
     if (readOnly || !onAnnotationAdd) return;
 
     // Don't trigger if clicking on existing annotation marker or popup
     if (e.target.closest('.annotation-marker') || e.target.closest('.comment-popup')) return;
 
-    const pageElement = e.currentTarget;
+    // Find which page was clicked
+    const pageElement = e.target.closest('.rpv-core__page-layer');
+    if (!pageElement) return;
+
+    // Get page index from data attribute or DOM position
+    const container = containerRef.current;
+    const pages = container?.querySelectorAll('.rpv-core__page-layer');
+    if (!pages) return;
+
+    let pageIndex = -1;
+    pages.forEach((page, idx) => {
+      if (page === pageElement || page.contains(e.target)) {
+        pageIndex = idx;
+      }
+    });
+
+    if (pageIndex === -1) return;
+
     const pageRect = pageElement.getBoundingClientRect();
     const x = ((e.clientX - pageRect.left) / pageRect.width) * 100;
     const y = ((e.clientY - pageRect.top) / pageRect.height) * 100;
@@ -94,6 +111,12 @@ const PdfAnnotationViewer = ({
         return annotPage === pageIndex;
       });
 
+      // Skip if no annotations and no pending annotation for this page
+      const hasPending = pendingAnnotation && pendingAnnotation.page === pageIndex;
+      const hasSelected = selectedAnnotation && pageAnnotations.some(a => a.id === selectedAnnotation.id);
+
+      if (pageAnnotations.length === 0 && !hasPending && !hasSelected) return;
+
       // Create overlay div for this page's annotations
       const overlayStyle = {
         position: 'absolute',
@@ -107,22 +130,6 @@ const PdfAnnotationViewer = ({
 
       elements.push(
         <div key={`page-overlay-${pageIndex}`} style={overlayStyle}>
-          {/* Click handler layer */}
-          {!readOnly && (
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                pointerEvents: 'auto',
-                cursor: 'crosshair',
-              }}
-              onClick={(e) => handlePageClick(e, pageIndex)}
-            />
-          )}
-
           {/* Annotation markers */}
           {pageAnnotations.map((annotation) => (
             <div
@@ -285,7 +292,7 @@ const PdfAnnotationViewer = ({
     });
 
     return elements;
-  }, [annotations, pendingAnnotation, commentText, selectedAnnotation, readOnly, onAnnotationDelete, handlePageClick, handleCancelAnnotation, handleSaveAnnotation]);
+  }, [annotations, pendingAnnotation, commentText, selectedAnnotation, readOnly, onAnnotationDelete, handleCancelAnnotation, handleSaveAnnotation, renderKey]);
 
   // Re-render annotations when scrolling
   useEffect(() => {
@@ -295,7 +302,7 @@ const PdfAnnotationViewer = ({
     const scrollContainer = container.querySelector('.rpv-core__inner-pages');
     if (!scrollContainer) return;
 
-    const handleScroll = () => forceUpdate(n => n + 1);
+    const handleScroll = () => setRenderKey(n => n + 1);
     scrollContainer.addEventListener('scroll', handleScroll);
     return () => scrollContainer.removeEventListener('scroll', handleScroll);
   }, []);
@@ -345,6 +352,7 @@ const PdfAnnotationViewer = ({
           overflow: 'hidden',
           background: '#525659',
         }}
+        onClick={handleContainerClick}
       >
         <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
           <Viewer
