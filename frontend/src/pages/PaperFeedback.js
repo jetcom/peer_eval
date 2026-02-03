@@ -19,6 +19,7 @@ function PaperFeedback() {
 
   useEffect(() => {
     fetchFeedback();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
   const fetchFeedback = async () => {

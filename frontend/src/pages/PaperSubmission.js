@@ -18,6 +18,7 @@ function PaperSubmission() {
 
   useEffect(() => {
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
   const fetchData = async () => {

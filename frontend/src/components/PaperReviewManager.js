@@ -26,6 +26,7 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
     if (roundId) {
       fetchStatus();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
   const fetchStatus = async () => {

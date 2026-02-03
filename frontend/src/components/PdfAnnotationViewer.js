@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { Viewer, Worker } from '@react-pdf-viewer/core';
 import '@react-pdf-viewer/core/lib/styles/index.css';
 
@@ -23,12 +23,9 @@ const PdfAnnotationViewer = ({
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [scale, setScale] = useState(1.0);
+  const [scale] = useState(1.0);
   const [activeAnnotation, setActiveAnnotation] = useState(null);
   const [selectedTool, setSelectedTool] = useState('select'); // 'select', 'highlight', 'comment'
-  const [isSelecting, setIsSelecting] = useState(false);
-  const [selectionStart, setSelectionStart] = useState(null);
-  const [selectionEnd, setSelectionEnd] = useState(null);
   const [newCommentText, setNewCommentText] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentPosition, setCommentPosition] = useState(null);

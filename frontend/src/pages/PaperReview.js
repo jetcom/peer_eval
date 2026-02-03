@@ -23,6 +23,7 @@ function PaperReview() {
 
   useEffect(() => {
     fetchAssignment();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roundId]);
 
   const fetchAssignment = async () => {
