@@ -85,15 +85,6 @@ function PaperReview() {
     }
   };
 
-  const handleUpdateAnnotation = async (annotationId, updates) => {
-    try {
-      const res = await axios.put(`/api/paper-review/${roundId}/annotations/${annotationId}`, updates);
-      setAnnotations(annotations.map(a => a.id === annotationId ? res.data : a));
-    } catch (err) {
-      console.error('Error updating annotation:', err);
-    }
-  };
-
   const handleDeleteAnnotation = async (annotationId) => {
     try {
       await axios.delete(`/api/paper-review/${roundId}/annotations/${annotationId}`);
