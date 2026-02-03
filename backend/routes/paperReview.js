@@ -118,9 +118,12 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
       }
     }
 
+    // Use the actual round.id (not evalTypeId) for Paper operations
+    const actualRoundId = round.id;
+
     // Check for existing paper (to replace)
     const existingPaper = await prisma.paper.findUnique({
-      where: { roundId_authorId: { roundId, authorId: userId } }
+      where: { roundId_authorId: { roundId: actualRoundId, authorId: userId } }
     });
 
     // Delete old file from S3 if replacing
@@ -129,7 +132,7 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
     }
 
     // Upload to S3
-    const s3Key = generatePaperS3Key(roundId, userId, req.file.originalname);
+    const s3Key = generatePaperS3Key(actualRoundId, userId, req.file.originalname);
     const uploadResult = await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
 
     if (!uploadResult.success) {
@@ -138,7 +141,7 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
 
     // Create or update paper record
     const paper = await prisma.paper.upsert({
-      where: { roundId_authorId: { roundId, authorId: userId } },
+      where: { roundId_authorId: { roundId: actualRoundId, authorId: userId } },
       update: {
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
@@ -148,7 +151,7 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
         isLate
       },
       create: {
-        roundId,
+        roundId: actualRoundId,
         authorId: userId,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
@@ -177,8 +180,17 @@ router.get('/:roundId/my-paper', authenticateToken, async (req, res) => {
     const roundId = parseInt(req.params.roundId);
     const userId = req.user.id;
 
+    // Look up round by evalTypeId to get actual round.id
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
     const paper = await prisma.paper.findUnique({
-      where: { roundId_authorId: { roundId, authorId: userId } }
+      where: { roundId_authorId: { roundId: round.id, authorId: userId } }
     });
 
     if (!paper) {
@@ -217,7 +229,7 @@ router.delete('/:roundId/my-paper', authenticateToken, async (req, res) => {
     }
 
     const paper = await prisma.paper.findUnique({
-      where: { roundId_authorId: { roundId, authorId: userId } }
+      where: { roundId_authorId: { roundId: round.id, authorId: userId } }
     });
 
     if (!paper) {
@@ -426,7 +438,7 @@ router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
     // Create circular assignments (shuffle for randomness)
     const shuffled = [...papersToAssign].sort(() => Math.random() - 0.5);
     const assignments = shuffled.map((paper, i) => ({
-      roundId,
+      roundId: round.id,  // Use actual round.id, not evalTypeId
       reviewerId: paper.authorId,
       paperId: shuffled[(i + 1) % shuffled.length].id
     }));
@@ -570,9 +582,12 @@ router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('fil
       }
     }
 
+    // Use the actual round.id (not evalTypeId) for Paper operations
+    const actualRoundId = round.id;
+
     // Check for existing paper (to replace)
     const existingPaper = await prisma.paper.findUnique({
-      where: { roundId_authorId: { roundId, authorId: studentId } }
+      where: { roundId_authorId: { roundId: actualRoundId, authorId: studentId } }
     });
 
     // Delete old file from S3 if replacing
@@ -581,7 +596,7 @@ router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('fil
     }
 
     // Upload to S3
-    const s3Key = generatePaperS3Key(roundId, studentId, req.file.originalname);
+    const s3Key = generatePaperS3Key(actualRoundId, studentId, req.file.originalname);
     const uploadResult = await uploadFile(req.file.buffer, s3Key, req.file.mimetype);
 
     if (!uploadResult.success) {
@@ -590,7 +605,7 @@ router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('fil
 
     // Create or update paper record
     const paper = await prisma.paper.upsert({
-      where: { roundId_authorId: { roundId, authorId: studentId } },
+      where: { roundId_authorId: { roundId: actualRoundId, authorId: studentId } },
       update: {
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
@@ -600,7 +615,7 @@ router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('fil
         isLate
       },
       create: {
-        roundId,
+        roundId: actualRoundId,
         authorId: studentId,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
@@ -701,8 +716,17 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
     const roundId = parseInt(req.params.roundId);
     const userId = req.user.id;
 
+    // Look up round by evalTypeId to get actual round.id
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId }
+    });
+
+    if (!round) {
+      return res.json(null);
+    }
+
     const assignment = await prisma.paperReviewAssignment.findUnique({
-      where: { roundId_reviewerId: { roundId, reviewerId: userId } },
+      where: { roundId_reviewerId: { roundId: round.id, reviewerId: userId } },
       include: {
         paper: {
           include: {
@@ -764,9 +788,18 @@ router.post('/:roundId/my-review', authenticateToken, async (req, res) => {
     const userId = req.user.id;
     const { overall_comments, submit } = req.body;
 
+    // Look up round by evalTypeId to get actual round.id
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
     // Get assignment
     const assignment = await prisma.paperReviewAssignment.findUnique({
-      where: { roundId_reviewerId: { roundId, reviewerId: userId } },
+      where: { roundId_reviewerId: { roundId: round.id, reviewerId: userId } },
       include: { round: true, review: true }
     });
 
@@ -829,9 +862,18 @@ router.post('/:roundId/my-review/annotations', authenticateToken, async (req, re
     const userId = req.user.id;
     const { type, position, content, color } = req.body;
 
+    // Look up round by evalTypeId to get actual round.id
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
     // Get assignment and ensure review exists
     const assignment = await prisma.paperReviewAssignment.findUnique({
-      where: { roundId_reviewerId: { roundId, reviewerId: userId } },
+      where: { roundId_reviewerId: { roundId: round.id, reviewerId: userId } },
       include: { round: true, review: true }
     });
 
@@ -982,7 +1024,7 @@ router.get('/:roundId/my-feedback', authenticateToken, async (req, res) => {
 
     // Get the paper and its review
     const paper = await prisma.paper.findUnique({
-      where: { roundId_authorId: { roundId, authorId: userId } },
+      where: { roundId_authorId: { roundId: round.id, authorId: userId } },
       include: {
         assignedReview: {
           include: {
