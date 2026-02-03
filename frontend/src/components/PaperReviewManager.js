@@ -496,9 +496,14 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
 
         .prm-settings .form-group.checkbox label {
           display: flex;
-          align-items: center;
+          align-items: flex-start;
           gap: 0.5rem;
           cursor: pointer;
+        }
+
+        .prm-settings .form-group.checkbox input[type="checkbox"] {
+          margin-top: 0.2rem;
+          flex-shrink: 0;
         }
 
         .prm-settings input[type="datetime-local"],
