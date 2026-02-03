@@ -19,6 +19,7 @@ function TeacherPaperReview() {
   const [overallComments, setOverallComments] = useState('');
   const [saveStatus, setSaveStatus] = useState('');
   const [activeAnnotation, setActiveAnnotation] = useState(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
     fetchReview();
@@ -163,8 +164,8 @@ function TeacherPaperReview() {
               fileUrl={paper.url}
               annotations={annotations}
               onAnnotationAdd={handleAddAnnotation}
-              onAnnotationUpdate={handleUpdateAnnotation}
               onAnnotationDelete={handleDeleteAnnotation}
+              onPageChange={setCurrentPage}
               readOnly={false}
             />
           ) : (
@@ -183,8 +184,10 @@ function TeacherPaperReview() {
             <AnnotationSidebar
               annotations={annotations}
               onAnnotationClick={setActiveAnnotation}
+              onAnnotationAdd={handleAddAnnotation}
               onAnnotationDelete={handleDeleteAnnotation}
               activeAnnotationId={activeAnnotation?.id}
+              currentPage={currentPage}
               readOnly={false}
             />
           </div>

@@ -1,22 +1,41 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 /**
- * AnnotationSidebar - Displays list of annotations
+ * AnnotationSidebar - Displays list of annotations with add comment form
  *
  * Props:
  * - annotations: Array of annotations
  * - onAnnotationClick: Callback when annotation is clicked
+ * - onAnnotationAdd: Callback to add a new annotation
  * - onAnnotationDelete: Callback when annotation is deleted
  * - activeAnnotationId: ID of currently active annotation
  * - readOnly: Whether annotations are read-only
+ * - currentPage: Current page number (0-indexed) for new annotations
  */
 const AnnotationSidebar = ({
   annotations = [],
   onAnnotationClick,
+  onAnnotationAdd,
   onAnnotationDelete,
   activeAnnotationId,
   readOnly = false,
+  currentPage = 0,
 }) => {
+  const [newComment, setNewComment] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+
+  const handleAddComment = () => {
+    if (!newComment.trim() || !onAnnotationAdd) return;
+
+    onAnnotationAdd({
+      type: 'comment',
+      position: { page: currentPage },
+      content: newComment.trim(),
+    });
+
+    setNewComment('');
+    setIsAdding(false);
+  };
   // Get page number from annotation (handles both old and new formats)
   const getAnnotationPage = (annotation) => {
     // New format with highlightAreas
@@ -69,15 +88,56 @@ const AnnotationSidebar = ({
     return text.slice(0, maxLength) + '...';
   };
 
+  // Add comment form component
+  const renderAddCommentForm = () => {
+    if (readOnly || !onAnnotationAdd) return null;
+
+    if (isAdding) {
+      return (
+        <div className="add-comment-form">
+          <textarea
+            value={newComment}
+            onChange={(e) => setNewComment(e.target.value)}
+            placeholder="Enter your comment..."
+            rows={3}
+            autoFocus
+          />
+          <div className="add-comment-actions">
+            <button
+              className="cancel-btn"
+              onClick={() => { setIsAdding(false); setNewComment(''); }}
+            >
+              Cancel
+            </button>
+            <button
+              className="submit-btn"
+              onClick={handleAddComment}
+              disabled={!newComment.trim()}
+            >
+              Add Comment
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <button className="add-comment-btn" onClick={() => setIsAdding(true)}>
+        + Add Comment for Page {currentPage + 1}
+      </button>
+    );
+  };
+
   if (annotations.length === 0) {
     return (
       <div className="annotation-sidebar empty">
+        {renderAddCommentForm()}
         <div className="empty-message">
           <span className="empty-icon">📝</span>
           <p>No annotations yet</p>
           {!readOnly && (
             <p className="empty-hint">
-              Use the highlight tool to select text, or the comment tool to add notes.
+              Click "Add Comment" above to add feedback for the current page.
             </p>
           )}
         </div>
@@ -90,6 +150,7 @@ const AnnotationSidebar = ({
       <div className="sidebar-header">
         <h4>Annotations ({annotations.length})</h4>
       </div>
+      {renderAddCommentForm()}
 
       <div className="annotations-list">
         {sortedPages.map((page) => (
@@ -184,6 +245,85 @@ const AnnotationSidebar = ({
         .sidebar-header h4 {
           margin: 0;
           font-size: 1rem;
+        }
+
+        .add-comment-btn {
+          width: calc(100% - 1rem);
+          margin: 0.5rem;
+          padding: 10px 14px;
+          background: #4a90d9;
+          color: #fff;
+          border: none;
+          border-radius: 6px;
+          font-size: 0.9rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+
+        .add-comment-btn:hover {
+          background: #3a7fc9;
+        }
+
+        .add-comment-form {
+          padding: 0.75rem;
+          border-bottom: 1px solid #eee;
+          background: #f8f9fa;
+        }
+
+        .add-comment-form textarea {
+          width: 100%;
+          padding: 10px;
+          border: 1px solid #ddd;
+          border-radius: 6px;
+          font-family: inherit;
+          font-size: 0.9rem;
+          resize: vertical;
+          min-height: 70px;
+          box-sizing: border-box;
+        }
+
+        .add-comment-form textarea:focus {
+          outline: none;
+          border-color: #4a90d9;
+        }
+
+        .add-comment-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .add-comment-actions button {
+          padding: 6px 14px;
+          border: none;
+          border-radius: 4px;
+          font-size: 0.85rem;
+          cursor: pointer;
+        }
+
+        .cancel-btn {
+          background: #e0e0e0;
+          color: #333;
+        }
+
+        .cancel-btn:hover {
+          background: #d0d0d0;
+        }
+
+        .submit-btn {
+          background: #4a90d9;
+          color: #fff;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+          background: #3a7fc9;
+        }
+
+        .submit-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
         }
 
         .annotations-list {
@@ -326,6 +466,26 @@ const AnnotationSidebar = ({
         }
 
         body.dark-mode .annotation-content {
+          color: #e0e0e0;
+        }
+
+        body.dark-mode .add-comment-btn {
+          background: #3a7fc9;
+        }
+
+        body.dark-mode .add-comment-form {
+          background: #333;
+          border-color: #444;
+        }
+
+        body.dark-mode .add-comment-form textarea {
+          background: #2a2a2a;
+          border-color: #444;
+          color: #e0e0e0;
+        }
+
+        body.dark-mode .cancel-btn {
+          background: #444;
           color: #e0e0e0;
         }
       `}</style>

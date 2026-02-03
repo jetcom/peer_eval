@@ -20,6 +20,7 @@ function PaperReview() {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
   const [activeAnnotation, setActiveAnnotation] = useState(null);
+  const [currentPage, setCurrentPage] = useState(0);
 
   useEffect(() => {
     fetchAssignment();
@@ -194,8 +195,8 @@ function PaperReview() {
               fileUrl={assignment.paper.url}
               annotations={annotations}
               onAnnotationAdd={!isSubmitted ? handleAddAnnotation : undefined}
-              onAnnotationUpdate={!isSubmitted ? handleUpdateAnnotation : undefined}
               onAnnotationDelete={!isSubmitted ? handleDeleteAnnotation : undefined}
+              onPageChange={setCurrentPage}
               readOnly={isSubmitted}
             />
           ) : (
@@ -223,8 +224,10 @@ function PaperReview() {
             <AnnotationSidebar
               annotations={annotations}
               onAnnotationClick={setActiveAnnotation}
+              onAnnotationAdd={!isSubmitted ? handleAddAnnotation : undefined}
               onAnnotationDelete={!isSubmitted ? handleDeleteAnnotation : undefined}
               activeAnnotationId={activeAnnotation?.id}
+              currentPage={currentPage}
               readOnly={isSubmitted}
             />
           </div>
