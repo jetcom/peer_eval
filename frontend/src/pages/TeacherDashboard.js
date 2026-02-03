@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
+import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -24,6 +25,7 @@ function TeacherDashboard() {
   const [newClass, setNewClass] = useState({ name: '', section: '', semester: '' });
   const [newGroup, setNewGroup] = useState({ name: '' });
   const [activeTab, setActiveTab] = useState('progress');
+  const [editingClass, setEditingClass] = useState(null);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -104,6 +106,29 @@ function TeacherDashboard() {
       fetchClasses();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to delete class' });
+    }
+  };
+
+  const handleEditClass = (classData) => {
+    // Fetch full class data for editing
+    axios.get(`/api/classes/${classData.id}`).then(res => {
+      setEditingClass(res.data);
+    }).catch(err => {
+      setMessage({ type: 'error', text: 'Failed to load class settings' });
+    });
+  };
+
+  const handleUpdateClass = async () => {
+    try {
+      await axios.put(`/api/classes/${editingClass.id}`, editingClass);
+      setMessage({ type: 'success', text: 'Class updated successfully' });
+      setEditingClass(null);
+      fetchClasses();
+      if (selectedClass === editingClass.id) {
+        fetchClassData();
+      }
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to update class' });
     }
   };
 
@@ -264,7 +289,10 @@ function TeacherDashboard() {
                         <td>{c.section || '-'}</td>
                         <td>{c.student_count}</td>
                         <td>
-                          <button className="btn btn-danger" onClick={() => handleDeleteClass(c.id)}>
+                          <button className="btn btn-secondary btn-sm" style={{ marginRight: '0.5rem' }} onClick={() => handleEditClass(c)}>
+                            Settings
+                          </button>
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDeleteClass(c.id)}>
                             Delete
                           </button>
                         </td>
@@ -297,7 +325,10 @@ function TeacherDashboard() {
                         <span className="mobile-card-value">{c.student_count}</span>
                       </div>
                       <div className="mobile-card-actions" onClick={(e) => e.stopPropagation()}>
-                        <button className="btn btn-danger" onClick={() => handleDeleteClass(c.id)}>
+                        <button className="btn btn-secondary btn-sm" style={{ marginRight: '0.5rem' }} onClick={() => handleEditClass(c)}>
+                          Settings
+                        </button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteClass(c.id)}>
                           Delete
                         </button>
                       </div>
@@ -530,6 +561,17 @@ function TeacherDashboard() {
               </div>
             )}
           </>
+        )}
+
+        {/* Class Settings Panel */}
+        {editingClass && (
+          <ClassSettingsPanel
+            darkMode={darkMode}
+            editingClass={editingClass}
+            setEditingClass={setEditingClass}
+            onSubmit={handleUpdateClass}
+            onClose={() => setEditingClass(null)}
+          />
         )}
       </div>
     </div>
