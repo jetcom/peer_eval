@@ -495,13 +495,14 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
         }
 
         .prm-settings .form-group.checkbox label {
-          display: flex;
+          display: flex !important;
           align-items: flex-start;
           gap: 0.5rem;
           cursor: pointer;
         }
 
         .prm-settings .form-group.checkbox input[type="checkbox"] {
+          width: auto !important;
           margin-top: 0.2rem;
           flex-shrink: 0;
         }
