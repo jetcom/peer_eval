@@ -34,7 +34,7 @@ async function isTeacherOrAdmin(userId, role, classId) {
 // Helper: Get class ID from round
 async function getClassIdFromRound(roundId) {
   const round = await prisma.paperReviewRound.findUnique({
-    where: { id: roundId },
+    where: { evalTypeId: roundId },
     include: {
       evalType: {
         include: {
@@ -82,7 +82,7 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
 
     // Get round and check it exists and is in submission phase
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       include: {
         evalType: {
           include: {
@@ -209,7 +209,7 @@ router.delete('/:roundId/my-paper', authenticateToken, async (req, res) => {
 
     // Check round is still in submission phase
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId }
+      where: { evalTypeId: roundId }
     });
 
     if (!round || round.status !== 'submission') {
@@ -249,7 +249,7 @@ router.get('/:roundId/status', authenticateToken, async (req, res) => {
     const roundId = parseInt(req.params.roundId);
 
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       include: {
         evalType: {
           include: {
@@ -351,7 +351,7 @@ router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
     const { duration_hours } = req.body;
 
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       include: {
         evalType: {
           include: {
@@ -419,7 +419,7 @@ router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
     // Update round and create assignments in transaction
     await prisma.$transaction([
       prisma.paperReviewRound.update({
-        where: { id: roundId },
+        where: { evalTypeId: roundId },
         data: {
           status: 'review',
           reviewStartedAt,
@@ -449,7 +449,7 @@ router.post('/:roundId/release-feedback', authenticateToken, async (req, res) =>
     const roundId = parseInt(req.params.roundId);
 
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       include: {
         evalType: {
           include: {
@@ -475,7 +475,7 @@ router.post('/:roundId/release-feedback', authenticateToken, async (req, res) =>
     }
 
     await prisma.paperReviewRound.update({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       data: {
         status: 'completed',
         feedbackReleasedAt: new Date()
@@ -502,7 +502,7 @@ router.put('/:roundId/settings', authenticateToken, async (req, res) => {
     } = req.body;
 
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       include: {
         evalType: {
           include: {
@@ -531,7 +531,7 @@ router.put('/:roundId/settings', authenticateToken, async (req, res) => {
     if (auto_release_feedback !== undefined) updateData.autoReleaseFeedback = auto_release_feedback ? 1 : 0;
 
     const updated = await prisma.paperReviewRound.update({
-      where: { id: roundId },
+      where: { evalTypeId: roundId },
       data: updateData
     });
 
@@ -822,7 +822,7 @@ router.get('/:roundId/my-feedback', authenticateToken, async (req, res) => {
 
     // Get the round
     const round = await prisma.paperReviewRound.findUnique({
-      where: { id: roundId }
+      where: { evalTypeId: roundId }
     });
 
     if (!round) {

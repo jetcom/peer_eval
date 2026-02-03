@@ -395,6 +395,53 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, async (req, res) =>
       return res.status(404).json({ error: 'Class not found or access denied' });
     }
 
+    // Check if evaluation_mode is being changed
+    if (evaluation_mode && evaluation_mode !== existingClass.evaluationMode) {
+      // Check if any evaluations exist for this class
+      let hasEvaluations = false;
+
+      if (existingClass.evaluationMode === 'phases') {
+        // Check phase-based evaluations
+        const evalCount = await prisma.evaluation.count({
+          where: { classId: id }
+        });
+        hasEvaluations = evalCount > 0;
+      } else {
+        // Check assignment-based evaluations
+        const assignments = await prisma.assignment.findMany({
+          where: { classId: id },
+          select: { id: true }
+        });
+        const assignmentIds = assignments.map(a => a.id);
+
+        if (assignmentIds.length > 0) {
+          const evalTypes = await prisma.assignmentEvalType.findMany({
+            where: { assignmentId: { in: assignmentIds } },
+            select: { id: true }
+          });
+          const evalTypeIds = evalTypes.map(e => e.id);
+
+          if (evalTypeIds.length > 0) {
+            const [indivCount, groupCount] = await Promise.all([
+              prisma.individualGroupEvaluation.count({
+                where: { evalTypeId: { in: evalTypeIds } }
+              }),
+              prisma.groupEvaluation.count({
+                where: { evalTypeId: { in: evalTypeIds } }
+              })
+            ]);
+            hasEvaluations = indivCount > 0 || groupCount > 0;
+          }
+        }
+      }
+
+      if (hasEvaluations) {
+        return res.status(400).json({
+          error: 'Cannot change evaluation mode after evaluations have been submitted'
+        });
+      }
+    }
+
     await prisma.class.update({
       where: { id },
       data: {
