@@ -17,7 +17,6 @@ function TeacherPaperReview() {
   const [paper, setPaper] = useState(null);
   const [annotations, setAnnotations] = useState([]);
   const [overallComments, setOverallComments] = useState('');
-  const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
   const [activeAnnotation, setActiveAnnotation] = useState(null);
 
@@ -45,7 +44,6 @@ function TeacherPaperReview() {
 
   // Auto-save comments with debounce
   const saveComments = useCallback(async (comments) => {
-    setSaving(true);
     setSaveStatus('Saving...');
     try {
       await axios.post(`/api/paper-review/${roundId}/papers/${paperId}/teacher-review`, {
@@ -56,7 +54,6 @@ function TeacherPaperReview() {
       setSaveStatus('Error saving');
       console.error('Save error:', err);
     } finally {
-      setSaving(false);
       setTimeout(() => setSaveStatus(''), 2000);
     }
   }, [roundId, paperId]);
