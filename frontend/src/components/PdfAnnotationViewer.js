@@ -292,6 +292,7 @@ const PdfAnnotationViewer = ({
     });
 
     return elements;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [annotations, pendingAnnotation, commentText, selectedAnnotation, readOnly, onAnnotationDelete, handleCancelAnnotation, handleSaveAnnotation, renderKey]);
 
   // Re-render annotations when scrolling
