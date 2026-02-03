@@ -1,11 +1,13 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Viewer, Worker, SpecialZoomLevel } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
+import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import '@react-pdf-viewer/default-layout/lib/styles/index.css';
+import '@react-pdf-viewer/highlight/lib/styles/index.css';
 
 /**
- * PdfAnnotationViewer - PDF viewer with annotation support
+ * PdfAnnotationViewer - PDF viewer with annotation support using react-pdf-viewer plugins
  */
 const PdfAnnotationViewer = ({
   fileUrl,
@@ -15,205 +17,178 @@ const PdfAnnotationViewer = ({
   readOnly = false,
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
-  const [activeAnnotation, setActiveAnnotation] = useState(null);
   const [selectedTool, setSelectedTool] = useState('select');
-  const [newCommentText, setNewCommentText] = useState('');
-  const [showCommentInput, setShowCommentInput] = useState(false);
-  const [commentPosition, setCommentPosition] = useState(null);
-  const containerRef = useRef(null);
+  const [selectedHighlightId, setSelectedHighlightId] = useState(null);
 
-  // Create the default layout plugin (includes toolbar, sidebar, text selection)
-  const defaultLayoutPluginInstance = defaultLayoutPlugin({
-    sidebarTabs: () => [], // Hide sidebar
+  // Get annotations for current page (for footer count)
+  const pageAnnotationCount = annotations.filter(
+    (a) => a.position?.page === currentPage ||
+           a.position?.highlightAreas?.some(area => area.pageIndex === currentPage)
+  ).length;
+
+  // Create layout plugin with minimal UI - memoized
+  const defaultLayoutPluginInstance = useMemo(() => defaultLayoutPlugin({
+    sidebarTabs: () => [],
     toolbarPlugin: {
       fullScreenPlugin: { onEnterFullScreen: () => {}, onExitFullScreen: () => {} },
     },
-  });
+  }), []);
 
-  // Get annotations for current page
-  const pageAnnotations = annotations.filter(
-    (a) => a.position?.page === currentPage
-  );
+  // Create highlight plugin - memoized with dependencies
+  const highlightPluginInstance = useMemo(() => {
+    return highlightPlugin({
+      trigger: Trigger.TextSelection,
+      renderHighlightTarget: (props) => {
+        // Always render target when text is selected in highlight mode
+        if (readOnly) {
+          return null;
+        }
+        return (
+          <div
+            style={{
+              background: '#4a90d9',
+              color: '#fff',
+              padding: '6px 12px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: '500',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              position: 'absolute',
+              zIndex: 1000,
+            }}
+            onClick={() => {
+              if (onAnnotationAdd) {
+                onAnnotationAdd({
+                  type: 'highlight',
+                  position: {
+                    page: props.selectionRegion.pageIndex,
+                    highlightAreas: props.highlightAreas,
+                    selectedText: props.selectedText,
+                  },
+                  content: '',
+                  color: '#ffff00',
+                });
+              }
+              props.cancel();
+            }}
+          >
+            Add Highlight
+          </div>
+        );
+      },
+      renderHighlights: (props) => {
+        // Find annotations for this page
+        const pageHighlights = annotations.filter(
+          a => a.type === 'highlight' &&
+               a.position?.highlightAreas?.some(area => area.pageIndex === props.pageIndex)
+        );
 
-  // Handle text selection for highlights
-  const handleMouseUp = useCallback(() => {
-    if (readOnly || selectedTool !== 'highlight') return;
+        const selectedHighlight = pageHighlights.find(h => h.id === selectedHighlightId);
 
-    setTimeout(() => {
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) return;
-
-      const selectedText = selection.toString().trim();
-      if (!selectedText || selectedText.length < 2) return;
-
-      const container = containerRef.current;
-      if (!container) return;
-
-      // Check if selection is within our PDF container
-      const range = selection.getRangeAt(0);
-      const commonAncestor = range.commonAncestorContainer;
-      if (!container.contains(commonAncestor)) return;
-
-      const rects = range.getClientRects();
-      if (rects.length === 0) return;
-
-      const containerRect = container.getBoundingClientRect();
-
-      // Convert rects to percentages
-      const normalizedRects = Array.from(rects)
-        .filter(rect => rect.width > 0 && rect.height > 0)
-        .map((rect) => ({
-          x1: ((rect.left - containerRect.left + container.scrollLeft) / container.scrollWidth) * 100,
-          y1: ((rect.top - containerRect.top + container.scrollTop) / container.scrollHeight) * 100,
-          width: (rect.width / container.scrollWidth) * 100,
-          height: (rect.height / container.scrollHeight) * 100,
-        }));
-
-      if (normalizedRects.length === 0) return;
-
-      if (onAnnotationAdd) {
-        onAnnotationAdd({
-          type: 'highlight',
-          position: {
-            page: currentPage,
-            rects: normalizedRects,
-            selectedText,
-          },
-          content: '',
-          color: '#ffff00',
-        });
-      }
-
-      selection.removeAllRanges();
-    }, 50);
-  }, [currentPage, readOnly, selectedTool, onAnnotationAdd]);
-
-  // Handle click for adding comments
-  const handleContainerClick = useCallback((e) => {
-    // Close active annotation popup when clicking elsewhere
-    if (activeAnnotation && !e.target.closest('.annotation-popup')) {
-      setActiveAnnotation(null);
-    }
-
-    if (readOnly || selectedTool !== 'comment') return;
-
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Don't add comment if clicking on existing annotation
-    if (e.target.closest('.annotation-marker') || e.target.closest('.annotation-highlight')) return;
-
-    const containerRect = container.getBoundingClientRect();
-    const x = ((e.clientX - containerRect.left + container.scrollLeft) / container.scrollWidth) * 100;
-    const y = ((e.clientY - containerRect.top + container.scrollTop) / container.scrollHeight) * 100;
-
-    setCommentPosition({ page: currentPage, x, y });
-    setShowCommentInput(true);
-    setNewCommentText('');
-  }, [currentPage, readOnly, selectedTool, activeAnnotation]);
-
-  // Add comment
-  const handleAddComment = () => {
-    if (!newCommentText.trim() || !commentPosition) return;
-
-    if (onAnnotationAdd) {
-      onAnnotationAdd({
-        type: 'comment',
-        position: commentPosition,
-        content: newCommentText.trim(),
-        color: '#ffeb3b',
-      });
-    }
-
-    setShowCommentInput(false);
-    setCommentPosition(null);
-    setNewCommentText('');
-  };
-
-  // Attach mouseup listener
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    container.addEventListener('mouseup', handleMouseUp);
-    return () => container.removeEventListener('mouseup', handleMouseUp);
-  }, [handleMouseUp]);
-
-  // Render highlights
-  const renderHighlights = () => {
-    return pageAnnotations
-      .filter(a => a.type === 'highlight' && a.position?.rects)
-      .map((annotation) => (
-        <div key={annotation.id} className="highlight-group">
-          {annotation.position.rects.map((rect, idx) => (
-            <div
-              key={idx}
-              className="highlight-rect"
-              style={{
-                left: `${rect.x1}%`,
-                top: `${rect.y1}%`,
-                width: `${rect.width}%`,
-                height: `${rect.height}%`,
-                backgroundColor: annotation.color || '#ffff00',
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                setActiveAnnotation(activeAnnotation?.id === annotation.id ? null : annotation);
-              }}
-            />
-          ))}
-          {activeAnnotation?.id === annotation.id && (
-            <div
-              className="annotation-popup"
-              style={{
-                left: `${annotation.position.rects[0]?.x1 || 0}%`,
-                top: `${(annotation.position.rects[annotation.position.rects.length - 1]?.y1 || 0) + (annotation.position.rects[annotation.position.rects.length - 1]?.height || 2)}%`,
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="popup-text">"{annotation.position.selectedText?.slice(0, 100)}{annotation.position.selectedText?.length > 100 ? '...' : ''}"</div>
-              {!readOnly && (
-                <button className="popup-delete" onClick={() => onAnnotationDelete?.(annotation.id)}>
-                  Delete
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      ));
-  };
-
-  // Render comment markers
-  const renderComments = () => {
-    return pageAnnotations
-      .filter(a => a.type === 'comment')
-      .map((annotation) => (
-        <div
-          key={annotation.id}
-          className="annotation-marker"
-          style={{
-            left: `${annotation.position?.x || 0}%`,
-            top: `${annotation.position?.y || 0}%`,
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            setActiveAnnotation(activeAnnotation?.id === annotation.id ? null : annotation);
-          }}
-        >
-          <span className="marker-icon">💬</span>
-          {activeAnnotation?.id === annotation.id && (
-            <div className="annotation-popup" onClick={(e) => e.stopPropagation()}>
-              <div className="popup-comment">{annotation.content}</div>
-              {!readOnly && (
-                <button className="popup-delete" onClick={() => onAnnotationDelete?.(annotation.id)}>
-                  Delete
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      ));
-  };
+        return (
+          <div>
+            {pageHighlights.map((annotation) => {
+              const areasOnPage = annotation.position.highlightAreas.filter(
+                area => area.pageIndex === props.pageIndex
+              );
+              return areasOnPage.map((area, idx) => (
+                <div
+                  key={`${annotation.id}-${idx}`}
+                  style={{
+                    position: 'absolute',
+                    left: `${area.left}%`,
+                    top: `${area.top}%`,
+                    width: `${area.width}%`,
+                    height: `${area.height}%`,
+                    backgroundColor: annotation.color || '#ffff00',
+                    opacity: selectedHighlightId === annotation.id ? 0.5 : 0.35,
+                    cursor: 'pointer',
+                    borderRadius: '2px',
+                    transition: 'opacity 0.15s',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedHighlightId(selectedHighlightId === annotation.id ? null : annotation.id);
+                  }}
+                />
+              ));
+            })}
+            {/* Popup for selected highlight */}
+            {selectedHighlight && (
+              <div
+                style={{
+                  position: 'absolute',
+                  left: `${Math.min((selectedHighlight.position.highlightAreas[0]?.left || 10), 60)}%`,
+                  top: `${(selectedHighlight.position.highlightAreas[selectedHighlight.position.highlightAreas.length - 1]?.top || 0) +
+                        (selectedHighlight.position.highlightAreas[selectedHighlight.position.highlightAreas.length - 1]?.height || 2) + 1}%`,
+                  background: '#2d2d2d',
+                  color: '#fff',
+                  padding: '12px 14px',
+                  borderRadius: '8px',
+                  minWidth: '220px',
+                  maxWidth: '320px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                  zIndex: 1000,
+                  fontSize: '13px',
+                  border: '1px solid #444',
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{
+                  color: '#bbb',
+                  fontStyle: 'italic',
+                  marginBottom: '10px',
+                  lineHeight: '1.4',
+                  borderLeft: '3px solid #4a90d9',
+                  paddingLeft: '10px',
+                }}>
+                  "{selectedHighlight.position?.selectedText?.slice(0, 120)}
+                  {selectedHighlight.position?.selectedText?.length > 120 ? '...' : ''}"
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {!readOnly && (
+                    <button
+                      style={{
+                        padding: '6px 12px',
+                        background: '#c62828',
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: '4px',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => {
+                        onAnnotationDelete?.(selectedHighlight.id);
+                        setSelectedHighlightId(null);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
+                  <button
+                    style={{
+                      padding: '6px 12px',
+                      background: '#555',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => setSelectedHighlightId(null)}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      },
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [annotations, selectedHighlightId, readOnly, onAnnotationAdd, onAnnotationDelete]);
 
   return (
     <div className="pdf-annotation-viewer">
@@ -226,85 +201,42 @@ const PdfAnnotationViewer = ({
               onClick={() => setSelectedTool('select')}
               title="Select/View"
             >
-              👆
+              <span role="img" aria-label="select">👆</span>
             </button>
             <button
               className={`tool-btn ${selectedTool === 'highlight' ? 'active' : ''}`}
               onClick={() => setSelectedTool('highlight')}
               title="Highlight text"
             >
-              🖍️
-            </button>
-            <button
-              className={`tool-btn ${selectedTool === 'comment' ? 'active' : ''}`}
-              onClick={() => setSelectedTool('comment')}
-              title="Add comment"
-            >
-              💬
+              <span role="img" aria-label="highlight">🖍️</span>
             </button>
           </div>
           <div className="tool-info">
-            {selectedTool === 'highlight' && '📌 Select text to highlight'}
-            {selectedTool === 'comment' && '📌 Click to add a comment'}
-            {selectedTool === 'select' && '📌 Click annotations to view/delete'}
+            {selectedTool === 'highlight' && 'Select text to highlight it'}
+            {selectedTool === 'select' && 'Click on highlights to view/delete'}
           </div>
         </div>
       )}
 
-      {/* PDF Container */}
+      {/* PDF Viewer */}
       <div
-        ref={containerRef}
-        className={`pav-container ${selectedTool === 'highlight' ? 'highlight-mode' : ''} ${selectedTool === 'comment' ? 'comment-mode' : ''}`}
-        onClick={handleContainerClick}
+        className="pav-container"
+        onClick={() => setSelectedHighlightId(null)}
       >
         <Worker workerUrl="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js">
           <Viewer
             fileUrl={fileUrl}
-            plugins={[defaultLayoutPluginInstance]}
+            plugins={[highlightPluginInstance, defaultLayoutPluginInstance]}
             defaultScale={SpecialZoomLevel.PageWidth}
             onPageChange={(e) => setCurrentPage(e.currentPage)}
           />
         </Worker>
-
-        {/* Annotation overlay */}
-        <div className="annotation-overlay">
-          {renderHighlights()}
-          {renderComments()}
-        </div>
-
-        {/* Comment input */}
-        {showCommentInput && commentPosition && (
-          <div
-            className="comment-input-box"
-            style={{
-              left: `${commentPosition.x}%`,
-              top: `${commentPosition.y}%`,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <textarea
-              value={newCommentText}
-              onChange={(e) => setNewCommentText(e.target.value)}
-              placeholder="Enter your comment..."
-              autoFocus
-              rows={3}
-            />
-            <div className="comment-actions">
-              <button onClick={() => { setShowCommentInput(false); setCommentPosition(null); }}>
-                Cancel
-              </button>
-              <button onClick={handleAddComment} disabled={!newCommentText.trim()} className="primary">
-                Add
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Footer */}
       <div className="pav-footer">
         <span>Page {currentPage + 1}</span>
-        <span>{pageAnnotations.length} annotation(s)</span>
+        <span>{pageAnnotationCount} annotation(s) on this page</span>
       </div>
 
       <style>{`
@@ -368,156 +300,6 @@ const PdfAnnotationViewer = ({
           background: #525659;
         }
 
-        .pav-container.highlight-mode {
-          cursor: text;
-        }
-
-        .pav-container.comment-mode {
-          cursor: crosshair;
-        }
-
-        .annotation-overlay {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          pointer-events: none;
-          z-index: 10;
-        }
-
-        .highlight-group,
-        .annotation-marker,
-        .annotation-popup,
-        .comment-input-box {
-          pointer-events: auto;
-        }
-
-        .highlight-rect {
-          position: absolute;
-          opacity: 0.35;
-          cursor: pointer;
-          transition: opacity 0.15s;
-          border-radius: 2px;
-        }
-
-        .highlight-rect:hover {
-          opacity: 0.5;
-        }
-
-        .annotation-marker {
-          position: absolute;
-          cursor: pointer;
-          transform: translate(-50%, -50%);
-          font-size: 24px;
-          z-index: 20;
-          transition: transform 0.15s;
-        }
-
-        .annotation-marker:hover {
-          transform: translate(-50%, -50%) scale(1.15);
-        }
-
-        .annotation-popup {
-          position: absolute;
-          background: #333;
-          color: #fff;
-          border-radius: 8px;
-          padding: 12px;
-          min-width: 180px;
-          max-width: 280px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-          z-index: 100;
-          font-size: 13px;
-          margin-top: 8px;
-        }
-
-        .popup-text {
-          color: #ccc;
-          font-style: italic;
-          margin-bottom: 8px;
-          line-height: 1.4;
-          word-break: break-word;
-        }
-
-        .popup-comment {
-          color: #fff;
-          line-height: 1.4;
-          white-space: pre-wrap;
-          word-break: break-word;
-        }
-
-        .popup-delete {
-          margin-top: 10px;
-          padding: 4px 10px;
-          background: #c62828;
-          color: #fff;
-          border: none;
-          border-radius: 4px;
-          font-size: 12px;
-          cursor: pointer;
-        }
-
-        .popup-delete:hover {
-          background: #d32f2f;
-        }
-
-        .comment-input-box {
-          position: absolute;
-          background: #fff;
-          border-radius: 8px;
-          padding: 12px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-          z-index: 100;
-          min-width: 220px;
-          transform: translate(-50%, 8px);
-        }
-
-        .comment-input-box textarea {
-          width: 100%;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          padding: 8px;
-          font-family: inherit;
-          font-size: 13px;
-          resize: vertical;
-          min-height: 60px;
-        }
-
-        .comment-actions {
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
-          margin-top: 8px;
-        }
-
-        .comment-actions button {
-          padding: 6px 12px;
-          border: none;
-          border-radius: 4px;
-          font-size: 12px;
-          cursor: pointer;
-          background: #e0e0e0;
-        }
-
-        .comment-actions button:hover {
-          background: #d0d0d0;
-        }
-
-        .comment-actions button.primary {
-          background: #4a90d9;
-          color: #fff;
-        }
-
-        .comment-actions button.primary:hover {
-          background: #3a80c9;
-        }
-
-        .comment-actions button:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
         .pav-footer {
           display: flex;
           justify-content: space-between;
@@ -549,14 +331,22 @@ const PdfAnnotationViewer = ({
         /* Enable text selection */
         .rpv-core__text-layer {
           user-select: text !important;
+          -webkit-user-select: text !important;
         }
 
-        .rpv-core__text-layer > span {
+        .rpv-core__text-layer span {
           user-select: text !important;
+          -webkit-user-select: text !important;
         }
 
-        .rpv-core__text-layer ::selection {
+        .rpv-core__text-layer::selection,
+        .rpv-core__text-layer span::selection {
           background: rgba(255, 255, 0, 0.4) !important;
+        }
+
+        /* Highlight plugin styles */
+        .rpv-highlight__selected-text {
+          background-color: rgba(255, 255, 0, 0.4) !important;
         }
       `}</style>
     </div>

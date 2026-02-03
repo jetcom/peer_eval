@@ -17,9 +17,19 @@ const AnnotationSidebar = ({
   activeAnnotationId,
   readOnly = false,
 }) => {
+  // Get page number from annotation (handles both old and new formats)
+  const getAnnotationPage = (annotation) => {
+    // New format with highlightAreas
+    if (annotation.position?.highlightAreas?.[0]?.pageIndex !== undefined) {
+      return annotation.position.highlightAreas[0].pageIndex;
+    }
+    // Old format with page property
+    return annotation.position?.page ?? 0;
+  };
+
   // Group annotations by page
   const annotationsByPage = annotations.reduce((acc, annotation) => {
-    const page = annotation.position?.page ?? 0;
+    const page = getAnnotationPage(annotation);
     if (!acc[page]) acc[page] = [];
     acc[page].push(annotation);
     return acc;
