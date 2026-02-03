@@ -232,6 +232,55 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                         {assignment.eval_types.map(evalType => {
                           const status = getEvalTypeStatus(assignment, evalType);
 
+                          // Special handling for paper_review eval type
+                          if (evalType.eval_type === 'paper_review') {
+                            return (
+                              <div
+                                key={evalType.id}
+                                style={{
+                                  padding: '12px 15px',
+                                  background: darkMode ? '#333' : '#fff',
+                                  border: `1px solid ${darkMode ? '#444' : '#e0e0e0'}`,
+                                  borderRadius: '6px',
+                                }}
+                              >
+                                <div style={{ fontWeight: '500', marginBottom: '8px' }}>
+                                  {evalType.name}
+                                </div>
+                                <div style={{
+                                  fontSize: '0.85rem',
+                                  color: darkMode ? '#a0a0a0' : '#666',
+                                  marginBottom: '12px'
+                                }}>
+                                  Paper review workflow
+                                </div>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => navigate(`/paper-review/${evalType.id}/submit`)}
+                                    style={{ fontSize: '0.85rem' }}
+                                  >
+                                    📄 Submit Paper
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => navigate(`/paper-review/${evalType.id}/review`)}
+                                    style={{ fontSize: '0.85rem' }}
+                                  >
+                                    ✏️ Review Paper
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => navigate(`/paper-review/${evalType.id}/feedback`)}
+                                    style={{ fontSize: '0.85rem' }}
+                                  >
+                                    💬 View Feedback
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           return (
                             <div
                               key={evalType.id}
@@ -265,7 +314,6 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                                   {evalType.eval_type === 'peer' && 'Evaluate your group members'}
                                   {evalType.eval_type === 'audience' && 'Evaluate other groups'}
                                   {evalType.eval_type === 'self' && 'Self evaluation'}
-                                  {evalType.eval_type === 'paper_review' && 'Review papers/presentations'}
                                   {evalType.target_type === 'group' && ' (group-based)'}
                                 </div>
                               </div>
