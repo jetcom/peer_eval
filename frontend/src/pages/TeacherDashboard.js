@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
+import TemplatesTab from '../components/admin/TemplatesTab';
 
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -26,6 +27,7 @@ function TeacherDashboard() {
   const [newGroup, setNewGroup] = useState({ name: '' });
   const [activeTab, setActiveTab] = useState('progress');
   const [editingClass, setEditingClass] = useState(null);
+  const [topLevelView, setTopLevelView] = useState('classes'); // 'classes' or 'templates'
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -221,6 +223,28 @@ function TeacherDashboard() {
           <div className={`message ${message.type}`}>{message.text}</div>
         )}
 
+        {/* Top-level view toggle */}
+        <div className="card" style={{ marginBottom: '1rem' }}>
+          <div className="tabs">
+            <button
+              className={`tab ${topLevelView === 'classes' ? 'active' : ''}`}
+              onClick={() => setTopLevelView('classes')}
+            >
+              Classes
+            </button>
+            <button
+              className={`tab ${topLevelView === 'templates' ? 'active' : ''}`}
+              onClick={() => setTopLevelView('templates')}
+            >
+              Templates
+            </button>
+          </div>
+        </div>
+
+        {topLevelView === 'templates' ? (
+          <TemplatesTab darkMode={darkMode} />
+        ) : (
+          <>
         <div className="admin-grid">
           {/* Create Class */}
           <div className="card">
@@ -572,6 +596,8 @@ function TeacherDashboard() {
             onSubmit={handleUpdateClass}
             onClose={() => setEditingClass(null)}
           />
+        )}
+          </>
         )}
       </div>
     </div>
