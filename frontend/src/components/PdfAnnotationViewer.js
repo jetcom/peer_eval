@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Viewer, Worker, SpecialZoomLevel } from '@react-pdf-viewer/core';
 import { defaultLayoutPlugin } from '@react-pdf-viewer/default-layout';
 import { highlightPlugin, Trigger } from '@react-pdf-viewer/highlight';
@@ -20,13 +20,41 @@ const PdfAnnotationViewer = ({
   const [selectedTool, setSelectedTool] = useState('select');
   const [selectedHighlightId, setSelectedHighlightId] = useState(null);
 
+  // Use refs to access current values in plugin callbacks without recreating plugin
+  const annotationsRef = useRef(annotations);
+  const selectedHighlightIdRef = useRef(selectedHighlightId);
+  const readOnlyRef = useRef(readOnly);
+  const onAnnotationAddRef = useRef(onAnnotationAdd);
+  const onAnnotationDeleteRef = useRef(onAnnotationDelete);
+
+  // Keep refs in sync
+  useEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
+
+  useEffect(() => {
+    selectedHighlightIdRef.current = selectedHighlightId;
+  }, [selectedHighlightId]);
+
+  useEffect(() => {
+    readOnlyRef.current = readOnly;
+  }, [readOnly]);
+
+  useEffect(() => {
+    onAnnotationAddRef.current = onAnnotationAdd;
+  }, [onAnnotationAdd]);
+
+  useEffect(() => {
+    onAnnotationDeleteRef.current = onAnnotationDelete;
+  }, [onAnnotationDelete]);
+
   // Get annotations for current page (for footer count)
   const pageAnnotationCount = annotations.filter(
     (a) => a.position?.page === currentPage ||
            a.position?.highlightAreas?.some(area => area.pageIndex === currentPage)
   ).length;
 
-  // Create layout plugin with minimal UI - memoized
+  // Create layout plugin with minimal UI - only created once
   const defaultLayoutPluginInstance = useMemo(() => defaultLayoutPlugin({
     sidebarTabs: () => [],
     toolbarPlugin: {
@@ -34,13 +62,12 @@ const PdfAnnotationViewer = ({
     },
   }), []);
 
-  // Create highlight plugin - memoized with dependencies
+  // Create highlight plugin - only created once, uses refs for current state
   const highlightPluginInstance = useMemo(() => {
     return highlightPlugin({
       trigger: Trigger.TextSelection,
       renderHighlightTarget: (props) => {
-        // Always render target when text is selected in highlight mode
-        if (readOnly) {
+        if (readOnlyRef.current) {
           return null;
         }
         return (
@@ -58,8 +85,8 @@ const PdfAnnotationViewer = ({
               zIndex: 1000,
             }}
             onClick={() => {
-              if (onAnnotationAdd) {
-                onAnnotationAdd({
+              if (onAnnotationAddRef.current) {
+                onAnnotationAddRef.current({
                   type: 'highlight',
                   position: {
                     page: props.selectionRegion.pageIndex,
@@ -78,13 +105,16 @@ const PdfAnnotationViewer = ({
         );
       },
       renderHighlights: (props) => {
+        const currentAnnotations = annotationsRef.current;
+        const currentSelectedId = selectedHighlightIdRef.current;
+
         // Find annotations for this page
-        const pageHighlights = annotations.filter(
+        const pageHighlights = currentAnnotations.filter(
           a => a.type === 'highlight' &&
                a.position?.highlightAreas?.some(area => area.pageIndex === props.pageIndex)
         );
 
-        const selectedHighlight = pageHighlights.find(h => h.id === selectedHighlightId);
+        const selectedHighlight = pageHighlights.find(h => h.id === currentSelectedId);
 
         return (
           <div>
@@ -102,14 +132,14 @@ const PdfAnnotationViewer = ({
                     width: `${area.width}%`,
                     height: `${area.height}%`,
                     backgroundColor: annotation.color || '#ffff00',
-                    opacity: selectedHighlightId === annotation.id ? 0.5 : 0.35,
+                    opacity: currentSelectedId === annotation.id ? 0.5 : 0.35,
                     cursor: 'pointer',
                     borderRadius: '2px',
                     transition: 'opacity 0.15s',
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedHighlightId(selectedHighlightId === annotation.id ? null : annotation.id);
+                    setSelectedHighlightId(currentSelectedId === annotation.id ? null : annotation.id);
                   }}
                 />
               ));
@@ -147,7 +177,7 @@ const PdfAnnotationViewer = ({
                   {selectedHighlight.position?.selectedText?.length > 120 ? '...' : ''}"
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  {!readOnly && (
+                  {!readOnlyRef.current && (
                     <button
                       style={{
                         padding: '6px 12px',
@@ -159,7 +189,7 @@ const PdfAnnotationViewer = ({
                         cursor: 'pointer',
                       }}
                       onClick={() => {
-                        onAnnotationDelete?.(selectedHighlight.id);
+                        onAnnotationDeleteRef.current?.(selectedHighlight.id);
                         setSelectedHighlightId(null);
                       }}
                     >
@@ -187,8 +217,7 @@ const PdfAnnotationViewer = ({
         );
       },
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [annotations, selectedHighlightId, readOnly, onAnnotationAdd, onAnnotationDelete]);
+  }, []); // Empty deps - plugin created once, uses refs for current values
 
   return (
     <div className="pdf-annotation-viewer">
