@@ -19,7 +19,8 @@ const formatTemplate = (t) => ({
     description: c.description,
     order_index: c.orderIndex,
     min_value: c.minValue,
-    max_value: c.maxValue
+    max_value: c.maxValue,
+    question_type: c.questionType || 'likert'
   })) : []
 });
 
@@ -124,7 +125,8 @@ router.post('/', authenticateToken, requireTeacher, async (req, res) => {
             description: c.description || null,
             orderIndex: c.order_index ?? index,
             minValue: c.min_value ?? 1,
-            maxValue: c.max_value ?? 5
+            maxValue: c.max_value ?? 5,
+            questionType: c.question_type || 'likert'
           }))
         }
       },
@@ -187,7 +189,8 @@ router.put('/:id', authenticateToken, requireTeacher, async (req, res) => {
               description: c.description || null,
               orderIndex: c.order_index ?? index,
               minValue: c.min_value ?? 1,
-              maxValue: c.max_value ?? 5
+              maxValue: c.max_value ?? 5,
+              questionType: c.question_type || 'likert'
             }))
           }
         }
@@ -278,7 +281,8 @@ router.post('/:id/duplicate', authenticateToken, requireTeacher, async (req, res
             description: c.description,
             orderIndex: c.orderIndex,
             minValue: c.minValue,
-            maxValue: c.maxValue
+            maxValue: c.maxValue,
+            questionType: c.questionType || 'likert'
           }))
         }
       },

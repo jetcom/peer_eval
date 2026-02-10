@@ -11,7 +11,7 @@ function TemplatesTab({ darkMode }) {
     name: '',
     description: '',
     target_type: 'individual',
-    criteria: [{ name: '', description: '', min_value: 1, max_value: 5 }]
+    criteria: [{ name: '', description: '', min_value: 1, max_value: 5, question_type: 'likert' }]
   });
   const [message, setMessage] = useState({ type: '', text: '' });
 
@@ -52,7 +52,8 @@ function TemplatesTab({ darkMode }) {
           description: c.description || null,
           order_index: i,
           min_value: parseInt(c.min_value) || 1,
-          max_value: parseInt(c.max_value) || 5
+          max_value: parseInt(c.max_value) || 5,
+          question_type: c.question_type || 'likert'
         }))
       };
 
@@ -63,7 +64,7 @@ function TemplatesTab({ darkMode }) {
         name: '',
         description: '',
         target_type: 'individual',
-        criteria: [{ name: '', description: '', min_value: 1, max_value: 5 }]
+        criteria: [{ name: '', description: '', min_value: 1, max_value: 5, question_type: 'likert' }]
       });
       fetchTemplates();
     } catch (err) {
@@ -112,7 +113,8 @@ function TemplatesTab({ darkMode }) {
           description: c.description || null,
           order_index: i,
           min_value: parseInt(c.min_value) || 1,
-          max_value: parseInt(c.max_value) || 5
+          max_value: parseInt(c.max_value) || 5,
+          question_type: c.question_type || 'likert'
         }))
       };
 
@@ -128,7 +130,7 @@ function TemplatesTab({ darkMode }) {
   const addCriterion = (setTemplate, template) => {
     setTemplate({
       ...template,
-      criteria: [...template.criteria, { name: '', description: '', min_value: 1, max_value: 5 }]
+      criteria: [...template.criteria, { name: '', description: '', min_value: 1, max_value: 5, question_type: 'likert' }]
     });
   };
 
@@ -306,40 +308,63 @@ function TemplatesTab({ darkMode }) {
             marginTop: '12px',
             padding: '10px 12px',
             background: darkMode ? '#252525' : '#f8f9fa',
-            borderRadius: '6px'
+            borderRadius: '6px',
+            flexWrap: 'wrap'
           }}>
-            <span style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#666', fontWeight: 500 }}>Rating Scale:</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="number"
-                value={criterion.min_value}
-                onChange={(e) => updateCriterion(setTemplate, template, index, 'min_value', e.target.value)}
+              <span style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#666', fontWeight: 500 }}>Type:</span>
+              <select
+                value={criterion.question_type || 'likert'}
+                onChange={(e) => updateCriterion(setTemplate, template, index, 'question_type', e.target.value)}
                 style={{
-                  width: '60px',
-                  textAlign: 'center',
+                  padding: '6px 10px',
+                  borderRadius: '4px',
                   background: darkMode ? '#0f0f0f' : '#fff',
                   border: `1px solid ${darkMode ? '#333' : '#ddd'}`,
                   color: darkMode ? '#e0e0e0' : '#333',
-                  padding: '6px',
-                  borderRadius: '4px'
+                  fontSize: '0.85rem'
                 }}
-              />
-              <span style={{ color: darkMode ? '#666' : '#999' }}>to</span>
-              <input
-                type="number"
-                value={criterion.max_value}
-                onChange={(e) => updateCriterion(setTemplate, template, index, 'max_value', e.target.value)}
-                style={{
-                  width: '60px',
-                  textAlign: 'center',
-                  background: darkMode ? '#0f0f0f' : '#fff',
-                  border: `1px solid ${darkMode ? '#333' : '#ddd'}`,
-                  color: darkMode ? '#e0e0e0' : '#333',
-                  padding: '6px',
-                  borderRadius: '4px'
-                }}
-              />
+              >
+                <option value="likert">Rating Scale</option>
+                <option value="open_response">Open Response</option>
+              </select>
             </div>
+            {(criterion.question_type || 'likert') === 'likert' && (
+              <>
+                <span style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#666', fontWeight: 500 }}>Scale:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="number"
+                    value={criterion.min_value}
+                    onChange={(e) => updateCriterion(setTemplate, template, index, 'min_value', e.target.value)}
+                    style={{
+                      width: '60px',
+                      textAlign: 'center',
+                      background: darkMode ? '#0f0f0f' : '#fff',
+                      border: `1px solid ${darkMode ? '#333' : '#ddd'}`,
+                      color: darkMode ? '#e0e0e0' : '#333',
+                      padding: '6px',
+                      borderRadius: '4px'
+                    }}
+                  />
+                  <span style={{ color: darkMode ? '#666' : '#999' }}>to</span>
+                  <input
+                    type="number"
+                    value={criterion.max_value}
+                    onChange={(e) => updateCriterion(setTemplate, template, index, 'max_value', e.target.value)}
+                    style={{
+                      width: '60px',
+                      textAlign: 'center',
+                      background: darkMode ? '#0f0f0f' : '#fff',
+                      border: `1px solid ${darkMode ? '#333' : '#ddd'}`,
+                      color: darkMode ? '#e0e0e0' : '#333',
+                      padding: '6px',
+                      borderRadius: '4px'
+                    }}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       ))}
@@ -465,7 +490,8 @@ function TemplatesTab({ darkMode }) {
                               name: c.name,
                               description: c.description || '',
                               min_value: c.min_value,
-                              max_value: c.max_value
+                              max_value: c.max_value,
+                              question_type: c.question_type || 'likert'
                             }))
                           });
                         }}
@@ -547,7 +573,7 @@ function TemplatesTab({ darkMode }) {
                             {c.description || '-'}
                           </td>
                           <td style={{ padding: '8px 12px' }}>
-                            {c.min_value} - {c.max_value}
+                            {(c.question_type || 'likert') === 'open_response' ? 'Text' : `${c.min_value} - ${c.max_value}`}
                           </td>
                         </tr>
                       ))}
@@ -641,7 +667,8 @@ function TemplatesTab({ darkMode }) {
                               name: c.name,
                               description: c.description || '',
                               min_value: c.min_value,
-                              max_value: c.max_value
+                              max_value: c.max_value,
+                              question_type: c.question_type || 'likert'
                             }))
                           });
                         }}
@@ -723,7 +750,7 @@ function TemplatesTab({ darkMode }) {
                             {c.description || '-'}
                           </td>
                           <td style={{ padding: '8px 12px' }}>
-                            {c.min_value} - {c.max_value}
+                            {(c.question_type || 'likert') === 'open_response' ? 'Text' : `${c.min_value} - ${c.max_value}`}
                           </td>
                         </tr>
                       ))}

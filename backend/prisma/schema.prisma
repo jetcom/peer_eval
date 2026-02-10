@@ -233,13 +233,14 @@ model EvalTemplate {
 }
 
 model EvalTemplateCriterion {
-  id          Int     @id @default(autoincrement())
-  templateId  Int     @map("template_id")
-  name        String
-  description String?
-  orderIndex  Int     @default(0) @map("order_index")
-  minValue    Int     @default(1) @map("min_value")
-  maxValue    Int     @default(5) @map("max_value")
+  id           Int     @id @default(autoincrement())
+  templateId   Int     @map("template_id")
+  name         String
+  description  String?
+  orderIndex   Int     @default(0) @map("order_index")
+  minValue     Int     @default(1) @map("min_value")
+  maxValue     Int     @default(5) @map("max_value")
+  questionType String  @default("likert") @map("question_type")
 
   template EvalTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -248,13 +249,14 @@ model EvalTemplateCriterion {
 
 // Custom criteria for phase-based classes
 model ClassEvalCriterion {
-  id          Int     @id @default(autoincrement())
-  classId     Int     @map("class_id")
-  name        String
-  description String?
-  orderIndex  Int     @default(0) @map("order_index")
-  minValue    Int     @default(1) @map("min_value")
-  maxValue    Int     @default(5) @map("max_value")
+  id           Int     @id @default(autoincrement())
+  classId      Int     @map("class_id")
+  name         String
+  description  String?
+  orderIndex   Int     @default(0) @map("order_index")
+  minValue     Int     @default(1) @map("min_value")
+  maxValue     Int     @default(5) @map("max_value")
+  questionType String  @default("likert") @map("question_type")
 
   class  Class                      @relation(fields: [classId], references: [id], onDelete: Cascade)
   scores EvaluationCriterionScore[]
@@ -318,13 +320,14 @@ model AssignmentEvalType {
 }
 
 model EvalTypeCriterion {
-  id          Int     @id @default(autoincrement())
-  evalTypeId  Int     @map("eval_type_id")
-  name        String
-  description String?
-  orderIndex  Int     @default(0) @map("order_index")
-  minValue    Int     @default(1) @map("min_value")
-  maxValue    Int     @default(5) @map("max_value")
+  id           Int     @id @default(autoincrement())
+  evalTypeId   Int     @map("eval_type_id")
+  name         String
+  description  String?
+  orderIndex   Int     @default(0) @map("order_index")
+  minValue     Int     @default(1) @map("min_value")
+  maxValue     Int     @default(5) @map("max_value")
+  questionType String  @default("likert") @map("question_type")
 
   evalType    AssignmentEvalType          @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
   scores      AssignmentEvaluationScore[]
@@ -355,10 +358,11 @@ model AssignmentEvaluation {
 }
 
 model AssignmentEvaluationScore {
-  id           Int @id @default(autoincrement())
-  evaluationId Int @map("evaluation_id")
-  criterionId  Int @map("criterion_id")
-  score        Int
+  id           Int     @id @default(autoincrement())
+  evaluationId Int     @map("evaluation_id")
+  criterionId  Int     @map("criterion_id")
+  score        Int?
+  textResponse String? @map("text_response")
 
   evaluation AssignmentEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
   criterion  EvalTypeCriterion    @relation(fields: [criterionId], references: [id], onDelete: Cascade)
@@ -389,10 +393,11 @@ model GroupEvaluation {
 }
 
 model GroupEvaluationScore {
-  id                Int @id @default(autoincrement())
-  groupEvaluationId Int @map("group_evaluation_id")
-  criterionId       Int @map("criterion_id")
-  score             Int
+  id                Int     @id @default(autoincrement())
+  groupEvaluationId Int     @map("group_evaluation_id")
+  criterionId       Int     @map("criterion_id")
+  score             Int?
+  textResponse      String? @map("text_response")
 
   groupEvaluation GroupEvaluation   @relation(fields: [groupEvaluationId], references: [id], onDelete: Cascade)
   criterion       EvalTypeCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)

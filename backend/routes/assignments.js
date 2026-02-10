@@ -50,7 +50,8 @@ const formatAssignment = (a) => ({
       description: c.description,
       order_index: c.orderIndex,
       min_value: c.minValue,
-      max_value: c.maxValue
+      max_value: c.maxValue,
+      question_type: c.questionType || 'likert'
     })) || []
   })) || []
 });
@@ -147,7 +148,8 @@ router.post('/', authenticateToken, async (req, res) => {
                 description: c.description || null,
                 orderIndex: c.order_index || idx,
                 minValue: c.min_value || 1,
-                maxValue: c.max_value || 5
+                maxValue: c.max_value || 5,
+                questionType: c.question_type || 'likert'
               }))
             } : undefined
           }))
@@ -335,7 +337,8 @@ router.get('/evaluations/my/:classId', authenticateToken, async (req, res) => {
               is_late: e.isLate === 1,
               scores: e.scores.map(s => ({
                 criterion_id: s.criterionId,
-                score: s.score
+                score: s.score,
+                text_response: s.textResponse || null
               }))
             })),
           group: groupEvals
@@ -350,7 +353,8 @@ router.get('/evaluations/my/:classId', authenticateToken, async (req, res) => {
               is_late: e.isLate === 1,
               scores: e.scores.map(s => ({
                 criterion_id: s.criterionId,
-                score: s.score
+                score: s.score,
+                text_response: s.textResponse || null
               }))
             }))
         }
@@ -420,11 +424,15 @@ router.post('/evaluations/individual', authenticateToken, async (req, res) => {
                 criterionId: score.criterion_id
               }
             },
-            update: { score: score.score },
+            update: {
+              score: score.score != null ? score.score : null,
+              textResponse: score.text_response || null
+            },
             create: {
               evaluationId: evaluation.id,
               criterionId: score.criterion_id,
-              score: score.score
+              score: score.score != null ? score.score : null,
+              textResponse: score.text_response || null
             }
           });
         }
@@ -442,7 +450,8 @@ router.post('/evaluations/individual', authenticateToken, async (req, res) => {
           scores: scores ? {
             create: scores.map(s => ({
               criterionId: s.criterion_id,
-              score: s.score
+              score: s.score != null ? s.score : null,
+              textResponse: s.text_response || null
             }))
           } : undefined
         }
@@ -464,7 +473,8 @@ router.post('/evaluations/individual', authenticateToken, async (req, res) => {
       is_late: result.isLate === 1,
       scores: result.scores.map(s => ({
         criterion_id: s.criterionId,
-        score: s.score
+        score: s.score,
+        text_response: s.textResponse || null
       }))
     });
   } catch (error) {
@@ -529,11 +539,15 @@ router.post('/evaluations/group', authenticateToken, async (req, res) => {
                 criterionId: score.criterion_id
               }
             },
-            update: { score: score.score },
+            update: {
+              score: score.score != null ? score.score : null,
+              textResponse: score.text_response || null
+            },
             create: {
               groupEvaluationId: evaluation.id,
               criterionId: score.criterion_id,
-              score: score.score
+              score: score.score != null ? score.score : null,
+              textResponse: score.text_response || null
             }
           });
         }
@@ -551,7 +565,8 @@ router.post('/evaluations/group', authenticateToken, async (req, res) => {
           scores: scores ? {
             create: scores.map(s => ({
               criterionId: s.criterion_id,
-              score: s.score
+              score: s.score != null ? s.score : null,
+              textResponse: s.text_response || null
             }))
           } : undefined
         }
@@ -573,7 +588,8 @@ router.post('/evaluations/group', authenticateToken, async (req, res) => {
       is_late: result.isLate === 1,
       scores: result.scores.map(s => ({
         criterion_id: s.criterionId,
-        score: s.score
+        score: s.score,
+        text_response: s.textResponse || null
       }))
     });
   } catch (error) {
@@ -694,6 +710,7 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
         }))
       );
 
+      const likertScores = e.scores.filter(s => (s.criterion.questionType || 'likert') === 'likert' && s.score != null);
       return {
         id: e.id,
         assignment_id: e.evalType.assignmentId,
@@ -712,10 +729,12 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
           criterion_id: s.criterionId,
           criterion_name: s.criterion.name,
           score: s.score,
-          max_value: s.criterion.maxValue
+          max_value: s.criterion.maxValue,
+          question_type: s.criterion.questionType || 'likert',
+          text_response: s.textResponse || null
         })),
-        avg_score: e.scores.length > 0
-          ? e.scores.reduce((sum, s) => sum + s.score, 0) / e.scores.length
+        avg_score: likertScores.length > 0
+          ? likertScores.reduce((sum, s) => sum + s.score, 0) / likertScores.length
           : null,
         attachments: attachmentsWithUrls
       };
@@ -734,6 +753,7 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
         }))
       );
 
+      const likertScores = e.scores.filter(s => (s.criterion.questionType || 'likert') === 'likert' && s.score != null);
       return {
         id: e.id,
         assignment_id: e.evalType.assignmentId,
@@ -752,10 +772,12 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
           criterion_id: s.criterionId,
           criterion_name: s.criterion.name,
           score: s.score,
-          max_value: s.criterion.maxValue
+          max_value: s.criterion.maxValue,
+          question_type: s.criterion.questionType || 'likert',
+          text_response: s.textResponse || null
         })),
-        avg_score: e.scores.length > 0
-          ? e.scores.reduce((sum, s) => sum + s.score, 0) / e.scores.length
+        avg_score: likertScores.length > 0
+          ? likertScores.reduce((sum, s) => sum + s.score, 0) / likertScores.length
           : null,
         attachments: attachmentsWithUrls
       };

@@ -157,23 +157,32 @@ function ReportsTab({
       downloadCSV(`${className.replace(/\s+/g, '_')}_assignment_scores.csv`, csvContent);
     };
 
-    // Export comments to CSV
+    // Export comments to CSV (includes open response text)
     const exportAssignmentCommentsCSV = () => {
       const className = selectedClassData?.name || 'class';
-      const headers = ['Student Last Name', 'Student First Name', 'Assignment', 'From', 'Comment'];
+      const headers = ['Student Last Name', 'Student First Name', 'Assignment', 'From', 'Comment', 'Open Responses'];
       const rows = [];
 
       studentSummaries.forEach(student => {
         assignments.forEach(assignment => {
-          const comments = student.assignmentScores[assignment.id]?.comments || [];
-          comments.forEach(comment => {
-            rows.push([
-              student.last_name,
-              student.first_name,
-              assignment.name,
-              comment.from,
-              comment.text
-            ]);
+          const assignmentEvals = individualEvals.filter(e => e.evaluatee_id === student.id && e.assignment_id === assignment.id);
+          assignmentEvals.forEach(evalItem => {
+            // Collect open response texts
+            const openResponses = (evalItem.scores || [])
+              .filter(s => s.question_type === 'open_response' && s.text_response)
+              .map(s => `${s.criterion_name}: ${s.text_response}`)
+              .join(' | ');
+
+            if (evalItem.comments || openResponses) {
+              rows.push([
+                student.last_name,
+                student.first_name,
+                assignment.name,
+                evalItem.evaluator_name,
+                evalItem.comments || '',
+                openResponses
+              ]);
+            }
           });
         });
       });

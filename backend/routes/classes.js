@@ -346,7 +346,8 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
                     description: c.description || null,
                     minValue: c.minValue || 1,
                     maxValue: c.maxValue || 5,
-                    orderIndex: c.orderIndex || k
+                    orderIndex: c.orderIndex || k,
+                    questionType: c.questionType || 'likert'
                   }
                 });
               }
@@ -1164,7 +1165,8 @@ router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, r
             description: criterion.description,
             orderIndex: criterion.orderIndex,
             minValue: criterion.minValue,
-            maxValue: criterion.maxValue
+            maxValue: criterion.maxValue,
+            questionType: criterion.questionType || 'likert'
           }
         });
       }
@@ -1213,7 +1215,8 @@ router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, r
                     description: criterion.description,
                     orderIndex: criterion.orderIndex,
                     minValue: criterion.minValue,
-                    maxValue: criterion.maxValue
+                    maxValue: criterion.maxValue,
+                    questionType: criterion.questionType || 'likert'
                   }
                 });
               }

@@ -112,7 +112,7 @@ function CriteriaStep({ darkMode, classData, updateClassData, templates }) {
                     fontSize: '0.8rem',
                     color: darkMode ? '#888' : '#888'
                   }}>
-                    {c.min_value}-{c.max_value}
+                    {(c.question_type || 'likert') === 'open_response' ? 'Text' : `${c.min_value}-${c.max_value}`}
                   </span>
                 </div>
               ))}

@@ -115,7 +115,11 @@ function AssignmentEvaluation() {
             const defaultScores = {};
             foundEvalType.criteria.forEach(c => {
               const existingScore = existing?.scores?.find(s => s.criterion_id === c.id);
-              defaultScores[c.id] = existingScore?.score ?? Math.floor((c.min_value + c.max_value) / 2);
+              if ((c.question_type || 'likert') === 'open_response') {
+                defaultScores[c.id] = { text: existingScore?.text_response || '' };
+              } else {
+                defaultScores[c.id] = existingScore?.score ?? Math.floor((c.min_value + c.max_value) / 2);
+              }
             });
 
             evalMap[member.id] = {
@@ -141,7 +145,11 @@ function AssignmentEvaluation() {
             const defaultScores = {};
             foundEvalType.criteria.forEach(c => {
               const existingScore = existing?.scores?.find(s => s.criterion_id === c.id);
-              defaultScores[c.id] = existingScore?.score ?? Math.floor((c.min_value + c.max_value) / 2);
+              if ((c.question_type || 'likert') === 'open_response') {
+                defaultScores[c.id] = { text: existingScore?.text_response || '' };
+              } else {
+                defaultScores[c.id] = existingScore?.score ?? Math.floor((c.min_value + c.max_value) / 2);
+              }
             });
 
             const targetId = `group_${targetGroup.id}`;
@@ -199,10 +207,12 @@ function AssignmentEvaluation() {
       const promises = [];
 
       Object.entries(evaluations).forEach(([key, evalData]) => {
-        const scores = Object.entries(evalData.scores).map(([criterionId, score]) => ({
-          criterion_id: parseInt(criterionId),
-          score
-        }));
+        const scores = Object.entries(evalData.scores).map(([criterionId, scoreVal]) => {
+          if (scoreVal && typeof scoreVal === 'object' && 'text' in scoreVal) {
+            return { criterion_id: parseInt(criterionId), score: null, text_response: scoreVal.text };
+          }
+          return { criterion_id: parseInt(criterionId), score: scoreVal, text_response: null };
+        });
 
         if (key.startsWith('group_')) {
           // Group evaluation
@@ -279,6 +289,19 @@ function AssignmentEvaluation() {
     }));
   };
 
+  const handleTextResponseChange = (targetId, criterionId, text) => {
+    setEvaluations(prev => ({
+      ...prev,
+      [targetId]: {
+        ...prev[targetId],
+        scores: {
+          ...prev[targetId]?.scores,
+          [criterionId]: { text }
+        }
+      }
+    }));
+  };
+
   const handleCommentsChange = (targetId, value) => {
     setEvaluations(prev => ({
       ...prev,
@@ -317,10 +340,12 @@ function AssignmentEvaluation() {
       const promiseEntries = [];
 
       Object.entries(evaluations).forEach(([key, evalData]) => {
-        const scores = Object.entries(evalData.scores).map(([criterionId, score]) => ({
-          criterion_id: parseInt(criterionId),
-          score
-        }));
+        const scores = Object.entries(evalData.scores).map(([criterionId, scoreVal]) => {
+          if (scoreVal && typeof scoreVal === 'object' && 'text' in scoreVal) {
+            return { criterion_id: parseInt(criterionId), score: null, text_response: scoreVal.text };
+          }
+          return { criterion_id: parseInt(criterionId), score: scoreVal, text_response: null };
+        });
 
         if (key.startsWith('group_')) {
           const groupId = parseInt(key.replace('group_', ''));
@@ -429,9 +454,20 @@ function AssignmentEvaluation() {
               ? 'Please evaluate each team member on the following criteria.'
               : 'Please evaluate each group on the following criteria.'}
           </p>
-          {evalType?.criteria && evalType.criteria.length > 0 && (
-            <p>Rate each criterion on a scale of {evalType.criteria[0].min_value} to {evalType.criteria[0].max_value}.</p>
-          )}
+          {evalType?.criteria && evalType.criteria.length > 0 && (() => {
+            const hasLikert = evalType.criteria.some(c => (c.question_type || 'likert') === 'likert');
+            const hasOpenResponse = evalType.criteria.some(c => c.question_type === 'open_response');
+            return (
+              <>
+                {hasLikert && (
+                  <p>Rate each rating criterion on a scale of {evalType.criteria.find(c => (c.question_type || 'likert') === 'likert').min_value} to {evalType.criteria.find(c => (c.question_type || 'likert') === 'likert').max_value}.</p>
+                )}
+                {hasOpenResponse && (
+                  <p>Provide written responses for open-ended questions.</p>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         {targets.length === 0 && evalType?.target_type === 'group' && (
@@ -471,28 +507,43 @@ function AssignmentEvaluation() {
                       <span className="criteria-description"> - {criterion.description}</span>
                     )}
                   </div>
-                  <div className="likert-scale">
-                    {Array.from(
-                      { length: criterion.max_value - criterion.min_value + 1 },
-                      (_, i) => criterion.min_value + i
-                    ).map(value => (
-                      <label key={value} className="likert-option">
-                        <input
-                          type="radio"
-                          name={`${targetId}-${criterion.id}`}
-                          value={value}
-                          checked={evaluations[targetId]?.scores?.[criterion.id] === value}
-                          onChange={(e) => handleScoreChange(targetId, criterion.id, e.target.value)}
-                          disabled={isReadOnly}
-                        />
-                        <span>{value}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="likert-labels">
-                    <span>{criterion.min_value} - Low</span>
-                    <span>{criterion.max_value} - High</span>
-                  </div>
+                  {(criterion.question_type || 'likert') === 'open_response' ? (
+                    <div style={{ marginTop: '8px' }}>
+                      <textarea
+                        value={evaluations[targetId]?.scores?.[criterion.id]?.text || ''}
+                        onChange={(e) => handleTextResponseChange(targetId, criterion.id, e.target.value)}
+                        placeholder={`Enter your response for "${criterion.name}"...`}
+                        disabled={isReadOnly}
+                        rows={3}
+                        style={{ width: '100%', resize: 'vertical' }}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="likert-scale">
+                        {Array.from(
+                          { length: criterion.max_value - criterion.min_value + 1 },
+                          (_, i) => criterion.min_value + i
+                        ).map(value => (
+                          <label key={value} className="likert-option">
+                            <input
+                              type="radio"
+                              name={`${targetId}-${criterion.id}`}
+                              value={value}
+                              checked={evaluations[targetId]?.scores?.[criterion.id] === value}
+                              onChange={(e) => handleScoreChange(targetId, criterion.id, e.target.value)}
+                              disabled={isReadOnly}
+                            />
+                            <span>{value}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="likert-labels">
+                        <span>{criterion.min_value} - Low</span>
+                        <span>{criterion.max_value} - High</span>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
 

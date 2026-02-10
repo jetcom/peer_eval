@@ -212,7 +212,7 @@ function EvaluationsTab({
                               <div style={{ marginBottom: '15px' }}>
                                 <strong>Scores:</strong>
                                 <div style={{ display: 'flex', gap: '15px', marginTop: '8px', flexWrap: 'wrap' }}>
-                                  {e.scores.map(s => (
+                                  {e.scores.filter(s => (s.question_type || 'likert') === 'likert').map(s => (
                                     <div key={s.criterion_id} style={{
                                       padding: '8px 12px',
                                       background: 'rgba(0,0,0,0.05)',
@@ -223,6 +223,25 @@ function EvaluationsTab({
                                     </div>
                                   ))}
                                 </div>
+                                {e.scores.some(s => s.question_type === 'open_response') && (
+                                  <div style={{ marginTop: '12px' }}>
+                                    <strong>Open Responses:</strong>
+                                    {e.scores.filter(s => s.question_type === 'open_response').map(s => (
+                                      <div key={s.criterion_id} style={{
+                                        marginTop: '8px',
+                                        padding: '10px 12px',
+                                        background: 'rgba(0,0,0,0.03)',
+                                        borderRadius: '4px',
+                                        fontSize: '0.9rem'
+                                      }}>
+                                        <span style={{ fontWeight: '500' }}>{s.criterion_name}:</span>
+                                        <div style={{ marginTop: '4px', whiteSpace: 'pre-wrap' }}>
+                                          {s.text_response || <span style={{ fontStyle: 'italic', color: '#888' }}>No response</span>}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
 
