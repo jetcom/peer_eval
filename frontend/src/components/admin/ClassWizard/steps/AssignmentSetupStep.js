@@ -6,13 +6,17 @@ const EVAL_TYPES = [
   { value: 'paper_review', label: 'Paper Review', desc: 'Upload papers, 1:1 peer review with annotations', group: 'paper', exclusive: true }
 ];
 
-function AssignmentSetupStep({ darkMode, classData, updateClassData }) {
+function AssignmentSetupStep({ darkMode, classData, updateClassData, templates = [] }) {
   const [newAssignment, setNewAssignment] = useState({
     name: '',
     eval_types: ['peer'],
     due_date: '',
-    due_time: '23:59'
+    due_time: '23:59',
+    template_ids: {}
   });
+
+  const individualTemplates = templates.filter(t => t.target_type === 'individual');
+  const groupTemplates = templates.filter(t => t.target_type === 'group');
 
   const assignments = classData.assignments || [];
 
@@ -29,18 +33,27 @@ function AssignmentSetupStep({ darkMode, classData, updateClassData }) {
       name: newAssignment.name.trim(),
       eval_types: newAssignment.eval_types,
       due_date: dueDate,
+      template_ids: { ...newAssignment.template_ids },
       order_index: assignments.length
     };
 
+    // Update class-level template defaults based on selections
+    const templateUpdates = {};
+    if (newAssignment.template_ids.peer) templateUpdates.peer_template_id = newAssignment.template_ids.peer;
+    if (newAssignment.template_ids.audience) templateUpdates.audience_template_id = newAssignment.template_ids.audience;
+    if (newAssignment.template_ids.paper_review) templateUpdates.paper_review_template_id = newAssignment.template_ids.paper_review;
+
     updateClassData({
-      assignments: [...assignments, assignment]
+      assignments: [...assignments, assignment],
+      ...templateUpdates
     });
 
     setNewAssignment({
       name: '',
       eval_types: ['peer'],
       due_date: '',
-      due_time: '23:59'
+      due_time: '23:59',
+      template_ids: {}
     });
   };
 
@@ -258,6 +271,72 @@ function AssignmentSetupStep({ darkMode, classData, updateClassData }) {
           </div>
         </div>
 
+        {/* Inline template selection per eval type */}
+        {templates.length > 0 && newAssignment.eval_types.length > 0 && (
+          <div className="form-group" style={{ marginTop: '15px', marginBottom: '15px' }}>
+            <label>Evaluation Templates</label>
+            <small style={{
+              display: 'block',
+              marginBottom: '10px',
+              color: darkMode ? '#888' : '#888'
+            }}>
+              Choose a template for each evaluation type
+            </small>
+            {newAssignment.eval_types.map(evalType => {
+              const isGroup = evalType === 'audience';
+              const templateOptions = isGroup ? groupTemplates : individualTemplates;
+              const classDefault = evalType === 'audience'
+                ? classData.audience_template_id
+                : (evalType === 'paper_review' ? classData.paper_review_template_id : classData.peer_template_id);
+              const selectedId = newAssignment.template_ids[evalType] || classDefault || '';
+              const selectedTemplate = selectedId ? templates.find(t => t.id === selectedId) : null;
+
+              return (
+                <div key={evalType} style={{ marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{
+                      fontSize: '0.85rem',
+                      fontWeight: 500,
+                      minWidth: '130px',
+                      color: darkMode ? '#ccc' : '#333'
+                    }}>
+                      {EVAL_TYPES.find(t => t.value === evalType)?.label || evalType}:
+                    </span>
+                    <select
+                      value={selectedId}
+                      onChange={(e) => {
+                        const val = e.target.value ? parseInt(e.target.value) : null;
+                        setNewAssignment({
+                          ...newAssignment,
+                          template_ids: { ...newAssignment.template_ids, [evalType]: val }
+                        });
+                      }}
+                      style={{ flex: 1, maxWidth: '300px' }}
+                    >
+                      <option value="">-- Select template --</option>
+                      {templateOptions.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}{t.id === classDefault ? ' (class default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {selectedTemplate && selectedTemplate.criteria && (
+                    <div style={{
+                      marginLeft: '140px',
+                      marginTop: '4px',
+                      fontSize: '0.8rem',
+                      color: darkMode ? '#888' : '#888'
+                    }}>
+                      {selectedTemplate.criteria.length} criteria: {selectedTemplate.criteria.map(c => c.name).join(', ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <button
           type="button"
           className="btn btn-primary"
@@ -358,6 +437,22 @@ function AssignmentSetupStep({ darkMode, classData, updateClassData }) {
                     </span>
                   ))}
                 </div>
+                {assignment.template_ids && Object.keys(assignment.template_ids).length > 0 && (
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: darkMode ? '#888' : '#888',
+                    marginBottom: '8px'
+                  }}>
+                    {Object.entries(assignment.template_ids).map(([et, tid]) => {
+                      const tmpl = templates.find(t => t.id === tid);
+                      return tmpl ? (
+                        <div key={et}>
+                          {EVAL_TYPES.find(t => t.value === et)?.label || et}: {tmpl.name}
+                        </div>
+                      ) : null;
+                    })}
+                  </div>
+                )}
                 <div className="form-group" style={{ margin: 0 }}>
                   <label style={{ fontSize: '0.85rem' }}>Due Date</label>
                   <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>

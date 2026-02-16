@@ -242,23 +242,34 @@ function DueDatesStep({ darkMode, classData, updateClassData }) {
                 {assignment.name}
               </span>
               <input
-                type="datetime-local"
-                value={assignment.due_date || ''}
+                type="date"
+                value={(assignment.due_date || '').split('T')[0]}
                 onChange={(e) => {
-                  const value = e.target.value;
-                  const dueDate = value ? (value.includes('T') ? value : `${value}T23:59`) : null;
-                  const assignments = classData.assignments.map(a =>
+                  const date = e.target.value;
+                  const currentTime = (assignment.due_date || '').split('T')[1] || '23:59';
+                  const dueDate = date ? `${date}T${currentTime}` : null;
+                  const updatedAssignments = classData.assignments.map(a =>
                     a.id === assignment.id ? { ...a, due_date: dueDate } : a
                   );
-                  updateClassData({ assignments });
+                  updateClassData({ assignments: updatedAssignments });
                 }}
                 style={{ width: 'auto' }}
               />
-              {!assignment.due_date && (
-                <span style={{ fontSize: '0.8rem', color: darkMode ? '#888' : '#888', marginLeft: '8px' }}>
-                  (defaults to 11:59 PM)
-                </span>
-              )}
+              <input
+                type="time"
+                value={(assignment.due_date || 'T23:59').split('T')[1] || '23:59'}
+                onChange={(e) => {
+                  const time = e.target.value || '23:59';
+                  const currentDate = (assignment.due_date || '').split('T')[0];
+                  if (currentDate) {
+                    const updatedAssignments = classData.assignments.map(a =>
+                      a.id === assignment.id ? { ...a, due_date: `${currentDate}T${time}` } : a
+                    );
+                    updateClassData({ assignments: updatedAssignments });
+                  }
+                }}
+                style={{ width: 'auto' }}
+              />
               {assignment.due_date && (
                 <button
                   type="button"

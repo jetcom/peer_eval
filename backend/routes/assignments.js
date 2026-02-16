@@ -240,6 +240,72 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// Apply a template to an existing eval type (replaces criteria)
+router.put('/eval-type/:evalTypeId/apply-template', authenticateToken, async (req, res) => {
+  try {
+    const evalTypeId = parseInt(req.params.evalTypeId);
+    const { template_id } = req.body;
+
+    if (req.user.role !== 'admin' && req.user.role !== 'teacher') {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+
+    // Get the template with criteria
+    const template = await prisma.evalTemplate.findUnique({
+      where: { id: template_id },
+      include: {
+        criteria: { orderBy: { orderIndex: 'asc' } }
+      }
+    });
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Delete existing criteria for this eval type
+    await prisma.evalTypeCriterion.deleteMany({
+      where: { evalTypeId }
+    });
+
+    // Create new criteria from template
+    for (const c of template.criteria) {
+      await prisma.evalTypeCriterion.create({
+        data: {
+          evalTypeId,
+          name: c.name,
+          description: c.description || null,
+          orderIndex: c.orderIndex,
+          minValue: c.minValue,
+          maxValue: c.maxValue,
+          questionType: c.questionType || 'likert'
+        }
+      });
+    }
+
+    // Re-fetch the eval type with new criteria
+    const updatedEvalType = await prisma.assignmentEvalType.findUnique({
+      where: { id: evalTypeId },
+      include: {
+        criteria: { orderBy: { orderIndex: 'asc' } },
+        assignment: {
+          include: {
+            evalTypes: {
+              include: {
+                criteria: { orderBy: { orderIndex: 'asc' } }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    res.json(formatAssignment(updatedEvalType.assignment));
+  } catch (error) {
+    console.error('Error applying template:', error);
+    res.status(500).json({ error: 'Failed to apply template' });
+  }
+});
+
 // ==========================================
 // ASSIGNMENT EVALUATIONS ENDPOINTS
 // ==========================================

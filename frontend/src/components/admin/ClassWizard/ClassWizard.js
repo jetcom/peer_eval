@@ -8,7 +8,7 @@ import DueDatesStep from './steps/DueDatesStep';
 import OptionsStep from './steps/OptionsStep';
 
 const STEPS_PHASES = ['type', 'basic', 'phases', 'criteria', 'dueDates', 'options'];
-const STEPS_ASSIGNMENTS = ['type', 'basic', 'assignments', 'criteria', 'options'];
+const STEPS_ASSIGNMENTS = ['type', 'basic', 'assignments', 'options'];
 
 const STEP_TITLES = {
   type: 'Class Type',
@@ -154,7 +154,7 @@ function ClassWizard({ darkMode, currentUser, onSubmit, onClose }) {
       case 'phases':
         return <PhaseConfigStep {...commonProps} />;
       case 'assignments':
-        return <AssignmentSetupStep {...commonProps} />;
+        return <AssignmentSetupStep {...commonProps} templates={templates} />;
       case 'criteria':
         return <CriteriaStep {...commonProps} />;
       case 'dueDates':

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { SHOW_GROUPS } from '../config/featureFlags';
 
 function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }) {
   const navigate = useNavigate();
@@ -116,7 +117,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
   return (
     <>
       {/* Group Info */}
-      {assignmentData.group && (
+      {SHOW_GROUPS && assignmentData.group && (
         <div className="card">
           <h2>Your Group: {assignmentData.group.name}</h2>
           <p>Members:</p>

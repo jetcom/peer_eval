@@ -250,6 +250,17 @@ function TeacherDashboard() {
     }
   };
 
+  const handleRemoveStudent = async (userId, studentName) => {
+    if (!window.confirm(`Remove ${studentName} from this class? This will unenroll them but not delete their account.`)) return;
+    try {
+      await axios.delete(`/api/classes/${selectedClass}/students/${userId}`);
+      setMessage({ type: 'success', text: `${studentName} removed from class.` });
+      fetchClassData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove student' });
+    }
+  };
+
   const handleResetPassword = async (userId, studentName) => {
     if (!window.confirm(`Send a password reset email to ${studentName}?`)) return;
 
@@ -649,10 +660,17 @@ function TeacherDashboard() {
                                   </button>
                                   <button
                                     className="btn btn-secondary"
-                                    style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                                    style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
                                     onClick={() => handleResetPassword(student.id, fullName)}
                                   >
                                     Reset Password
+                                  </button>
+                                  <button
+                                    className="btn btn-danger"
+                                    style={{ fontSize: '0.8rem', padding: '4px 8px' }}
+                                    onClick={() => handleRemoveStudent(student.id, fullName)}
+                                  >
+                                    Remove
                                   </button>
                                 </td>
                               </tr>
@@ -712,6 +730,12 @@ function TeacherDashboard() {
                                   onClick={() => handleResetPassword(student.id, fullName)}
                                 >
                                   Reset Password
+                                </button>
+                                <button
+                                  className="btn btn-danger"
+                                  onClick={() => handleRemoveStudent(student.id, fullName)}
+                                >
+                                  Remove
                                 </button>
                               </div>
                             </div>

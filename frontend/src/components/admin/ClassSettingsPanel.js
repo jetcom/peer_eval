@@ -67,6 +67,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
   const [templates, setTemplates] = useState([]);
   const [newAssignment, setNewAssignment] = useState({ name: '', eval_types: ['peer'], due_date: '', due_time: '23:59', template_overrides: {} });
   const [savingAssignment, setSavingAssignment] = useState(false);
+  const [applyingTemplate, setApplyingTemplate] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
   const assignmentListRef = useRef(null);
   const [reminderSchedules, setReminderSchedules] = useState([]);
@@ -513,6 +514,29 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
     }
   };
 
+  const handleApplyTemplate = async (evalTypeId, templateId, assignmentId) => {
+    if (!templateId) return;
+    setApplyingTemplate(evalTypeId);
+    try {
+      const res = await axios.put(`/api/assignments/eval-type/${evalTypeId}/apply-template`, {
+        template_id: parseInt(templateId)
+      });
+      // Update the assignment in local state with refreshed data
+      const assignments = editingClass.assignments || [];
+      setEditingClass({
+        ...editingClass,
+        assignments: assignments.map(a => a.id === assignmentId ? res.data : a)
+      });
+      setSuccessMessage('Template applied successfully');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err) {
+      console.error('Failed to apply template:', err);
+      setSuccessMessage('');
+    } finally {
+      setApplyingTemplate(null);
+    }
+  };
+
   const handleDeleteAssignment = async (assignmentId) => {
     if (!window.confirm('Delete this assignment? This cannot be undone.')) return;
 
@@ -844,20 +868,49 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
                       </span>
                     ))}
                   </div>
-                  {/* Show criteria/rubric for each eval type */}
-                  {(assignment.eval_types || []).filter(et => typeof et === 'object' && et.criteria && et.criteria.length > 0).map(et => (
-                    <div key={et.id} style={{
-                      fontSize: '0.8rem',
-                      color: darkMode ? '#a0a0a0' : '#666',
-                      marginBottom: '8px',
-                      padding: '8px 10px',
-                      background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-                      borderRadius: '4px'
-                    }}>
-                      <span style={{ fontWeight: 500 }}>{et.name} rubric:</span>{' '}
-                      {et.criteria.map(c => c.name).join(', ')}
-                    </div>
-                  ))}
+                  {/* Template picker and criteria display for each eval type */}
+                  {(assignment.eval_types || []).filter(et => typeof et === 'object').map(et => {
+                    const isGroup = et.target_type === 'group' || et.eval_type === 'audience';
+                    const templateOptions = templates.filter(t => t.target_type === (isGroup ? 'group' : 'individual'));
+                    return (
+                      <div key={et.id} style={{
+                        fontSize: '0.8rem',
+                        color: darkMode ? '#a0a0a0' : '#666',
+                        marginBottom: '8px',
+                        padding: '8px 10px',
+                        background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                        borderRadius: '4px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 500 }}>{et.name} template:</span>
+                          <select
+                            value=""
+                            onChange={(e) => handleApplyTemplate(et.id, e.target.value, assignment.id)}
+                            disabled={applyingTemplate === et.id}
+                            style={{
+                              fontSize: '0.8rem',
+                              padding: '2px 6px',
+                              borderRadius: '3px',
+                              border: `1px solid ${darkMode ? '#444' : '#ccc'}`,
+                              background: darkMode ? '#2a2a2a' : '#fff',
+                              color: darkMode ? '#ccc' : '#333',
+                              cursor: 'pointer'
+                            }}
+                          >
+                            <option value="">{applyingTemplate === et.id ? 'Applying...' : 'Change template...'}</option>
+                            {templateOptions.map(t => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        {et.criteria && et.criteria.length > 0 && (
+                          <div style={{ marginTop: '4px' }}>
+                            Criteria: {et.criteria.map(c => c.name).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Due Date</label>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>

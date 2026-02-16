@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ImageUpload from '../components/ImageUpload';
+import { SHOW_GROUPS } from '../config/featureFlags';
 
 const CRITERIA = [
   { key: 'contribution', label: 'Contribution', description: 'Level of contribution to the project' },
@@ -571,9 +572,9 @@ function Evaluation() {
                 <>Instructor: {group.class.teacher_name}</>
               )}
             </p>
-            <p style={{ color: darkMode ? '#a0a0a0' : '#666', margin: 0 }}>
+            {SHOW_GROUPS && <p style={{ color: darkMode ? '#a0a0a0' : '#666', margin: 0 }}>
               Group: {group.name}
-            </p>
+            </p>}
           </div>
         )}
 

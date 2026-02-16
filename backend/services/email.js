@@ -449,6 +449,40 @@ async function sendWelcomeEmail({ user, temporaryPassword }) {
 }
 
 /**
+ * Send enrollment notification to an existing user added to a class
+ */
+async function sendClassEnrollmentEmail({ user, className }) {
+  const { firstName, email } = user;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">You've Been Enrolled in a New Class</h2>
+      <p>Hi ${firstName},</p>
+      <p>You have been enrolled in <strong>${className}</strong> on PeerEvals.</p>
+
+      <p>Log in to view your class and any upcoming evaluations.</p>
+
+      <p>
+        <a href="${APP_URL}/login"
+           style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+          Go to PeerEvals
+        </a>
+      </p>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — The PeerEvals Team
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: email,
+    subject: `PeerEvals - You've been enrolled in ${className}`,
+    html,
+  });
+}
+
+/**
  * Build reminder email HTML for a student
  */
 function buildReminderEmailHtml({ student, className, dueDate, assignmentName, evaluationsRemaining }) {
@@ -683,6 +717,7 @@ module.exports = {
   sendPasswordReset,
   sendForgotPasswordEmail,
   sendWelcomeEmail,
+  sendClassEnrollmentEmail,
   sendEvaluationConfirmation,
   notifyTeacherOfNudges,
 };
