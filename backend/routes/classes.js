@@ -258,13 +258,18 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
 
     // Create assignments if provided (for assignment-mode classes)
     if (assignments && Array.isArray(assignments) && assignments.length > 0) {
-      // Fetch templates to get criteria
-      const templateIds = [peer_template_id, audience_template_id, self_template_id, paper_review_template_id].filter(Boolean);
+      // Fetch templates to get criteria — include both class-level and per-assignment template IDs
+      const templateIds = new Set([peer_template_id, audience_template_id, self_template_id, paper_review_template_id].filter(Boolean));
+      for (const a of assignments) {
+        if (a.template_ids) {
+          Object.values(a.template_ids).filter(Boolean).forEach(id => templateIds.add(id));
+        }
+      }
       let templateMap = {};
 
-      if (templateIds.length > 0) {
+      if (templateIds.size > 0) {
         const templates = await prisma.evalTemplate.findMany({
-          where: { id: { in: templateIds } },
+          where: { id: { in: [...templateIds] } },
           include: { criteria: { orderBy: { orderIndex: 'asc' } } }
         });
         templateMap = templates.reduce((acc, t) => { acc[t.id] = t; return acc; }, {});
@@ -300,16 +305,20 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
             const evalTypeStr = typeof evalType === 'string' ? evalType : evalType.eval_type;
 
             // Determine which template to use for criteria
-            let template = null;
-            if (evalTypeStr === 'audience') {
-              template = templateMap[audience_template_id] || defaultAudienceTemplate;
-            } else if (evalTypeStr === 'self') {
-              template = templateMap[self_template_id] || templateMap[peer_template_id] || defaultPeerTemplate;
-            } else if (evalTypeStr === 'paper_review') {
-              template = templateMap[paper_review_template_id] || templateMap[peer_template_id] || defaultPeerTemplate;
-            } else {
-              // peer
-              template = templateMap[peer_template_id] || defaultPeerTemplate;
+            // Check per-assignment template_ids first, then fall back to class-level defaults
+            const perAssignmentId = assignment.template_ids && assignment.template_ids[evalTypeStr];
+            let template = perAssignmentId ? templateMap[perAssignmentId] : null;
+            if (!template) {
+              if (evalTypeStr === 'audience') {
+                template = templateMap[audience_template_id] || defaultAudienceTemplate;
+              } else if (evalTypeStr === 'self') {
+                template = templateMap[self_template_id] || templateMap[peer_template_id] || defaultPeerTemplate;
+              } else if (evalTypeStr === 'paper_review') {
+                template = templateMap[paper_review_template_id] || templateMap[peer_template_id] || defaultPeerTemplate;
+              } else {
+                // peer
+                template = templateMap[peer_template_id] || defaultPeerTemplate;
+              }
             }
 
             const createdEvalType = await prisma.assignmentEvalType.create({
@@ -797,11 +806,43 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       }
     }
 
+    // Send emails if requested
+    const sendEmails = req.body?.send_emails !== 'false' && req.body?.send_emails !== false;
+    let emailsSent = 0;
+    if (sendEmails && results.length > 0) {
+      // Welcome emails for new users (with credentials)
+      for (const cred of credentials) {
+        try {
+          await emailService.sendWelcomeEmail({
+            user: { firstName: results.find(r => r.email === cred.email)?.first_name || '', email: cred.email, role: 'student' },
+            temporaryPassword: cred.password
+          });
+          emailsSent++;
+        } catch (emailErr) {
+          console.error(`Failed to send welcome email to ${cred.email}:`, emailErr.message);
+        }
+      }
+      // Enrollment notifications for existing users
+      const existingUsers = results.filter(r => r.existing);
+      for (const user of existingUsers) {
+        try {
+          await emailService.sendClassEnrollmentEmail({
+            user: { firstName: user.first_name, email: user.email },
+            className: classData.name
+          });
+          emailsSent++;
+        } catch (emailErr) {
+          console.error(`Failed to send enrollment email to ${user.email}:`, emailErr.message);
+        }
+      }
+    }
+
     res.json({
       created: results.filter(r => !r.existing).length,
       enrolled: results.length,
       errors,
-      credentials
+      credentials,
+      emails_sent: emailsSent
     });
   } catch (err) {
     console.error('CSV upload error:', err);
@@ -961,6 +1002,105 @@ router.post('/:id/students/:userId/reset-password', authenticateToken, requireTe
   } catch (err) {
     console.error('Reset student password error:', err);
     res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// Send invite/enrollment email to a student in a class
+router.post('/:id/students/:userId/send-invite', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+    const userId = parseInt(req.params.userId);
+
+    // Check ownership
+    const where = { id: classId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
+    }
+
+    const classData = await prisma.class.findFirst({ where });
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found or not authorized' });
+    }
+
+    // Check if student is enrolled
+    const enrollment = await prisma.classEnrollment.findUnique({
+      where: { classId_userId: { classId, userId } }
+    });
+    if (!enrollment) {
+      return res.status(404).json({ error: 'Student not enrolled in this class' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true }
+    });
+
+    await emailService.sendClassEnrollmentEmail({
+      user: { firstName: user.firstName, email: user.email },
+      className: classData.name
+    });
+
+    res.json({ message: `Enrollment email sent to ${user.email}` });
+  } catch (err) {
+    console.error('Send invite error:', err);
+    res.status(500).json({ error: 'Failed to send invite email' });
+  }
+});
+
+// Bulk send invite/enrollment emails to all students in a class
+router.post('/:id/students/send-invites', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+
+    // Check ownership
+    const where = { id: classId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
+    }
+
+    const classData = await prisma.class.findFirst({ where });
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found or not authorized' });
+    }
+
+    // Get all enrolled students
+    const enrollments = await prisma.classEnrollment.findMany({
+      where: { classId },
+      include: {
+        user: {
+          select: { id: true, email: true, firstName: true, role: true }
+        }
+      }
+    });
+
+    const students = enrollments
+      .filter(e => e.user.role === 'student')
+      .map(e => e.user);
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const student of students) {
+      try {
+        await emailService.sendClassEnrollmentEmail({
+          user: { firstName: student.firstName, email: student.email },
+          className: classData.name
+        });
+        sent++;
+        // Small delay to avoid rate limiting
+        if (sent % 5 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (err) {
+        console.error(`Failed to send invite to ${student.email}:`, err);
+        failed++;
+      }
+    }
+
+    res.json({ message: `Sent ${sent} invite email${sent !== 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''}`, sent, failed });
+  } catch (err) {
+    console.error('Bulk send invite error:', err);
+    res.status(500).json({ error: 'Failed to send invite emails' });
   }
 });
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { SHOW_GROUPS } from '../../config/featureFlags';
 
 function QuickStats({
   selectedClass,
@@ -225,15 +226,17 @@ function QuickStats({
         <div className="admin-stat-sublabel">{stats.completed} / {stats.expected} evals</div>
       </div>
 
-      <div
-        className="admin-stat-card purple clickable"
-        onClick={() => onNavigate && onNavigate('groups')}
-        title="View Groups tab"
-      >
-        <div className="admin-stat-value">{classGroups.length}</div>
-        <div className="admin-stat-label">Groups</div>
-        <div className="admin-stat-sublabel">in this class</div>
-      </div>
+      {SHOW_GROUPS && (
+        <div
+          className="admin-stat-card purple clickable"
+          onClick={() => onNavigate && onNavigate('groups')}
+          title="View Groups tab"
+        >
+          <div className="admin-stat-value">{classGroups.length}</div>
+          <div className="admin-stat-label">Groups</div>
+          <div className="admin-stat-sublabel">in this class</div>
+        </div>
+      )}
 
       <div
         className={`admin-stat-card clickable ${incompleteCount === 0 ? 'success' : incompleteCount > studentsOnly.length / 2 ? 'danger' : 'warning'}`}

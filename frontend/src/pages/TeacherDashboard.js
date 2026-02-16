@@ -7,6 +7,7 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 import TemplatesTab from '../components/admin/TemplatesTab';
+import { SHOW_GROUPS } from '../config/featureFlags';
 
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -28,6 +29,8 @@ function TeacherDashboard() {
   const [activeTab, setActiveTab] = useState('progress');
   const [editingClass, setEditingClass] = useState(null);
   const [topLevelView, setTopLevelView] = useState('classes'); // 'classes' or 'templates'
+  const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -111,18 +114,66 @@ function TeacherDashboard() {
     }
   };
 
-  const handleEditClass = (classData) => {
-    // Fetch full class data for editing
-    axios.get(`/api/classes/${classData.id}`).then(res => {
-      setEditingClass(res.data);
-    }).catch(err => {
+  const handleEditClass = async (classData) => {
+    try {
+      // Fetch full class details, instructors, and enrolled users
+      const [classRes, instructorsRes, studentsRes] = await Promise.all([
+        axios.get(`/api/classes/${classData.id}`),
+        axios.get(`/api/classes/${classData.id}/instructors`),
+        axios.get(`/api/classes/${classData.id}/students`)
+      ]);
+
+      // Filter enrolled users to only teachers/admins
+      const enrolledTeachers = studentsRes.data.filter(u => u.role === 'teacher' || u.role === 'admin');
+
+      // Fetch assignments if this is an assignment-based class
+      let assignments = [];
+      if (classRes.data.evaluation_mode === 'assignments') {
+        try {
+          const assignmentsRes = await axios.get(`/api/assignments/class/${classData.id}`);
+          assignments = assignmentsRes.data;
+        } catch (err) {
+          console.error('Failed to fetch assignments:', err);
+        }
+      }
+
+      setEditingClass({
+        ...classRes.data,
+        has_final_evaluation: classRes.data.has_final_evaluation === 1 || classRes.data.has_final_evaluation === true,
+        allow_late: classRes.data.allow_late === 1 || classRes.data.allow_late === true,
+        include_self_eval: classRes.data.include_self_eval === 1 || classRes.data.include_self_eval === true,
+        instructor_ids: instructorsRes.data.map(i => i.id),
+        enrolledTeachers: enrolledTeachers,
+        assignments: assignments
+      });
+    } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load class settings' });
-    });
+    }
   };
 
-  const handleUpdateClass = async () => {
+  const handleUpdateClass = async (e) => {
+    if (e) e.preventDefault();
     try {
-      await axios.put(`/api/classes/${editingClass.id}`, editingClass);
+      const classData = {
+        name: editingClass.name,
+        section: editingClass.section || null,
+        semester: editingClass.semester || null,
+        evaluation_mode: editingClass.evaluation_mode || 'phases',
+        num_phases: editingClass.num_phases || 3,
+        has_final_evaluation: editingClass.has_final_evaluation ? 1 : 0,
+        due_date_timezone: editingClass.due_date_timezone || null,
+        instructor_ids: editingClass.instructor_ids || [],
+        phase_due_dates: editingClass.phase_due_dates || {},
+        min_comment_words: editingClass.min_comment_words || 0,
+        allow_late: editingClass.allow_late ? 1 : 0,
+        late_window_hours: editingClass.allow_late ? (editingClass.late_window_hours || 48) : 0,
+        include_self_eval: editingClass.include_self_eval ? 1 : 0,
+        peer_template_id: editingClass.peer_template_id || null,
+        audience_template_id: editingClass.audience_template_id || null,
+        self_template_id: editingClass.self_template_id || null,
+        paper_review_template_id: editingClass.paper_review_template_id || null
+      };
+      await axios.put(`/api/classes/${editingClass.id}`, classData);
       setMessage({ type: 'success', text: 'Class updated successfully' });
       setEditingClass(null);
       fetchClasses();
@@ -152,13 +203,15 @@ function TeacherDashboard() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('send_emails', sendEmailsOnUpload);
 
     try {
       const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData);
-      setMessage({
-        type: 'success',
-        text: `Uploaded: ${res.data.enrolled} enrolled, ${res.data.created} new users created`
-      });
+      let messageText = `Uploaded: ${res.data.enrolled} enrolled, ${res.data.created} new users created.`;
+      if (res.data.emails_sent > 0) {
+        messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
+      }
+      setMessage({ type: 'success', text: messageText });
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload' });
@@ -174,6 +227,26 @@ function TeacherDashboard() {
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to add to group' });
+    }
+  };
+
+  const handleSendInvite = async (userId, studentName) => {
+    try {
+      await axios.post(`/api/classes/${selectedClass}/students/${userId}/send-invite`);
+      setMessage({ type: 'success', text: `Enrollment email sent to ${studentName}.` });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to send invite' });
+    }
+  };
+
+  const handleSendAllInvites = async () => {
+    const studentCount = students.filter(s => s.role === 'student').length;
+    if (!window.confirm(`Send enrollment/invite emails to all ${studentCount} students in this class?`)) return;
+    try {
+      const res = await axios.post(`/api/classes/${selectedClass}/students/send-invites`);
+      setMessage({ type: 'success', text: res.data.message });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to send invites' });
     }
   };
 
@@ -209,6 +282,9 @@ function TeacherDashboard() {
           <button className="theme-toggle" onClick={toggleDarkMode}>
             {darkMode ? 'Light' : 'Dark'}
           </button>
+          <button className="btn btn-secondary" onClick={() => setShowHelp(true)}>
+            Help
+          </button>
           <button className="btn btn-primary" onClick={() => navigate('/dashboard')}>
             View as Student
           </button>
@@ -217,6 +293,74 @@ function TeacherDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Help Modal */}
+      {showHelp && (
+        <div className="modal-overlay" onClick={() => setShowHelp(false)}>
+          <div
+            className={`modal ${darkMode ? 'dark' : ''}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '700px', maxHeight: '85vh', overflow: 'auto' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0 }}>Teacher Dashboard Help</h2>
+              <button
+                onClick={() => setShowHelp(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: darkMode ? '#fff' : '#000' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ lineHeight: '1.7' }}>
+              <h3 style={{ color: '#3498db', marginTop: 0 }}>Getting Started</h3>
+              <ol style={{ paddingLeft: '20px' }}>
+                <li><strong>Create a class</strong> using the form on this page</li>
+                <li><strong>Upload students</strong> via CSV (Students tab) or add them individually</li>
+                <li><strong>Set up evaluation templates</strong> (Templates tab) to define your rubric criteria</li>
+                <li><strong>Configure class settings</strong> (click Settings on your class) to assign templates and set due dates</li>
+              </ol>
+
+              <h3 style={{ color: '#3498db' }}>Inviting Students</h3>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li><strong>Send All Invites:</strong> Go to the <strong>Students</strong> tab and click the <strong>"Send All Invites"</strong> button to email all enrolled students with login instructions</li>
+                <li><strong>Individual invite:</strong> Click <strong>"Send Invite"</strong> next to any student's name</li>
+                <li><strong>On CSV upload:</strong> Check the "Send notification emails" checkbox before uploading to automatically email new students</li>
+              </ul>
+
+              <h3 style={{ color: '#3498db' }}>Managing Assignments</h3>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li><strong>Create assignments:</strong> Click <strong>Settings</strong> on your class, go to the <strong>Assignments</strong> tab, and add assignments with evaluation types and due dates</li>
+                <li><strong>Delete assignments:</strong> In Settings &gt; Assignments, click the <strong>Delete</strong> button on any assignment</li>
+                <li><strong>Assign rubric/template:</strong> When creating an assignment, each eval type has a <strong>template dropdown</strong> to select which rubric to use. You can also set a class-wide default in Settings &gt; Templates</li>
+              </ul>
+
+              <h3 style={{ color: '#3498db' }}>Managing Templates (Rubrics)</h3>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li>Switch to the <strong>Templates</strong> view (top tab) to create, edit, or delete evaluation templates</li>
+                <li>Templates define the criteria students use to evaluate each other</li>
+                <li>System templates cannot be deleted but can be cloned and modified</li>
+              </ul>
+
+              <h3 style={{ color: '#3498db' }}>Tracking Progress</h3>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li>The <strong>Progress</strong> tab shows which students have completed their evaluations</li>
+                <li>Use the <strong>"Who Needs a Nudge?"</strong> section to select students and send reminder emails</li>
+              </ul>
+
+              <h3 style={{ color: '#3498db' }}>Other Actions</h3>
+              <ul style={{ paddingLeft: '20px' }}>
+                <li><strong>Reset student password:</strong> Click <strong>"Reset Password"</strong> next to their name in the Students tab</li>
+                <li><strong>View as student:</strong> Click <strong>"View as Student"</strong> in the header, then select a student to see their dashboard</li>
+              </ul>
+            </div>
+
+            <div style={{ marginTop: '20px', textAlign: 'right' }}>
+              <button className="btn btn-primary" onClick={() => setShowHelp(false)}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="container">
         {message.text && (
@@ -381,12 +525,14 @@ function TeacherDashboard() {
                 >
                   Students ({students.length})
                 </button>
-                <button
-                  className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('groups')}
-                >
-                  Groups ({groups.length})
-                </button>
+                {SHOW_GROUPS && (
+                  <button
+                    className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('groups')}
+                  >
+                    Groups ({groups.length})
+                  </button>
+                )}
                 <button
                   className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
                   onClick={() => setActiveTab('reports')}
@@ -414,11 +560,20 @@ function TeacherDashboard() {
                 <div className="card">
                   <h2>Upload Students (CSV)</h2>
                   <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
-                    CSV columns: university_id, last_name, first_name, email, group_name
+                    CSV columns: university_id, last_name, first_name, email{SHOW_GROUPS ? ', group_name' : ''}
                   </p>
                   <p style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
                     Lines can start/end with #. Password = university_id or auto-generated.
                   </p>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={sendEmailsOnUpload}
+                      onChange={(e) => setSendEmailsOnUpload(e.target.checked)}
+                      style={{ width: 'auto' }}
+                    />
+                    <span style={{ fontSize: '0.9rem' }}>Send notification emails to uploaded students</span>
+                  </label>
                   <label className="file-upload">
                     <input type="file" accept=".csv" onChange={handleFileUpload} />
                     <p>Click to upload CSV file</p>
@@ -426,7 +581,19 @@ function TeacherDashboard() {
                 </div>
 
                 <div className="card">
-                  <h2>Students in Class</h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
+                    <h2 style={{ margin: 0 }}>Students in Class</h2>
+                    {students.length > 0 && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleSendAllInvites}
+                        style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                        title="Send enrollment/invite email to all students"
+                      >
+                        Send All Invites
+                      </button>
+                    )}
+                  </div>
                   {students.length === 0 ? (
                     <p>No students enrolled yet.</p>
                   ) : (
@@ -438,7 +605,7 @@ function TeacherDashboard() {
                             <th>Last Name</th>
                             <th>First Name</th>
                             <th>Email</th>
-                            <th>Group</th>
+                            {SHOW_GROUPS && <th>Group</th>}
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -453,23 +620,33 @@ function TeacherDashboard() {
                                 <td>{student.last_name}</td>
                                 <td>{student.first_name}</td>
                                 <td>{student.email}</td>
+                                {SHOW_GROUPS && (
+                                  <td>
+                                    <select
+                                      value={studentGroup?.id || ''}
+                                      onChange={(e) => {
+                                        const newGroupId = e.target.value;
+                                        if (newGroupId) {
+                                          handleAddToGroup(student.id, newGroupId);
+                                        }
+                                      }}
+                                    >
+                                      <option value="">Unassigned</option>
+                                      {groups.map(g => (
+                                        <option key={g.id} value={g.id}>{g.name}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                )}
                                 <td>
-                                  <select
-                                    value={studentGroup?.id || ''}
-                                    onChange={(e) => {
-                                      const newGroupId = e.target.value;
-                                      if (newGroupId) {
-                                        handleAddToGroup(student.id, newGroupId);
-                                      }
-                                    }}
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
+                                    onClick={() => handleSendInvite(student.id, fullName)}
+                                    title="Send enrollment notification email"
                                   >
-                                    <option value="">Unassigned</option>
-                                    {groups.map(g => (
-                                      <option key={g.id} value={g.id}>{g.name}</option>
-                                    ))}
-                                  </select>
-                                </td>
-                                <td>
+                                    Send Invite
+                                  </button>
                                   <button
                                     className="btn btn-secondary"
                                     style={{ fontSize: '0.8rem', padding: '4px 8px' }}
@@ -502,25 +679,34 @@ function TeacherDashboard() {
                                   {student.email}
                                 </span>
                               </div>
-                              <div className="mobile-card-row">
-                                <span className="mobile-card-label">Group</span>
-                                <select
-                                  value={studentGroup?.id || ''}
-                                  onChange={(e) => {
-                                    const newGroupId = e.target.value;
-                                    if (newGroupId) {
-                                      handleAddToGroup(student.id, newGroupId);
-                                    }
-                                  }}
-                                  style={{ flex: 1, maxWidth: '150px' }}
-                                >
-                                  <option value="">Unassigned</option>
-                                  {groups.map(g => (
-                                    <option key={g.id} value={g.id}>{g.name}</option>
-                                  ))}
-                                </select>
-                              </div>
+                              {SHOW_GROUPS && (
+                                <div className="mobile-card-row">
+                                  <span className="mobile-card-label">Group</span>
+                                  <select
+                                    value={studentGroup?.id || ''}
+                                    onChange={(e) => {
+                                      const newGroupId = e.target.value;
+                                      if (newGroupId) {
+                                        handleAddToGroup(student.id, newGroupId);
+                                      }
+                                    }}
+                                    style={{ flex: 1, maxWidth: '150px' }}
+                                  >
+                                    <option value="">Unassigned</option>
+                                    {groups.map(g => (
+                                      <option key={g.id} value={g.id}>{g.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
                               <div className="mobile-card-actions">
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => handleSendInvite(student.id, fullName)}
+                                  title="Send enrollment notification email"
+                                >
+                                  Send Invite
+                                </button>
                                 <button
                                   className="btn btn-secondary"
                                   onClick={() => handleResetPassword(student.id, fullName)}
@@ -538,7 +724,7 @@ function TeacherDashboard() {
               </div>
             )}
 
-            {activeTab === 'groups' && (
+            {SHOW_GROUPS && activeTab === 'groups' && (
               <div className="admin-grid">
                 <div className="card">
                   <h2>Create Group</h2>

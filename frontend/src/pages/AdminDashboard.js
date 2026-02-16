@@ -19,6 +19,7 @@ import NudgeTemplatesTab from '../components/admin/NudgeTemplatesTab';
 import ActivityLogsTab from '../components/admin/ActivityLogsTab';
 import QuickStats from '../components/admin/QuickStats';
 import ClassSelector from '../components/admin/ClassSelector';
+import { SHOW_GROUPS } from '../config/featureFlags';
 import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
 import CopyClassModal from '../components/admin/CopyClassModal';
 
@@ -64,6 +65,7 @@ function AdminDashboard() {
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
+  const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
   const [showCopyClassModal, setShowCopyClassModal] = useState(false);
   const [copyingClass, setCopyingClass] = useState(null);
   const [pendingInstructorCount, setPendingInstructorCount] = useState(0);
@@ -208,12 +210,16 @@ function AdminDashboard() {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('send_emails', sendEmailsOnUpload);
 
     try {
       const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       let messageText = `Created ${res.data.created} new users, enrolled ${res.data.enrolled} total.`;
+      if (res.data.emails_sent > 0) {
+        messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
+      }
       if (res.data.errors.length > 0) {
         const errorDetails = res.data.errors.slice(0, 5).map(e =>
           `${e.email || 'unknown'}: ${e.error}`
@@ -270,6 +276,34 @@ function AdminDashboard() {
       setMessage({ type: 'success', text: `Password reset email sent to ${userName}.` });
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reset password' });
+    }
+  };
+
+  const handleSendInvite = async (userId, userName) => {
+    if (!selectedClass) {
+      setMessage({ type: 'error', text: 'Please select a class first' });
+      return;
+    }
+    try {
+      await axios.post(`/api/classes/${selectedClass}/students/${userId}/send-invite`);
+      setMessage({ type: 'success', text: `Enrollment email sent to ${userName}.` });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to send invite' });
+    }
+  };
+
+  const handleSendAllInvites = async () => {
+    if (!selectedClass) {
+      setMessage({ type: 'error', text: 'Please select a class first' });
+      return;
+    }
+    const studentCount = classStudents.filter(s => s.role === 'student').length;
+    if (!window.confirm(`Send enrollment/invite emails to all ${studentCount} students in this class?`)) return;
+    try {
+      const res = await axios.post(`/api/classes/${selectedClass}/students/send-invites`);
+      setMessage({ type: 'success', text: res.data.message });
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to send invites' });
     }
   };
 
@@ -743,12 +777,14 @@ function AdminDashboard() {
           >
             Evaluations
           </button>
-          <button
-            className={`admin-tab ${activeTab === 'groups' ? 'active' : ''}`}
-            onClick={() => setActiveTab('groups')}
-          >
-            Groups
-          </button>
+          {SHOW_GROUPS && (
+            <button
+              className={`admin-tab ${activeTab === 'groups' ? 'active' : ''}`}
+              onClick={() => setActiveTab('groups')}
+            >
+              Groups
+            </button>
+          )}
           <button
             className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`}
             onClick={() => setActiveTab('users')}
@@ -798,6 +834,8 @@ function AdminDashboard() {
             setNewUser={setNewUser}
             uploadedCredentials={uploadedCredentials}
             setUploadedCredentials={setUploadedCredentials}
+            sendEmailsOnUpload={sendEmailsOnUpload}
+            setSendEmailsOnUpload={setSendEmailsOnUpload}
             userSearchQuery={userSearchQuery}
             setUserSearchQuery={setUserSearchQuery}
             userSearchResults={userSearchResults}
@@ -808,12 +846,14 @@ function AdminDashboard() {
             onResetPassword={handleResetPassword}
             onRemoveFromClass={handleRemoveFromClass}
             onDeleteUser={handleDeleteUser}
+            onSendInvite={handleSendInvite}
+            onSendAllInvites={handleSendAllInvites}
             onViewGroup={handleSelectGroup}
             currentUser={user}
           />
         )}
 
-        {activeTab === 'groups' && (
+        {SHOW_GROUPS && activeTab === 'groups' && (
           <GroupsTab
             selectedClass={selectedClass}
             classes={classes}

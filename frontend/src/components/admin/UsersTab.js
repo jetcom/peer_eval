@@ -1,4 +1,5 @@
 import React from 'react';
+import { SHOW_GROUPS } from '../../config/featureFlags';
 
 function UsersTab({
   darkMode,
@@ -11,6 +12,8 @@ function UsersTab({
   setNewUser,
   uploadedCredentials,
   setUploadedCredentials,
+  sendEmailsOnUpload,
+  setSendEmailsOnUpload,
   userSearchQuery,
   setUserSearchQuery,
   userSearchResults,
@@ -21,6 +24,8 @@ function UsersTab({
   onResetPassword,
   onRemoveFromClass,
   onDeleteUser,
+  onSendInvite,
+  onSendAllInvites,
   onViewGroup,
   currentUser
 }) {
@@ -102,7 +107,7 @@ function UsersTab({
             Uploading to: {classes.find(c => c.id === parseInt(selectedClass))?.name}
           </p>
           <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
-            CSV columns: <code>university_id, last_name, first_name, email, group_name</code>
+            CSV columns: <code>university_id, last_name, first_name, email{SHOW_GROUPS ? ', group_name' : ''}</code>
           </p>
           <details style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
             <summary style={{ cursor: 'pointer', marginBottom: '6px' }}>Column name options & notes</summary>
@@ -112,14 +117,25 @@ function UsersTab({
               • Last: <code>last_name</code>, <code>lastname</code>, <code>Last</code>, <code>surname</code>, <code>Last Name</code><br />
               • First: <code>first_name</code>, <code>firstname</code>, <code>First</code>, <code>First Name</code><br />
               • Email: <code>email</code>, <code>Email</code>, <code>e-mail</code><br />
-              • Group: <code>group_name</code>, <code>group</code>, <code>team</code>, <code>Project</code>, <code>Project Groups</code><br />
+              {SHOW_GROUPS && <>• Group: <code>group_name</code>, <code>group</code>, <code>team</code>, <code>Project</code>, <code>Project Groups</code><br /></>}
               <br />
               <strong>Notes:</strong><br />
               • Lines starting/ending with # are ignored<br />
-              • Existing users are enrolled without new password<br />
-              • Groups are created per-class (no duplicates)
+              • Existing users are enrolled without new password
+              {SHOW_GROUPS && <><br />• Groups are created per-class (no duplicates)</>}
             </div>
           </details>
+          {setSendEmailsOnUpload && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '12px 0', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={sendEmailsOnUpload}
+                onChange={(e) => setSendEmailsOnUpload(e.target.checked)}
+                style={{ width: 'auto' }}
+              />
+              <span style={{ fontSize: '0.9rem' }}>Send notification emails to uploaded students</span>
+            </label>
+          )}
           <label className="file-upload">
             <input type="file" accept=".csv" onChange={onUploadStudents} />
             <p>Click to upload CSV file</p>
@@ -218,7 +234,19 @@ function UsersTab({
 
       {/* Users in current class */}
       <div className="card">
-        <h2>Users in {classes.find(c => c.id === parseInt(selectedClass))?.name} ({classStudents.length})</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
+          <h2 style={{ margin: 0 }}>Users in {classes.find(c => c.id === parseInt(selectedClass))?.name} ({classStudents.length})</h2>
+          {onSendAllInvites && classStudents.filter(s => s.role === 'student').length > 0 && (
+            <button
+              className="btn btn-primary"
+              onClick={onSendAllInvites}
+              style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+              title="Send enrollment/invite email to all students in this class"
+            >
+              Send All Invites
+            </button>
+          )}
+        </div>
         {classStudents.length === 0 ? (
           <p>No users enrolled in this class yet.</p>
         ) : (
@@ -228,7 +256,7 @@ function UsersTab({
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
-                <th>Group</th>
+                {SHOW_GROUPS && <th>Group</th>}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -243,24 +271,36 @@ function UsersTab({
                   </td>
                   <td>{u.email}</td>
                   <td>{u.role}</td>
+                  {SHOW_GROUPS && (
+                    <td>
+                      {studentGroup ? (
+                        <span
+                          onClick={() => onViewGroup && onViewGroup(studentGroup.id)}
+                          style={{
+                            color: '#3498db',
+                            cursor: 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                          title="Click to view group members"
+                        >
+                          {studentGroup.name}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#999', fontStyle: 'italic' }}>—</span>
+                      )}
+                    </td>
+                  )}
                   <td>
-                    {studentGroup ? (
-                      <span
-                        onClick={() => onViewGroup && onViewGroup(studentGroup.id)}
-                        style={{
-                          color: '#3498db',
-                          cursor: 'pointer',
-                          textDecoration: 'underline'
-                        }}
-                        title="Click to view group members"
+                    {onSendInvite && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => onSendInvite(u.id, `${u.first_name} ${u.last_name}`)}
+                        style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
+                        title="Send enrollment notification email"
                       >
-                        {studentGroup.name}
-                      </span>
-                    ) : (
-                      <span style={{ color: '#999', fontStyle: 'italic' }}>—</span>
+                        Send Invite
+                      </button>
                     )}
-                  </td>
-                  <td>
                     <button
                       className="btn btn-secondary"
                       onClick={() => onResetPassword(u.id, `${u.first_name} ${u.last_name}`)}

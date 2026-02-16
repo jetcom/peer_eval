@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { SHOW_GROUPS } from '../../config/featureFlags';
 
 function EvaluationsTab({
   selectedClass,
@@ -353,7 +354,7 @@ function EvaluationsTab({
         <table>
           <thead>
             <tr>
-              <th>Group</th>
+              {SHOW_GROUPS && <th>Group</th>}
               <th>Phase</th>
               <th>Evaluator</th>
               <th>Evaluatee</th>
@@ -375,11 +376,16 @@ function EvaluationsTab({
                     onClick={() => toggleExpand('phase', e.id)}
                     title="Click to view details"
                   >
+                    {SHOW_GROUPS && (
+                      <td>
+                        <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>
+                        {e.group_name || 'N/A'}
+                      </td>
+                    )}
                     <td>
-                      <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>
-                      {e.group_name || 'N/A'}
+                      {!SHOW_GROUPS && <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>}
+                      {e.phase}
                     </td>
-                    <td>{e.phase}</td>
                     <td>{e.evaluator_name}</td>
                     <td>{e.evaluatee_name}</td>
                     <td>{e.score}/100</td>
@@ -387,7 +393,7 @@ function EvaluationsTab({
                   </tr>
                   {isExpanded && (
                     <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                      <td colSpan="6" style={{ padding: '15px 20px' }}>
+                      <td colSpan={SHOW_GROUPS ? 6 : 5} style={{ padding: '15px 20px' }}>
                         {/* Criteria Scores */}
                         <div style={{ marginBottom: '15px' }}>
                           <strong>Criteria Scores:</strong>

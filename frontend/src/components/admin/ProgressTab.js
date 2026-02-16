@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import axios from 'axios';
 import PaperReviewManager from '../PaperReviewManager';
+import { SHOW_GROUPS } from '../../config/featureFlags';
 
 function ProgressTab({
   darkMode,
@@ -419,18 +420,20 @@ function ProgressTab({
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ margin: 0 }}>Progress Overview (Assignment Mode)</h2>
-            <select
-              value={filterGroup}
-              onChange={(e) => setFilterGroup(e.target.value)}
-              style={{ padding: '8px', fontSize: '1rem', minWidth: '200px' }}
-            >
-              <option value="all">All Groups ({studentsOnly.length} students)</option>
-              {classGroups.map(g => (
-                <option key={g.id} value={g.id}>
-                  {g.name} ({g.members?.filter(m => m.role === 'student').length || 0} students)
-                </option>
-              ))}
-            </select>
+            {SHOW_GROUPS && (
+              <select
+                value={filterGroup}
+                onChange={(e) => setFilterGroup(e.target.value)}
+                style={{ padding: '8px', fontSize: '1rem', minWidth: '200px' }}
+              >
+                <option value="all">All Groups ({studentsOnly.length} students)</option>
+                {classGroups.map(g => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} ({g.members?.filter(m => m.role === 'student').length || 0} students)
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
 
@@ -556,9 +559,11 @@ function ProgressTab({
                       <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
                         Student
                       </th>
-                      <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
-                        Group
-                      </th>
+                      {SHOW_GROUPS && (
+                        <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
+                          Group
+                        </th>
+                      )}
                       {assignments.map(a => (
                         <th key={a.id} style={{ textAlign: 'center', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
                           {a.name}
@@ -572,9 +577,11 @@ function ProgressTab({
                         <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
                           {student.last_name}, {student.first_name}
                         </td>
-                        <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`, color: darkMode ? '#a0a0a0' : '#666' }}>
-                          {student.group?.name || 'No Group'}
-                        </td>
+                        {SHOW_GROUPS && (
+                          <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`, color: darkMode ? '#a0a0a0' : '#666' }}>
+                            {student.group?.name || 'No Group'}
+                          </td>
+                        )}
                         {assignments.map(a => {
                           const progress = student.assignmentProgress[a.id];
                           const color = progress?.percentage === 100 ? '#27ae60' : progress?.percentage > 0 ? '#f39c12' : '#e74c3c';
@@ -606,10 +613,12 @@ function ProgressTab({
                     <div className="mobile-card-header">
                       {student.last_name}, {student.first_name}
                     </div>
-                    <div className="mobile-card-row">
-                      <span className="mobile-card-label">Group</span>
-                      <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
-                    </div>
+                    {SHOW_GROUPS && (
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Group</span>
+                        <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
+                      </div>
+                    )}
                     {assignments.map(a => {
                       const progress = student.assignmentProgress[a.id];
                       const color = progress?.percentage === 100 ? '#27ae60' : progress?.percentage > 0 ? '#f39c12' : '#e74c3c';
@@ -647,18 +656,20 @@ function ProgressTab({
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0 }}>Progress Overview</h2>
-          <select
-            value={filterGroup}
-            onChange={(e) => setFilterGroup(e.target.value)}
-            style={{ padding: '8px', fontSize: '1rem', minWidth: '200px' }}
-          >
-            <option value="all">All Groups ({studentsOnly.length} students)</option>
-            {classGroups.map(g => (
-              <option key={g.id} value={g.id}>
-                {g.name} ({g.members?.filter(m => m.role === 'student').length || 0} students)
-              </option>
-            ))}
-          </select>
+          {SHOW_GROUPS && (
+            <select
+              value={filterGroup}
+              onChange={(e) => setFilterGroup(e.target.value)}
+              style={{ padding: '8px', fontSize: '1rem', minWidth: '200px' }}
+            >
+              <option value="all">All Groups ({studentsOnly.length} students)</option>
+              {classGroups.map(g => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.members?.filter(m => m.role === 'student').length || 0} students)
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -1011,7 +1022,7 @@ function ProgressTab({
                         {student.last_name}, {student.first_name}
                       </div>
                       <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
-                        {student.group?.name || 'No group'} · {statusLabels[student.status]}
+                        {SHOW_GROUPS ? (student.group?.name || 'No group') + ' · ' : ''}{statusLabels[student.status]}
                       </div>
                     </div>
                   </div>
@@ -1083,7 +1094,7 @@ function ProgressTab({
                         {student.last_name}, {student.first_name}
                       </div>
                       <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
-                        {student.group?.name || 'No group'} · {statusLabels[student.status]}
+                        {SHOW_GROUPS ? (student.group?.name || 'No group') + ' · ' : ''}{statusLabels[student.status]}
                       </div>
                     </div>
                   </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ImageViewer from '../ImageViewer';
+import { SHOW_GROUPS } from '../../config/featureFlags';
 
 // Helper to escape CSV values
 function escapeCSV(value) {
@@ -218,19 +219,21 @@ function ReportsTab({
           </p>
         </div>
 
-        <div className="card">
-          <h2>Filter by Group</h2>
-          <select
-            value={reportGroup}
-            onChange={(e) => setReportGroup(e.target.value)}
-            style={{ width: '100%', padding: '10px', fontSize: '1rem' }}
-          >
-            <option value="all">All Groups in Class</option>
-            {classGroups.map(g => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </select>
-        </div>
+        {SHOW_GROUPS && (
+          <div className="card">
+            <h2>Filter by Group</h2>
+            <select
+              value={reportGroup}
+              onChange={(e) => setReportGroup(e.target.value)}
+              style={{ width: '100%', padding: '10px', fontSize: '1rem' }}
+            >
+              <option value="all">All Groups in Class</option>
+              {classGroups.map(g => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="card">
           <h2>Student Scores by Assignment</h2>
@@ -244,7 +247,7 @@ function ReportsTab({
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left', padding: '10px' }}>Student</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>
+                      {SHOW_GROUPS && <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>}
                       {assignments.map(a => (
                         <th key={a.id} style={{ textAlign: 'center', padding: '10px' }}>{a.name}</th>
                       ))}
@@ -256,7 +259,7 @@ function ReportsTab({
                     {studentSummaries.map(student => (
                       <tr key={student.id}>
                         <td style={{ padding: '10px' }}><strong>{student.last_name}, {student.first_name}</strong></td>
-                        <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>
+                        {SHOW_GROUPS && <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>}
                         {assignments.map(a => {
                           const score = student.assignmentScores[a.id];
                           return (
@@ -294,10 +297,12 @@ function ReportsTab({
                     <div className="mobile-card-header">
                       {student.last_name}, {student.first_name}
                     </div>
-                    <div className="mobile-card-row">
-                      <span className="mobile-card-label">Group</span>
-                      <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
-                    </div>
+                    {SHOW_GROUPS && (
+                      <div className="mobile-card-row">
+                        <span className="mobile-card-label">Group</span>
+                        <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
+                      </div>
+                    )}
 
                     {/* Assignment scores */}
                     {assignments.map(a => {
@@ -813,19 +818,21 @@ function ReportsTab({
         </p>
       </div>
 
-      <div className="card">
-        <h2>Filter by Group</h2>
-        <select
-          value={reportGroup}
-          onChange={(e) => setReportGroup(e.target.value)}
-          style={{ width: '100%', padding: '10px', fontSize: '1rem' }}
-        >
-          <option value="all">All Groups in Class</option>
-          {classGroups.map(g => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-        </select>
-      </div>
+      {SHOW_GROUPS && (
+        <div className="card">
+          <h2>Filter by Group</h2>
+          <select
+            value={reportGroup}
+            onChange={(e) => setReportGroup(e.target.value)}
+            style={{ width: '100%', padding: '10px', fontSize: '1rem' }}
+          >
+            <option value="all">All Groups in Class</option>
+            {classGroups.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="card">
         <h2>Student Comparison - Average Scores by Phase</h2>
