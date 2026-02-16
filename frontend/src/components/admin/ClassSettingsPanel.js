@@ -65,7 +65,7 @@ const REMINDER_OPTIONS = [
 function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit, onClose, onArchive }) {
   const [activeTab, setActiveTab] = useState('basic');
   const [templates, setTemplates] = useState([]);
-  const [newAssignment, setNewAssignment] = useState({ name: '', eval_types: ['peer'], due_date: '', due_time: '23:59' });
+  const [newAssignment, setNewAssignment] = useState({ name: '', eval_types: ['peer'], due_date: '', due_time: '23:59', template_overrides: {} });
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const assignmentListRef = useRef(null);
@@ -437,6 +437,12 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
       const defaultAudienceTemplate = groupTemplates.find(t => t.is_system);
 
       const getTemplateForEvalType = (evalType) => {
+        // Check per-assignment template override first
+        const overrideId = newAssignment.template_overrides[evalType];
+        if (overrideId) {
+          const overrideTemplate = templates.find(t => t.id === overrideId);
+          if (overrideTemplate) return overrideTemplate;
+        }
         if (evalType === 'audience') {
           const templateId = editingClass.audience_template_id;
           return templateId
@@ -487,7 +493,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
         assignments: [...assignments, res.data]
       });
 
-      setNewAssignment({ name: '', eval_types: ['peer'], due_date: '', due_time: '23:59' });
+      setNewAssignment({ name: '', eval_types: ['peer'], due_date: '', due_time: '23:59', template_overrides: {} });
 
       // Show success message and scroll to new assignment
       setSuccessMessage(`Assignment "${res.data.name}" created successfully`);
@@ -703,6 +709,72 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
             </div>
           </div>
 
+          {/* Per-assignment template selection */}
+          {newAssignment.eval_types.length > 0 && templates.length > 0 && (
+            <div className="form-group" style={{ marginTop: '15px', marginBottom: '15px' }}>
+              <label>Evaluation Templates</label>
+              <small style={{
+                display: 'block',
+                marginBottom: '10px',
+                color: darkMode ? '#888' : '#888'
+              }}>
+                Choose a template for each evaluation type (defaults to class-level template)
+              </small>
+              {newAssignment.eval_types.map(evalType => {
+                const isGroup = evalType === 'audience';
+                const templateOptions = templates.filter(t => t.target_type === (isGroup ? 'group' : 'individual'));
+                const classDefault = evalType === 'audience'
+                  ? editingClass.audience_template_id
+                  : editingClass.peer_template_id;
+                const selectedId = newAssignment.template_overrides[evalType] || classDefault || '';
+                const selectedTemplate = selectedId ? templates.find(t => t.id === selectedId) : null;
+
+                return (
+                  <div key={evalType} style={{ marginBottom: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{
+                        fontSize: '0.85rem',
+                        fontWeight: 500,
+                        minWidth: '130px',
+                        color: darkMode ? '#ccc' : '#333'
+                      }}>
+                        {EVAL_TYPES.find(t => t.value === evalType)?.label || evalType}:
+                      </span>
+                      <select
+                        value={selectedId}
+                        onChange={(e) => {
+                          const val = e.target.value ? parseInt(e.target.value) : null;
+                          setNewAssignment({
+                            ...newAssignment,
+                            template_overrides: { ...newAssignment.template_overrides, [evalType]: val }
+                          });
+                        }}
+                        style={{ flex: 1, maxWidth: '300px' }}
+                      >
+                        <option value="">-- Select template --</option>
+                        {templateOptions.map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}{t.id === classDefault ? ' (class default)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {selectedTemplate && selectedTemplate.criteria && (
+                      <div style={{
+                        marginLeft: '140px',
+                        marginTop: '4px',
+                        fontSize: '0.8rem',
+                        color: darkMode ? '#888' : '#888'
+                      }}>
+                        {selectedTemplate.criteria.length} criteria: {selectedTemplate.criteria.map(c => c.name).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <button
             type="button"
             className="btn btn-primary"
@@ -772,6 +844,20 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
                       </span>
                     ))}
                   </div>
+                  {/* Show criteria/rubric for each eval type */}
+                  {(assignment.eval_types || []).filter(et => typeof et === 'object' && et.criteria && et.criteria.length > 0).map(et => (
+                    <div key={et.id} style={{
+                      fontSize: '0.8rem',
+                      color: darkMode ? '#a0a0a0' : '#666',
+                      marginBottom: '8px',
+                      padding: '8px 10px',
+                      background: darkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+                      borderRadius: '4px'
+                    }}>
+                      <span style={{ fontWeight: 500 }}>{et.name} rubric:</span>{' '}
+                      {et.criteria.map(c => c.name).join(', ')}
+                    </div>
+                  ))}
                   <div className="form-group" style={{ margin: 0 }}>
                     <label style={{ fontSize: '0.85rem' }}>Due Date</label>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
