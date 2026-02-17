@@ -727,12 +727,13 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       return line;
     }).join('\n');
 
+    const normalize = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
     const getField = (record, ...names) => {
       for (const name of names) {
         if (record[name] !== undefined) return record[name];
-        const lowerName = name.toLowerCase();
+        const normalName = normalize(name);
         for (const key of Object.keys(record)) {
-          if (key.toLowerCase() === lowerName) return record[key];
+          if (normalize(key) === normalName) return record[key];
         }
       }
       return undefined;
