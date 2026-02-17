@@ -211,14 +211,24 @@ function TeacherDashboard() {
 
     try {
       const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData);
-      let messageText = `Uploaded: ${res.data.enrolled} enrolled, ${res.data.created} new users created.`;
+      const allFailed = res.data.errors?.length > 0 && res.data.created === 0 && res.data.enrolled === 0;
+      let messageText = allFailed
+        ? 'Upload failed — no students were enrolled.'
+        : `Uploaded: ${res.data.enrolled} enrolled, ${res.data.created} new users created.`;
       if (res.data.group_changes > 0) {
         messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
       }
       if (res.data.emails_sent > 0) {
         messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
       }
-      setMessage({ type: 'success', text: messageText });
+      if (res.data.errors?.length > 0) {
+        const errorDetails = res.data.errors.slice(0, 5).map(e =>
+          `${e.email || 'unknown'}: ${e.error}`
+        ).join('; ');
+        const moreErrors = res.data.errors.length > 5 ? ` (and ${res.data.errors.length - 5} more)` : '';
+        messageText += ` ${res.data.errors.length} error${res.data.errors.length !== 1 ? 's' : ''}: ${errorDetails}${moreErrors}`;
+      }
+      setMessage({ type: allFailed ? 'error' : 'success', text: messageText });
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload' });

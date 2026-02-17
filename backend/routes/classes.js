@@ -816,6 +816,11 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           credentials.push({ email, password: generatedPassword });
         }
 
+        // Check if already enrolled before upserting
+        const existingEnrollment = await prisma.classEnrollment.findUnique({
+          where: { classId_userId: { classId, userId: user.id } }
+        });
+
         // Enroll in class
         await prisma.classEnrollment.upsert({
           where: { classId_userId: { classId, userId: user.id } },
@@ -823,7 +828,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           create: { classId, userId: user.id }
         });
 
-        results.push({ id: user.id, email, first_name, last_name, existing: !isNew });
+        results.push({ id: user.id, email, first_name, last_name, existing: !isNew, alreadyEnrolled: !!existingEnrollment });
 
         // Add to group if specified
         if (group_name && group_name.trim()) {
@@ -878,8 +883,8 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           console.error(`Failed to send welcome email to ${cred.email}:`, emailErr.message);
         }
       }
-      // Enrollment notifications for existing users
-      const existingUsers = results.filter(r => r.existing);
+      // Enrollment notifications for existing users newly added to this class
+      const existingUsers = results.filter(r => r.existing && !r.alreadyEnrolled);
       for (const user of existingUsers) {
         try {
           await emailService.sendClassEnrollmentEmail({
