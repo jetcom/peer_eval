@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { SHOW_GROUPS } from '../../config/featureFlags';
-
 function EvaluationsTab({
   selectedClass,
   classes,
@@ -16,6 +14,8 @@ function EvaluationsTab({
   const [expandedEval, setExpandedEval] = useState(null); // { type: 'individual'|'group'|'phase', id: number }
   const [attachments, setAttachments] = useState([]); // Attachments for expanded eval
   const [loadingAttachments, setLoadingAttachments] = useState(false);
+
+  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   // Fetch attachments when an evaluation is expanded
   useEffect(() => {
@@ -354,7 +354,7 @@ function EvaluationsTab({
         <table>
           <thead>
             <tr>
-              {SHOW_GROUPS && <th>Group</th>}
+              {showGroups && <th>Group</th>}
               <th>Phase</th>
               <th>Evaluator</th>
               <th>Evaluatee</th>
@@ -376,14 +376,14 @@ function EvaluationsTab({
                     onClick={() => toggleExpand('phase', e.id)}
                     title="Click to view details"
                   >
-                    {SHOW_GROUPS && (
+                    {showGroups && (
                       <td>
                         <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>
                         {e.group_name || 'N/A'}
                       </td>
                     )}
                     <td>
-                      {!SHOW_GROUPS && <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>}
+                      {!showGroups && <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>}
                       {e.phase}
                     </td>
                     <td>{e.evaluator_name}</td>
@@ -393,7 +393,7 @@ function EvaluationsTab({
                   </tr>
                   {isExpanded && (
                     <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
-                      <td colSpan={SHOW_GROUPS ? 6 : 5} style={{ padding: '15px 20px' }}>
+                      <td colSpan={showGroups ? 6 : 5} style={{ padding: '15px 20px' }}>
                         {/* Criteria Scores */}
                         <div style={{ marginBottom: '15px' }}>
                           <strong>Criteria Scores:</strong>

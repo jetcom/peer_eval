@@ -1219,6 +1219,35 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
               Students will also evaluate themselves
             </small>
           </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              cursor: 'pointer',
+              fontWeight: 'normal'
+            }}>
+              <input
+                type="checkbox"
+                checked={editingClass.show_groups || false}
+                onChange={(e) => setEditingClass({
+                  ...editingClass,
+                  show_groups: e.target.checked
+                })}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span>Enable groups</span>
+            </label>
+            <small style={{
+              display: 'block',
+              marginTop: '6px',
+              marginLeft: '28px',
+              color: darkMode ? '#888' : '#888'
+            }}>
+              Show group assignment and display in student views
+            </small>
+          </div>
         </div>
 
         <div style={{
@@ -1232,6 +1261,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
             <div><strong>Min words:</strong> {editingClass.min_comment_words || 0}</div>
             <div><strong>Late submissions:</strong> {editingClass.allow_late ? `Yes (${editingClass.late_window_hours || 48}h window)` : 'No'}</div>
             <div><strong>Self-evaluation:</strong> {editingClass.include_self_eval ? 'Yes' : 'No'}</div>
+            <div><strong>Groups:</strong> {editingClass.show_groups ? 'Enabled' : 'Disabled'}</div>
           </div>
         </div>
       </div>

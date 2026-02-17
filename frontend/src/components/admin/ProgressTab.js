@@ -2,8 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import axios from 'axios';
 import PaperReviewManager from '../PaperReviewManager';
-import { SHOW_GROUPS } from '../../config/featureFlags';
-
 function ProgressTab({
   darkMode,
   selectedClass,
@@ -28,6 +26,7 @@ function ProgressTab({
 
   // Get class config
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
+  const showGroups = selectedClassData?.show_groups;
   const isAssignmentMode = selectedClassData?.evaluation_mode === 'assignments';
 
   // Filter to students only
@@ -420,7 +419,7 @@ function ProgressTab({
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ margin: 0 }}>Progress Overview (Assignment Mode)</h2>
-            {SHOW_GROUPS && (
+            {showGroups && (
               <select
                 value={filterGroup}
                 onChange={(e) => setFilterGroup(e.target.value)}
@@ -559,7 +558,7 @@ function ProgressTab({
                       <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
                         Student
                       </th>
-                      {SHOW_GROUPS && (
+                      {showGroups && (
                         <th style={{ textAlign: 'left', padding: '10px', borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}` }}>
                           Group
                         </th>
@@ -577,7 +576,7 @@ function ProgressTab({
                         <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}` }}>
                           {student.last_name}, {student.first_name}
                         </td>
-                        {SHOW_GROUPS && (
+                        {showGroups && (
                           <td style={{ padding: '10px', borderBottom: `1px solid ${darkMode ? '#333' : '#eee'}`, color: darkMode ? '#a0a0a0' : '#666' }}>
                             {student.group?.name || 'No Group'}
                           </td>
@@ -613,7 +612,7 @@ function ProgressTab({
                     <div className="mobile-card-header">
                       {student.last_name}, {student.first_name}
                     </div>
-                    {SHOW_GROUPS && (
+                    {showGroups && (
                       <div className="mobile-card-row">
                         <span className="mobile-card-label">Group</span>
                         <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
@@ -656,7 +655,7 @@ function ProgressTab({
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0 }}>Progress Overview</h2>
-          {SHOW_GROUPS && (
+          {showGroups && (
             <select
               value={filterGroup}
               onChange={(e) => setFilterGroup(e.target.value)}
@@ -1022,7 +1021,7 @@ function ProgressTab({
                         {student.last_name}, {student.first_name}
                       </div>
                       <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
-                        {SHOW_GROUPS ? (student.group?.name || 'No group') + ' · ' : ''}{statusLabels[student.status]}
+                        {showGroups ? (student.group?.name || 'No group') + ' · ' : ''}{statusLabels[student.status]}
                       </div>
                     </div>
                   </div>
@@ -1094,7 +1093,7 @@ function ProgressTab({
                         {student.last_name}, {student.first_name}
                       </div>
                       <div style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>
-                        {SHOW_GROUPS ? (student.group?.name || 'No group') + ' · ' : ''}{statusLabels[student.status]}
+                        {showGroups ? (student.group?.name || 'No group') + ' · ' : ''}{statusLabels[student.status]}
                       </div>
                     </div>
                   </div>

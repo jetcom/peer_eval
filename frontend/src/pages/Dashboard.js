@@ -8,8 +8,6 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
 import StudentClassSelector from '../components/StudentClassSelector';
 import CustomDropdown from '../components/CustomDropdown';
 import AssignmentDashboard from '../components/AssignmentDashboard';
-import { SHOW_GROUPS } from '../config/featureFlags';
-
 // Helper function to calculate effective due date for a phase using cascading logic
 function getEffectiveDueDate(phase, numPhases, hasFinalEvaluation, phaseDueDates) {
   if (!phaseDueDates) return null;
@@ -418,7 +416,7 @@ function Dashboard() {
             ) : group && (
               /* Phase-based evaluation mode */
               <>
-                {SHOW_GROUPS && (
+                {currentClass?.show_groups && (
                   <div className="card">
                     <h2>Your Group: {group.name}</h2>
                     <p>Members:</p>

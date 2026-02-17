@@ -197,6 +197,7 @@ router.get('/my/group', authenticateToken, async (req, res) => {
           evaluation_mode: classData.evaluationMode,
           allow_late: classData.allowLate,
           include_self_eval: classData.includeSelfEval,
+          show_groups: classData.showGroups,
           created_at: classData.createdAt,
           teacher_name: `${classData.teacher.firstName} ${classData.teacher.lastName}`.trim(),
           instructors: classData.instructors.map(i => ({

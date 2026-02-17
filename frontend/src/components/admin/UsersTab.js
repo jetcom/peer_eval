@@ -1,5 +1,4 @@
 import React from 'react';
-import { SHOW_GROUPS } from '../../config/featureFlags';
 
 function UsersTab({
   darkMode,
@@ -29,6 +28,8 @@ function UsersTab({
   onViewGroup,
   currentUser
 }) {
+  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+
   // Find which group a student belongs to
   const getStudentGroup = (studentId) => {
     if (!classGroups) return null;
@@ -107,7 +108,7 @@ function UsersTab({
             Uploading to: {classes.find(c => c.id === parseInt(selectedClass))?.name}
           </p>
           <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
-            CSV columns: <code>university_id, last_name, first_name, email{SHOW_GROUPS ? ', group_name' : ''}</code>
+            CSV columns: <code>university_id, last_name, first_name, email{showGroups ? ', group_name' : ''}</code>
           </p>
           <details style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
             <summary style={{ cursor: 'pointer', marginBottom: '6px' }}>Column name options & notes</summary>
@@ -117,12 +118,12 @@ function UsersTab({
               • Last: <code>last_name</code>, <code>lastname</code>, <code>Last</code>, <code>surname</code>, <code>Last Name</code><br />
               • First: <code>first_name</code>, <code>firstname</code>, <code>First</code>, <code>First Name</code><br />
               • Email: <code>email</code>, <code>Email</code>, <code>e-mail</code><br />
-              {SHOW_GROUPS && <>• Group: <code>group_name</code>, <code>group</code>, <code>team</code>, <code>Project</code>, <code>Project Groups</code><br /></>}
+              {showGroups && <>• Group: <code>group_name</code>, <code>group</code>, <code>team</code>, <code>Project</code>, <code>Project Groups</code><br /></>}
               <br />
               <strong>Notes:</strong><br />
               • Lines starting/ending with # are ignored<br />
               • Existing users are enrolled without new password
-              {SHOW_GROUPS && <><br />• Groups are created per-class (no duplicates)</>}
+              {showGroups && <><br />• Groups are created per-class (no duplicates)</>}
             </div>
           </details>
           {setSendEmailsOnUpload && (
@@ -256,7 +257,7 @@ function UsersTab({
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
-                {SHOW_GROUPS && <th>Group</th>}
+                {showGroups && <th>Group</th>}
                 <th>Actions</th>
               </tr>
             </thead>
@@ -271,7 +272,7 @@ function UsersTab({
                   </td>
                   <td>{u.email}</td>
                   <td>{u.role}</td>
-                  {SHOW_GROUPS && (
+                  {showGroups && (
                     <td>
                       {studentGroup ? (
                         <span

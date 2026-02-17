@@ -34,6 +34,7 @@ const formatClassResponse = (c) => ({
   allow_late: c.allowLate,
   late_window_hours: c.lateWindowHours,
   include_self_eval: c.includeSelfEval,
+  show_groups: c.showGroups,
   peer_template_id: c.peerTemplateId,
   audience_template_id: c.audienceTemplateId,
   self_template_id: c.selfTemplateId,
@@ -390,7 +391,7 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, async (req, res) =>
     const {
       name, section, semester, num_phases, has_final_evaluation, due_date_timezone,
       instructor_ids, phase_due_dates, min_comment_words, evaluation_mode, allow_late,
-      late_window_hours, include_self_eval, peer_template_id, audience_template_id,
+      late_window_hours, include_self_eval, show_groups, peer_template_id, audience_template_id,
       self_template_id, paper_review_template_id
     } = req.body;
 
@@ -466,6 +467,7 @@ router.put('/:id', authenticateToken, requireTeacherOrAdmin, async (req, res) =>
         allowLate: allow_late !== undefined ? allow_late : 1,
         lateWindowHours: late_window_hours || 48,
         includeSelfEval: include_self_eval || 0,
+        showGroups: show_groups !== undefined ? show_groups : 0,
         peerTemplateId: peer_template_id || null,
         audienceTemplateId: audience_template_id || null,
         selfTemplateId: self_template_id || null,

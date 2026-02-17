@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
 import ImageViewer from '../ImageViewer';
-import { SHOW_GROUPS } from '../../config/featureFlags';
-
 // Helper to escape CSV values
 function escapeCSV(value) {
   if (value === null || value === undefined) return '';
@@ -36,6 +34,8 @@ function ReportsTab({
   setReportGroup,
   assignmentEvaluations
 }) {
+  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+
   // Image viewer state
   const [viewerImages, setViewerImages] = useState(null);
   const [viewerIndex, setViewerIndex] = useState(0);
@@ -219,7 +219,7 @@ function ReportsTab({
           </p>
         </div>
 
-        {SHOW_GROUPS && (
+        {showGroups && (
           <div className="card">
             <h2>Filter by Group</h2>
             <select
@@ -247,7 +247,7 @@ function ReportsTab({
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left', padding: '10px' }}>Student</th>
-                      {SHOW_GROUPS && <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>}
+                      {showGroups && <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>}
                       {assignments.map(a => (
                         <th key={a.id} style={{ textAlign: 'center', padding: '10px' }}>{a.name}</th>
                       ))}
@@ -259,7 +259,7 @@ function ReportsTab({
                     {studentSummaries.map(student => (
                       <tr key={student.id}>
                         <td style={{ padding: '10px' }}><strong>{student.last_name}, {student.first_name}</strong></td>
-                        {SHOW_GROUPS && <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>}
+                        {showGroups && <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>}
                         {assignments.map(a => {
                           const score = student.assignmentScores[a.id];
                           return (
@@ -297,7 +297,7 @@ function ReportsTab({
                     <div className="mobile-card-header">
                       {student.last_name}, {student.first_name}
                     </div>
-                    {SHOW_GROUPS && (
+                    {showGroups && (
                       <div className="mobile-card-row">
                         <span className="mobile-card-label">Group</span>
                         <span className="mobile-card-value">{student.group?.name || 'No Group'}</span>
@@ -818,7 +818,7 @@ function ReportsTab({
         </p>
       </div>
 
-      {SHOW_GROUPS && (
+      {showGroups && (
         <div className="card">
           <h2>Filter by Group</h2>
           <select

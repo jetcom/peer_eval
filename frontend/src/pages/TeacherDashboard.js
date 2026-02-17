@@ -7,8 +7,6 @@ import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 import TemplatesTab from '../components/admin/TemplatesTab';
-import { SHOW_GROUPS } from '../config/featureFlags';
-
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -142,6 +140,7 @@ function TeacherDashboard() {
         has_final_evaluation: classRes.data.has_final_evaluation === 1 || classRes.data.has_final_evaluation === true,
         allow_late: classRes.data.allow_late === 1 || classRes.data.allow_late === true,
         include_self_eval: classRes.data.include_self_eval === 1 || classRes.data.include_self_eval === true,
+        show_groups: classRes.data.show_groups === 1 || classRes.data.show_groups === true,
         instructor_ids: instructorsRes.data.map(i => i.id),
         enrolledTeachers: enrolledTeachers,
         assignments: assignments
@@ -168,6 +167,7 @@ function TeacherDashboard() {
         allow_late: editingClass.allow_late ? 1 : 0,
         late_window_hours: editingClass.allow_late ? (editingClass.late_window_hours || 48) : 0,
         include_self_eval: editingClass.include_self_eval ? 1 : 0,
+        show_groups: editingClass.show_groups ? 1 : 0,
         peer_template_id: editingClass.peer_template_id || null,
         audience_template_id: editingClass.audience_template_id || null,
         self_template_id: editingClass.self_template_id || null,
@@ -536,7 +536,7 @@ function TeacherDashboard() {
                 >
                   Students ({students.length})
                 </button>
-                {SHOW_GROUPS && (
+                {currentClass?.show_groups && (
                   <button
                     className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
                     onClick={() => setActiveTab('groups')}
@@ -571,7 +571,7 @@ function TeacherDashboard() {
                 <div className="card">
                   <h2>Upload Students (CSV)</h2>
                   <p style={{ fontSize: '0.9rem', color: darkMode ? '#a0a0a0' : '#666' }}>
-                    CSV columns: university_id, last_name, first_name, email{SHOW_GROUPS ? ', group_name' : ''}
+                    CSV columns: university_id, last_name, first_name, email{currentClass?.show_groups ? ', group_name' : ''}
                   </p>
                   <p style={{ fontSize: '0.85rem', color: darkMode ? '#888' : '#999', marginTop: '4px' }}>
                     Lines can start/end with #. Password = university_id or auto-generated.
@@ -616,7 +616,7 @@ function TeacherDashboard() {
                             <th>Last Name</th>
                             <th>First Name</th>
                             <th>Email</th>
-                            {SHOW_GROUPS && <th>Group</th>}
+                            {currentClass?.show_groups && <th>Group</th>}
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -631,7 +631,7 @@ function TeacherDashboard() {
                                 <td>{student.last_name}</td>
                                 <td>{student.first_name}</td>
                                 <td>{student.email}</td>
-                                {SHOW_GROUPS && (
+                                {currentClass?.show_groups && (
                                   <td>
                                     <select
                                       value={studentGroup?.id || ''}
@@ -697,7 +697,7 @@ function TeacherDashboard() {
                                   {student.email}
                                 </span>
                               </div>
-                              {SHOW_GROUPS && (
+                              {currentClass?.show_groups && (
                                 <div className="mobile-card-row">
                                   <span className="mobile-card-label">Group</span>
                                   <select
@@ -748,7 +748,7 @@ function TeacherDashboard() {
               </div>
             )}
 
-            {SHOW_GROUPS && activeTab === 'groups' && (
+            {currentClass?.show_groups && activeTab === 'groups' && (
               <div className="admin-grid">
                 <div className="card">
                   <h2>Create Group</h2>

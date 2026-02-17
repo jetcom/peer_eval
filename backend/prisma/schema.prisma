@@ -67,6 +67,7 @@ model Class {
   allowLate             Int      @default(1) @map("allow_late")
   lateWindowHours       Int      @default(48) @map("late_window_hours")
   includeSelfEval       Int      @default(0) @map("include_self_eval")
+  showGroups            Int      @default(0) @map("show_groups")
   peerTemplateId        Int?     @map("peer_template_id")
   audienceTemplateId    Int?     @map("audience_template_id")
   selfTemplateId        Int?     @map("self_template_id")

@@ -19,7 +19,6 @@ import NudgeTemplatesTab from '../components/admin/NudgeTemplatesTab';
 import ActivityLogsTab from '../components/admin/ActivityLogsTab';
 import QuickStats from '../components/admin/QuickStats';
 import ClassSelector from '../components/admin/ClassSelector';
-import { SHOW_GROUPS } from '../config/featureFlags';
 import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
 import CopyClassModal from '../components/admin/CopyClassModal';
 
@@ -69,6 +68,8 @@ function AdminDashboard() {
   const [showCopyClassModal, setShowCopyClassModal] = useState(false);
   const [copyingClass, setCopyingClass] = useState(null);
   const [pendingInstructorCount, setPendingInstructorCount] = useState(0);
+
+  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   useEffect(() => {
     fetchData();
@@ -478,6 +479,7 @@ function AdminDashboard() {
         allow_late: editingClass.allow_late ? 1 : 0,
         late_window_hours: editingClass.allow_late ? (editingClass.late_window_hours || 48) : 0,
         include_self_eval: editingClass.include_self_eval ? 1 : 0,
+        show_groups: editingClass.show_groups ? 1 : 0,
         peer_template_id: editingClass.peer_template_id || null,
         audience_template_id: editingClass.audience_template_id || null,
         self_template_id: editingClass.self_template_id || null,
@@ -521,6 +523,7 @@ function AdminDashboard() {
         has_final_evaluation: classRes.data.has_final_evaluation === 1 || classRes.data.has_final_evaluation === true,
         allow_late: classRes.data.allow_late === 1 || classRes.data.allow_late === true,
         include_self_eval: classRes.data.include_self_eval === 1 || classRes.data.include_self_eval === true,
+        show_groups: classRes.data.show_groups === 1 || classRes.data.show_groups === true,
         instructor_ids: instructorsRes.data.map(i => i.id),
         enrolledTeachers: enrolledTeachers,
         assignments: assignments
@@ -777,7 +780,7 @@ function AdminDashboard() {
           >
             Evaluations
           </button>
-          {SHOW_GROUPS && (
+          {showGroups && (
             <button
               className={`admin-tab ${activeTab === 'groups' ? 'active' : ''}`}
               onClick={() => setActiveTab('groups')}
@@ -853,7 +856,7 @@ function AdminDashboard() {
           />
         )}
 
-        {SHOW_GROUPS && activeTab === 'groups' && (
+        {showGroups && activeTab === 'groups' && (
           <GroupsTab
             selectedClass={selectedClass}
             classes={classes}

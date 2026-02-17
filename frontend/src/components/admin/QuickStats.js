@@ -1,6 +1,4 @@
 import React from 'react';
-import { SHOW_GROUPS } from '../../config/featureFlags';
-
 function QuickStats({
   selectedClass,
   classes,
@@ -17,6 +15,7 @@ function QuickStats({
   }
 
   const currentClass = classes.find(c => c.id.toString() === selectedClass);
+  const showGroups = currentClass?.show_groups;
   const isAssignmentMode = currentClass?.evaluation_mode === 'assignments';
 
   // Filter to students only
@@ -226,7 +225,7 @@ function QuickStats({
         <div className="admin-stat-sublabel">{stats.completed} / {stats.expected} evals</div>
       </div>
 
-      {SHOW_GROUPS && (
+      {showGroups && (
         <div
           className="admin-stat-card purple clickable"
           onClick={() => onNavigate && onNavigate('groups')}
