@@ -30,6 +30,7 @@ function TeacherDashboard() {
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [selectedStudents, setSelectedStudents] = useState(new Set());
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -84,6 +85,7 @@ function TeacherDashboard() {
     if (selectedClass) {
       fetchClassData();
     }
+    setSelectedStudents(new Set());
   }, [selectedClass, fetchClassData]);
 
   const handleCreateClass = async (e) => {
@@ -210,6 +212,9 @@ function TeacherDashboard() {
     try {
       const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData);
       let messageText = `Uploaded: ${res.data.enrolled} enrolled, ${res.data.created} new users created.`;
+      if (res.data.group_changes > 0) {
+        messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
+      }
       if (res.data.emails_sent > 0) {
         messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
       }
@@ -261,6 +266,19 @@ function TeacherDashboard() {
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove student' });
+    }
+  };
+
+  const handleBulkRemove = async () => {
+    if (selectedStudents.size === 0) return;
+    if (!window.confirm(`Remove ${selectedStudents.size} student${selectedStudents.size !== 1 ? 's' : ''} from this class? This will unenroll them but not delete their accounts.`)) return;
+    try {
+      await axios.post(`/api/classes/${selectedClass}/students/bulk-remove`, { user_ids: [...selectedStudents] });
+      setMessage({ type: 'success', text: `Removed ${selectedStudents.size} student${selectedStudents.size !== 1 ? 's' : ''} from class.` });
+      setSelectedStudents(new Set());
+      fetchClassData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove students' });
     }
   };
 
@@ -612,10 +630,40 @@ function TeacherDashboard() {
                     <p>No students enrolled yet.</p>
                   ) : (
                     <>
+                      {selectedStudents.size > 0 && (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '12px',
+                          padding: '8px 12px', marginBottom: '10px',
+                          background: darkMode ? '#1a3a6e' : '#e8f4fc',
+                          borderRadius: '6px', fontSize: '0.9rem'
+                        }}>
+                          <span>{selectedStudents.size} selected</span>
+                          <button className="btn btn-danger btn-sm" onClick={handleBulkRemove}>
+                            Remove Selected
+                          </button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setSelectedStudents(new Set())}>
+                            Clear
+                          </button>
+                        </div>
+                      )}
                       {/* Desktop table view */}
                       <table className="desktop-table">
                         <thead>
                           <tr>
+                            <th style={{ width: '30px' }}>
+                              <input
+                                type="checkbox"
+                                checked={students.length > 0 && selectedStudents.size === students.length}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStudents(new Set(students.map(s => s.id)));
+                                  } else {
+                                    setSelectedStudents(new Set());
+                                  }
+                                }}
+                                style={{ width: 'auto' }}
+                              />
+                            </th>
                             <th>Last Name</th>
                             <th>First Name</th>
                             <th>Email</th>
@@ -631,6 +679,19 @@ function TeacherDashboard() {
                             const fullName = `${student.first_name} ${student.last_name}`;
                             return (
                               <tr key={student.id}>
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedStudents.has(student.id)}
+                                    onChange={(e) => {
+                                      const next = new Set(selectedStudents);
+                                      if (e.target.checked) next.add(student.id);
+                                      else next.delete(student.id);
+                                      setSelectedStudents(next);
+                                    }}
+                                    style={{ width: 'auto' }}
+                                  />
+                                </td>
                                 <td>{student.last_name}</td>
                                 <td>{student.first_name}</td>
                                 <td>{student.email}</td>
@@ -691,7 +752,19 @@ function TeacherDashboard() {
                           const fullName = `${student.first_name} ${student.last_name}`;
                           return (
                             <div key={student.id} className="mobile-card">
-                              <div className="mobile-card-header">
+                              <div className="mobile-card-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedStudents.has(student.id)}
+                                  onChange={(e) => {
+                                    const next = new Set(selectedStudents);
+                                    if (e.target.checked) next.add(student.id);
+                                    else next.delete(student.id);
+                                    setSelectedStudents(next);
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{ width: 'auto' }}
+                                />
                                 {student.last_name}, {student.first_name}
                               </div>
                               <div className="mobile-card-row">

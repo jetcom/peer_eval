@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 
 function UsersTab({
   darkMode,
@@ -27,8 +27,15 @@ function UsersTab({
   onSendInvite,
   onSendAllInvites,
   onViewGroup,
+  onBulkRemove,
   currentUser
 }) {
+  const [selectedUsers, setSelectedUsers] = useState(new Set());
+
+  // Clear selection when class changes
+  useEffect(() => {
+    setSelectedUsers(new Set());
+  }, [selectedClass]);
   const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   // Find which group a student belongs to
@@ -252,9 +259,42 @@ function UsersTab({
         {classStudents.length === 0 ? (
           <p>No users enrolled in this class yet.</p>
         ) : (
+          <>
+          {selectedUsers.size > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '12px',
+              padding: '8px 12px', marginBottom: '10px',
+              background: darkMode ? '#1a3a6e' : '#e8f4fc',
+              borderRadius: '6px', fontSize: '0.9rem'
+            }}>
+              <span>{selectedUsers.size} selected</span>
+              <button className="btn btn-danger btn-sm" onClick={() => {
+                if (onBulkRemove) onBulkRemove([...selectedUsers], () => setSelectedUsers(new Set()));
+              }}>
+                Remove Selected
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedUsers(new Set())}>
+                Clear
+              </button>
+            </div>
+          )}
           <table>
             <thead>
               <tr>
+                <th style={{ width: '30px' }}>
+                  <input
+                    type="checkbox"
+                    checked={classStudents.length > 0 && selectedUsers.size === classStudents.length}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedUsers(new Set(classStudents.map(s => s.id)));
+                      } else {
+                        setSelectedUsers(new Set());
+                      }
+                    }}
+                    style={{ width: 'auto' }}
+                  />
+                </th>
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
@@ -267,6 +307,19 @@ function UsersTab({
                 const studentGroup = getStudentGroup(u.id);
                 return (
                 <tr key={u.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.has(u.id)}
+                      onChange={(e) => {
+                        const next = new Set(selectedUsers);
+                        if (e.target.checked) next.add(u.id);
+                        else next.delete(u.id);
+                        setSelectedUsers(next);
+                      }}
+                      style={{ width: 'auto' }}
+                    />
+                  </td>
                   <td>
                     {u.last_name}, {u.first_name}
                     {u.protected === 1 && <span style={{ marginLeft: '8px', color: '#7f8c8d', fontSize: '12px' }}>(protected)</span>}
@@ -332,6 +385,7 @@ function UsersTab({
               })}
             </tbody>
           </table>
+          </>
         )}
       </div>
     </>

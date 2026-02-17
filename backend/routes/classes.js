@@ -649,6 +649,50 @@ router.delete('/:id/students/:userId', authenticateToken, requireTeacherOrAdmin,
   }
 });
 
+// Bulk remove students from a class
+router.post('/:id/students/bulk-remove', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+    const { user_ids } = req.body;
+
+    if (!Array.isArray(user_ids) || user_ids.length === 0) {
+      return res.status(400).json({ error: 'user_ids must be a non-empty array' });
+    }
+
+    // Check ownership if not admin
+    const where = { id: classId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
+    }
+
+    const classData = await prisma.class.findFirst({ where });
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found or not authorized' });
+    }
+
+    // Remove group memberships in this class for all specified users
+    await prisma.groupMember.deleteMany({
+      where: {
+        userId: { in: user_ids },
+        group: { classId }
+      }
+    });
+
+    // Remove enrollments
+    await prisma.classEnrollment.deleteMany({
+      where: {
+        classId,
+        userId: { in: user_ids }
+      }
+    });
+
+    res.json({ message: `Removed ${user_ids.length} student${user_ids.length !== 1 ? 's' : ''} from class`, removed: user_ids.length });
+  } catch (err) {
+    console.error('Bulk remove students error:', err);
+    res.status(500).json({ error: 'Failed to remove students' });
+  }
+});
+
 // Upload students via CSV to a class
 router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, upload.single('file'), async (req, res) => {
   const classId = parseInt(req.params.id);
@@ -672,6 +716,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     const results = [];
     const errors = [];
     const credentials = [];
+    let groupChanges = 0;
 
     // Preprocess CSV
     let csvContent = req.file.buffer.toString('utf8');
@@ -783,6 +828,14 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
         if (group_name && group_name.trim()) {
           const groupId = groupMap.get(group_name.trim());
           if (groupId) {
+            // Check if student's current group differs from the new one
+            const currentMembership = await prisma.groupMember.findFirst({
+              where: { userId: user.id, group: { classId } }
+            });
+            if (currentMembership && currentMembership.groupId !== groupId) {
+              groupChanges++;
+            }
+
             // Remove from any existing groups in this class first
             await prisma.groupMember.deleteMany({
               where: {
@@ -842,6 +895,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     res.json({
       created: results.filter(r => !r.existing).length,
       enrolled: results.length,
+      group_changes: groupChanges,
       errors,
       credentials,
       emails_sent: emailsSent

@@ -220,6 +220,9 @@ function AdminDashboard() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       let messageText = `Created ${res.data.created} new users, enrolled ${res.data.enrolled} total.`;
+      if (res.data.group_changes > 0) {
+        messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
+      }
       if (res.data.emails_sent > 0) {
         messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
       }
@@ -624,6 +627,26 @@ function AdminDashboard() {
     setShowCopyClassModal(true);
   };
 
+  const handleBulkRemoveStudents = async (userIds, onDone) => {
+    if (!selectedClass) return;
+    if (!window.confirm(`Remove ${userIds.length} student${userIds.length !== 1 ? 's' : ''} from this class? This will unenroll them but not delete their accounts.`)) return;
+    try {
+      await axios.post(`/api/classes/${selectedClass}/students/bulk-remove`, { user_ids: userIds });
+      setMessage({ type: 'success', text: `Removed ${userIds.length} student${userIds.length !== 1 ? 's' : ''} from class.` });
+      if (onDone) onDone();
+      // Refresh class-specific data
+      const [groupsRes, studentsRes] = await Promise.all([
+        axios.get(`/api/classes/${selectedClass}/groups`),
+        axios.get(`/api/classes/${selectedClass}/students`)
+      ]);
+      setClassGroups(groupsRes.data);
+      setClassStudents(studentsRes.data);
+      fetchData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove students' });
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -856,6 +879,7 @@ function AdminDashboard() {
             onSendInvite={handleSendInvite}
             onSendAllInvites={handleSendAllInvites}
             onViewGroup={handleSelectGroup}
+            onBulkRemove={handleBulkRemoveStudents}
             currentUser={user}
           />
         )}
