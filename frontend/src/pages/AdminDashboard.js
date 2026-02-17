@@ -65,6 +65,7 @@ function AdminDashboard() {
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [showCopyClassModal, setShowCopyClassModal] = useState(false);
   const [copyingClass, setCopyingClass] = useState(null);
   const [pendingInstructorCount, setPendingInstructorCount] = useState(0);
@@ -209,6 +210,7 @@ function AdminDashboard() {
       return;
     }
 
+    setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('send_emails', sendEmailsOnUpload);
@@ -255,6 +257,7 @@ function AdminDashboard() {
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload CSV' });
     }
+    setUploading(false);
     e.target.value = '';
   };
 
@@ -844,6 +847,7 @@ function AdminDashboard() {
             userSearchResults={userSearchResults}
             onCreateUser={handleCreateUser}
             onUploadStudents={handleUploadStudents}
+            uploading={uploading}
             onUserSearch={handleUserSearch}
             onAddToClass={handleAddToClass}
             onResetPassword={handleResetPassword}

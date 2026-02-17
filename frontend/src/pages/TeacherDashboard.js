@@ -28,6 +28,7 @@ function TeacherDashboard() {
   const [editingClass, setEditingClass] = useState(null);
   const [topLevelView, setTopLevelView] = useState('classes'); // 'classes' or 'templates'
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
   const fetchClasses = useCallback(async () => {
@@ -201,6 +202,7 @@ function TeacherDashboard() {
     const file = e.target.files[0];
     if (!file) return;
 
+    setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
     formData.append('send_emails', sendEmailsOnUpload);
@@ -217,6 +219,7 @@ function TeacherDashboard() {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload' });
     }
 
+    setUploading(false);
     e.target.value = '';
   };
 
@@ -585,9 +588,9 @@ function TeacherDashboard() {
                     />
                     <span style={{ fontSize: '0.9rem' }}>Send notification emails to uploaded students</span>
                   </label>
-                  <label className="file-upload">
-                    <input type="file" accept=".csv" onChange={handleFileUpload} />
-                    <p>Click to upload CSV file</p>
+                  <label className="file-upload" style={uploading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
+                    <input type="file" accept=".csv" onChange={handleFileUpload} disabled={uploading} />
+                    <p>{uploading ? 'Uploading...' : 'Click to upload CSV file'}</p>
                   </label>
                 </div>
 

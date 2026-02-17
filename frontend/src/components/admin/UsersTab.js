@@ -18,6 +18,7 @@ function UsersTab({
   userSearchResults,
   onCreateUser,
   onUploadStudents,
+  uploading,
   onUserSearch,
   onAddToClass,
   onResetPassword,
@@ -137,9 +138,9 @@ function UsersTab({
               <span style={{ fontSize: '0.9rem' }}>Send notification emails to uploaded students</span>
             </label>
           )}
-          <label className="file-upload">
-            <input type="file" accept=".csv" onChange={onUploadStudents} />
-            <p>Click to upload CSV file</p>
+          <label className="file-upload" style={uploading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
+            <input type="file" accept=".csv" onChange={onUploadStudents} disabled={uploading} />
+            <p>{uploading ? 'Uploading...' : 'Click to upload CSV file'}</p>
           </label>
 
           {uploadedCredentials.length > 0 && (
