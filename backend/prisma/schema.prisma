@@ -163,7 +163,7 @@ model Evaluation {
   criterionScores EvaluationCriterionScore[]
   attachments     EvaluationAttachment[]
 
-  @@unique([evaluatorId, evaluateeId, phase])
+  @@unique([evaluatorId, evaluateeId, phase, classId])
   @@map("evaluations")
 }
 
@@ -181,7 +181,7 @@ model FinalComment {
   evaluatee User   @relation("FinalCommentEvaluatee", fields: [evaluateeId], references: [id])
   class     Class? @relation(fields: [classId], references: [id], onDelete: Cascade)
 
-  @@unique([evaluatorId, evaluateeId])
+  @@unique([evaluatorId, evaluateeId, classId])
   @@map("final_comments")
 }
 

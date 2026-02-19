@@ -115,7 +115,7 @@ function Dashboard() {
       const [groupRes, evalRes, finalCommentsRes] = await Promise.all([
         axios.get(`/api/groups/my/group?class_id=${selectedClass}${userIdParam}`),
         axios.get(`/api/evaluations/my-evaluations?class_id=${selectedClass}${userIdParam}`),
-        axios.get(`/api/evaluations/my-final-comments?${userIdParam.substring(1)}`)
+        axios.get(`/api/evaluations/my-final-comments?class_id=${selectedClass}${userIdParam}`)
       ]);
       setGroup(groupRes.data);
       setEvaluations(evalRes.data);

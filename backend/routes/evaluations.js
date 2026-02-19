@@ -233,14 +233,19 @@ router.get('/is-read-only', authenticateToken, async (req, res) => {
 // Admins/teachers can pass user_id to masquerade as a student
 router.get('/my-evaluations', authenticateToken, async (req, res) => {
   try {
-    const { user_id } = req.query;
+    const { user_id, class_id } = req.query;
 
     // Allow admins/teachers to masquerade as a student
     const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
     const targetUserId = (isTeacherOrAdmin && user_id) ? parseInt(user_id) : req.user.id;
 
+    const where = { evaluatorId: targetUserId };
+    if (class_id) {
+      where.classId = parseInt(class_id);
+    }
+
     const evaluations = await prisma.evaluation.findMany({
-      where: { evaluatorId: targetUserId },
+      where,
       include: {
         evaluatee: {
           select: {
@@ -282,14 +287,19 @@ router.get('/my-evaluations', authenticateToken, async (req, res) => {
 // Admins/teachers can pass user_id to masquerade as a student
 router.get('/my-final-comments', authenticateToken, async (req, res) => {
   try {
-    const { user_id } = req.query;
+    const { user_id, class_id } = req.query;
 
     // Allow admins/teachers to masquerade as a student
     const isTeacherOrAdmin = req.user.role === 'teacher' || req.user.role === 'admin';
     const targetUserId = (isTeacherOrAdmin && user_id) ? parseInt(user_id) : req.user.id;
 
+    const where = { evaluatorId: targetUserId };
+    if (class_id) {
+      where.classId = parseInt(class_id);
+    }
+
     const comments = await prisma.finalComment.findMany({
-      where: { evaluatorId: targetUserId },
+      where,
       include: {
         evaluatee: {
           select: {
@@ -354,13 +364,18 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     }
 
+    if (!class_id) {
+      return res.status(400).json({ error: 'class_id is required' });
+    }
+
     // Check if evaluation exists
     const existing = await prisma.evaluation.findUnique({
       where: {
-        evaluatorId_evaluateeId_phase: {
+        evaluatorId_evaluateeId_phase_classId: {
           evaluatorId: req.user.id,
           evaluateeId: parseInt(evaluatee_id),
-          phase: parseInt(phase)
+          phase: parseInt(phase),
+          classId: parseInt(class_id)
         }
       }
     });
@@ -377,7 +392,6 @@ router.post('/', authenticateToken, async (req, res) => {
           collaboration,
           score,
           comments,
-          classId: existing.classId || (class_id ? parseInt(class_id) : null),
           updatedAt: new Date()
         }
       });
@@ -399,7 +413,7 @@ router.post('/', authenticateToken, async (req, res) => {
           evaluatorId: req.user.id,
           evaluateeId: parseInt(evaluatee_id),
           phase: parseInt(phase),
-          classId: class_id ? parseInt(class_id) : null,
+          classId: parseInt(class_id),
           contribution,
           communication,
           reliability,
@@ -432,6 +446,10 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
   try {
     const { evaluatee_id, comments, final_points, class_id } = req.body;
 
+    if (!class_id) {
+      return res.status(400).json({ error: 'class_id is required' });
+    }
+
     // Check if final evaluation phase is past due (only for students)
     if (req.user.role === 'student') {
       const { isPastDue } = await checkIfPhasePastDue(req.user.id, 'final', class_id);
@@ -440,12 +458,13 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
       }
     }
 
-    // Check if final comment exists
+    // Check if final comment exists for this class
     const existing = await prisma.finalComment.findUnique({
       where: {
-        evaluatorId_evaluateeId: {
+        evaluatorId_evaluateeId_classId: {
           evaluatorId: req.user.id,
-          evaluateeId: parseInt(evaluatee_id)
+          evaluateeId: parseInt(evaluatee_id),
+          classId: parseInt(class_id)
         }
       }
     });
@@ -457,7 +476,6 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
         data: {
           comments,
           finalPoints: final_points || 0,
-          classId: existing.classId || (class_id ? parseInt(class_id) : null),
           updatedAt: new Date()
         }
       });
@@ -480,7 +498,7 @@ router.post('/final-comments', authenticateToken, async (req, res) => {
           evaluateeId: parseInt(evaluatee_id),
           comments,
           finalPoints: final_points || 0,
-          classId: class_id ? parseInt(class_id) : null
+          classId: parseInt(class_id)
         }
       });
 

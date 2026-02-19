@@ -106,18 +106,19 @@ function Evaluation() {
           }
         }
 
-        // Build URL with masquerade user_id if provided
-        const userIdParam = masqueradeUserId ? `&user_id=${masqueradeUserId}` : '';
-        const groupUrl = classId
-          ? `/api/groups/my/group?class_id=${classId}${userIdParam}`
-          : `/api/groups/my/group?${userIdParam.substring(1)}`;
+        // Build query params for API calls
+        const params = new URLSearchParams();
+        if (classId) params.set('class_id', classId);
+        if (masqueradeUserId) params.set('user_id', masqueradeUserId);
+        const qstr = params.toString();
+        const groupUrl = `/api/groups/my/group?${qstr}`;
 
         if (isFinalEvaluation) {
           // For final evaluation, fetch group, final comments, AND all previous phase evaluations
           const [groupRes, finalCommentsRes, evalRes] = await Promise.all([
             axios.get(groupUrl),
-            axios.get(`/api/evaluations/my-final-comments?${userIdParam.substring(1)}`),
-            axios.get(`/api/evaluations/my-evaluations?${userIdParam.substring(1)}`)
+            axios.get(`/api/evaluations/my-final-comments?${qstr}`),
+            axios.get(`/api/evaluations/my-evaluations?${qstr}`)
           ]);
 
           // If masquerading, store student info for display
@@ -154,7 +155,7 @@ function Evaluation() {
           // Regular phase evaluation
           const [groupRes, evalRes] = await Promise.all([
             axios.get(groupUrl),
-            axios.get(`/api/evaluations/my-evaluations?${userIdParam.substring(1)}`)
+            axios.get(`/api/evaluations/my-evaluations?${qstr}`)
           ]);
 
           // If masquerading, store student info for display
