@@ -650,6 +650,25 @@ function AdminDashboard() {
     }
   };
 
+  const handleBulkResetPasswords = async () => {
+    if (!selectedClass) {
+      setMessage({ type: 'error', text: 'Please select a class first' });
+      return;
+    }
+    const neverLoggedIn = classStudents.filter(s => s.role === 'student' && s.must_change_password === 1);
+    if (neverLoggedIn.length === 0) return;
+    if (!window.confirm(`Reset passwords and send credential emails to ${neverLoggedIn.length} student${neverLoggedIn.length !== 1 ? 's' : ''} who have never logged in?`)) return;
+    try {
+      const res = await axios.post(`/api/classes/${selectedClass}/students/bulk-reset-passwords`);
+      setMessage({ type: 'success', text: res.data.message });
+      // Refresh class students
+      const studentsRes = await axios.get(`/api/classes/${selectedClass}/students`);
+      setClassStudents(studentsRes.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reset passwords' });
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -883,6 +902,7 @@ function AdminDashboard() {
             onSendAllInvites={handleSendAllInvites}
             onViewGroup={handleSelectGroup}
             onBulkRemove={handleBulkRemoveStudents}
+            onBulkResetPasswords={handleBulkResetPasswords}
             currentUser={user}
           />
         )}

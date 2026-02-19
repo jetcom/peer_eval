@@ -588,7 +588,7 @@ router.get('/:id/students', authenticateToken, requireTeacherOrAdmin, async (req
       where: { classId: id },
       include: {
         user: {
-          select: { id: true, email: true, firstName: true, lastName: true, role: true }
+          select: { id: true, email: true, firstName: true, lastName: true, role: true, mustChangePassword: true }
         }
       },
       orderBy: [
@@ -603,6 +603,7 @@ router.get('/:id/students', authenticateToken, requireTeacherOrAdmin, async (req
       first_name: e.user.firstName,
       last_name: e.user.lastName,
       role: e.user.role,
+      must_change_password: e.user.mustChangePassword,
       enrolled_at: e.createdAt
     })));
   } catch (err) {
@@ -1163,6 +1164,85 @@ router.post('/:id/students/send-invites', authenticateToken, requireTeacherOrAdm
   } catch (err) {
     console.error('Bulk send invite error:', err);
     res.status(500).json({ error: 'Failed to send invite emails' });
+  }
+});
+
+// Bulk reset passwords for students who have never logged in (must_change_password = 1)
+router.post('/:id/students/bulk-reset-passwords', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.id);
+
+    // Check ownership
+    const where = { id: classId };
+    if (req.user.role !== 'admin') {
+      where.teacherId = req.user.id;
+    }
+
+    const classData = await prisma.class.findFirst({ where });
+    if (!classData) {
+      return res.status(404).json({ error: 'Class not found or not authorized' });
+    }
+
+    // Get all enrolled students with must_change_password = 1
+    const enrollments = await prisma.classEnrollment.findMany({
+      where: { classId },
+      include: {
+        user: {
+          select: { id: true, email: true, firstName: true, role: true, mustChangePassword: true }
+        }
+      }
+    });
+
+    const targetStudents = enrollments
+      .filter(e => e.user.role === 'student' && e.user.mustChangePassword === 1)
+      .map(e => e.user);
+
+    if (targetStudents.length === 0) {
+      return res.json({ message: 'No students need password resets', reset: 0, failed: 0 });
+    }
+
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let reset = 0;
+    let failed = 0;
+
+    for (const student of targetStudents) {
+      try {
+        let tempPassword = '';
+        for (let i = 0; i < 12; i++) {
+          tempPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+
+        const hashedPassword = bcrypt.hashSync(tempPassword, 10);
+        await prisma.user.update({
+          where: { id: student.id },
+          data: { password: hashedPassword, mustChangePassword: 1 }
+        });
+
+        await emailService.sendPasswordReset({
+          user: { firstName: student.firstName, email: student.email },
+          temporaryPassword: tempPassword
+        });
+
+        reset++;
+
+        // Small delay to avoid rate limiting
+        if (reset % 5 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (err) {
+        console.error(`Failed to reset password for ${student.email}:`, err);
+        failed++;
+      }
+    }
+
+    res.json({
+      message: `Reset ${reset} password${reset !== 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+      reset,
+      failed
+    });
+  } catch (err) {
+    console.error('Bulk reset passwords error:', err);
+    res.status(500).json({ error: 'Failed to reset passwords' });
   }
 });
 

@@ -28,6 +28,7 @@ function UsersTab({
   onSendAllInvites,
   onViewGroup,
   onBulkRemove,
+  onBulkResetPasswords,
   currentUser
 }) {
   const [selectedUsers, setSelectedUsers] = useState(new Set());
@@ -245,16 +246,28 @@ function UsersTab({
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
           <h2 style={{ margin: 0 }}>Users in {classes.find(c => c.id === parseInt(selectedClass))?.name} ({classStudents.length})</h2>
-          {onSendAllInvites && classStudents.filter(s => s.role === 'student').length > 0 && (
-            <button
-              className="btn btn-primary"
-              onClick={onSendAllInvites}
-              style={{ fontSize: '0.85rem', padding: '8px 16px' }}
-              title="Send enrollment/invite email to all students in this class"
-            >
-              Send All Invites
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {onBulkResetPasswords && classStudents.filter(s => s.role === 'student' && s.must_change_password === 1).length > 0 && (
+              <button
+                className="btn btn-secondary"
+                onClick={onBulkResetPasswords}
+                style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                title="Reset passwords and send credential emails to students who have never logged in"
+              >
+                Reset Unsent Passwords ({classStudents.filter(s => s.role === 'student' && s.must_change_password === 1).length})
+              </button>
+            )}
+            {onSendAllInvites && classStudents.filter(s => s.role === 'student').length > 0 && (
+              <button
+                className="btn btn-primary"
+                onClick={onSendAllInvites}
+                style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                title="Send enrollment/invite email to all students in this class"
+              >
+                Send All Invites
+              </button>
+            )}
+          </div>
         </div>
         {classStudents.length === 0 ? (
           <p>No users enrolled in this class yet.</p>

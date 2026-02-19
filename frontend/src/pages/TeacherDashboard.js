@@ -268,6 +268,19 @@ function TeacherDashboard() {
     }
   };
 
+  const handleBulkResetPasswords = async () => {
+    const neverLoggedIn = students.filter(s => s.role === 'student' && s.must_change_password === 1);
+    if (neverLoggedIn.length === 0) return;
+    if (!window.confirm(`Reset passwords and send credential emails to ${neverLoggedIn.length} student${neverLoggedIn.length !== 1 ? 's' : ''} who have never logged in?`)) return;
+    try {
+      const res = await axios.post(`/api/classes/${selectedClass}/students/bulk-reset-passwords`);
+      setMessage({ type: 'success', text: res.data.message });
+      fetchClassData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reset passwords' });
+    }
+  };
+
   const handleRemoveStudent = async (userId, studentName) => {
     if (!window.confirm(`Remove ${studentName} from this class? This will unenroll them but not delete their account.`)) return;
     try {
@@ -625,16 +638,28 @@ function TeacherDashboard() {
                 <div className="card">
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
                     <h2 style={{ margin: 0 }}>Students in Class</h2>
-                    {students.length > 0 && (
-                      <button
-                        className="btn btn-primary"
-                        onClick={handleSendAllInvites}
-                        style={{ fontSize: '0.85rem', padding: '8px 16px' }}
-                        title="Send enrollment/invite email to all students"
-                      >
-                        Send All Invites
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {students.filter(s => s.role === 'student' && s.must_change_password === 1).length > 0 && (
+                        <button
+                          className="btn btn-secondary"
+                          onClick={handleBulkResetPasswords}
+                          style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                          title="Reset passwords and send credential emails to students who have never logged in"
+                        >
+                          Reset Unsent Passwords ({students.filter(s => s.role === 'student' && s.must_change_password === 1).length})
+                        </button>
+                      )}
+                      {students.length > 0 && (
+                        <button
+                          className="btn btn-primary"
+                          onClick={handleSendAllInvites}
+                          style={{ fontSize: '0.85rem', padding: '8px 16px' }}
+                          title="Send enrollment/invite email to all students"
+                        >
+                          Send All Invites
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {students.length === 0 ? (
                     <p>No students enrolled yet.</p>
