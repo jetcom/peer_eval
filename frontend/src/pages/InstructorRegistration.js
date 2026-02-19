@@ -105,6 +105,20 @@ function InstructorRegistration() {
           Register for an instructor account. Your request will be reviewed by an administrator.
         </p>
 
+        <div style={{
+          padding: '12px 15px',
+          marginBottom: '20px',
+          backgroundColor: darkMode ? '#1a3a4a' : '#eaf4fc',
+          border: `1px solid ${darkMode ? '#2a5a6a' : '#b8daff'}`,
+          borderRadius: '6px',
+          fontSize: '0.85rem',
+          color: darkMode ? '#93a1a1' : '#555'
+        }}>
+          <strong>Are you a student?</strong> You don't need to register here. Your instructor will add you to the class.
+          Go to <Link to="/login" style={{ color: darkMode ? '#268bd2' : '#3498db' }}>Login</Link> and
+          use "Forgot Password" if you need to set up your password.
+        </div>
+
         <form onSubmit={handleSubmit}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
             <div className="form-group" style={{ margin: 0 }}>
