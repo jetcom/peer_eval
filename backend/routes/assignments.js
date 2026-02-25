@@ -13,6 +13,7 @@ const {
   deleteFile,
   MAX_FILES_PER_EVALUATION,
 } = require('../utils/s3');
+const { isPastDueDate } = require('../utils/dateUtils');
 
 // Configure multer for memory storage
 const upload = multer({
@@ -454,18 +455,13 @@ router.post('/evaluations/individual', authenticateToken, async (req, res) => {
     // Get eval type to check due date
     const evalType = await prisma.assignmentEvalType.findUnique({
       where: { id: eval_type_id },
-      include: { assignment: true }
+      include: { assignment: { include: { class: { select: { dueDateTimezone: true } } } } }
     });
 
-    // Determine if late
-    let isLate = 0;
+    // Determine if late — compare in class timezone
     const dueDate = evalType?.dueDate || evalType?.assignment?.dueDate;
-    if (dueDate) {
-      const now = new Date().toISOString();
-      if (now > dueDate) {
-        isLate = 1;
-      }
-    }
+    const classTimezone = evalType?.assignment?.class?.dueDateTimezone;
+    const isLate = isPastDueDate(dueDate, classTimezone) ? 1 : 0;
 
     let evaluation;
     if (existing) {
@@ -569,18 +565,13 @@ router.post('/evaluations/group', authenticateToken, async (req, res) => {
     // Get eval type to check due date
     const evalType = await prisma.assignmentEvalType.findUnique({
       where: { id: eval_type_id },
-      include: { assignment: true }
+      include: { assignment: { include: { class: { select: { dueDateTimezone: true } } } } }
     });
 
-    // Determine if late
-    let isLate = 0;
+    // Determine if late — compare in class timezone
     const dueDate = evalType?.dueDate || evalType?.assignment?.dueDate;
-    if (dueDate) {
-      const now = new Date().toISOString();
-      if (now > dueDate) {
-        isLate = 1;
-      }
-    }
+    const classTimezone = evalType?.assignment?.class?.dueDateTimezone;
+    const isLate = isPastDueDate(dueDate, classTimezone) ? 1 : 0;
 
     let evaluation;
     if (existing) {
@@ -867,7 +858,7 @@ router.get('/evaluations/is-read-only', authenticateToken, async (req, res) => {
 
     const evalType = await prisma.assignmentEvalType.findUnique({
       where: { id: evalTypeId },
-      include: { assignment: true }
+      include: { assignment: { include: { class: { select: { dueDateTimezone: true } } } } }
     });
 
     if (!evalType) {
@@ -879,8 +870,9 @@ router.get('/evaluations/is-read-only', authenticateToken, async (req, res) => {
       return res.json({ isReadOnly: false, dueDate: null });
     }
 
-    const now = new Date().toISOString();
-    const isReadOnly = now > dueDate && evalType.allowLate !== 1;
+    const classTimezone = evalType.assignment?.class?.dueDateTimezone;
+    const pastDue = isPastDueDate(dueDate, classTimezone);
+    const isReadOnly = pastDue && evalType.allowLate !== 1;
 
     res.json({
       isReadOnly,

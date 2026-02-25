@@ -12,6 +12,7 @@ const {
   deleteFile,
   MAX_FILE_SIZE_PDF,
 } = require('../utils/s3');
+const { isPastDueDate } = require('../utils/dateUtils');
 
 // Configure multer for memory storage with PDF size limit
 const upload = multer({
@@ -86,7 +87,9 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
       include: {
         evalType: {
           include: {
-            assignment: { select: { classId: true } }
+            assignment: {
+              include: { class: { select: { dueDateTimezone: true } } }
+            }
           }
         }
       }
@@ -109,11 +112,11 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
       return res.status(403).json({ error: 'You are not enrolled in this class' });
     }
 
-    // Check if past deadline (if set)
+    // Check if past deadline (if set) — compare in class timezone
+    const classTimezone = round.evalType.assignment.class?.dueDateTimezone;
     let isLate = 0;
     if (round.submissionDeadline) {
-      const deadline = new Date(round.submissionDeadline);
-      if (new Date() > deadline) {
+      if (isPastDueDate(round.submissionDeadline, classTimezone)) {
         isLate = 1;
       }
     }
@@ -879,7 +882,9 @@ router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('fil
       include: {
         evalType: {
           include: {
-            assignment: { select: { classId: true } }
+            assignment: {
+              include: { class: { select: { dueDateTimezone: true } } }
+            }
           }
         }
       }
@@ -909,10 +914,10 @@ router.post('/:roundId/papers/:studentId', authenticateToken, upload.single('fil
     }
 
     // Check if past deadline (mark as late but still allow teacher upload)
+    const classTimezone = round.evalType.assignment.class?.dueDateTimezone;
     let isLate = 0;
     if (round.submissionDeadline) {
-      const deadline = new Date(round.submissionDeadline);
-      if (new Date() > deadline) {
+      if (isPastDueDate(round.submissionDeadline, classTimezone)) {
         isLate = 1;
       }
     }
