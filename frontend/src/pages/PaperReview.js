@@ -81,7 +81,7 @@ function PaperReview() {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [overallComments, assignment, saveComments]);
+  }, [overallComments, assignment, saveComments, isMasquerading]);
 
   const handleAddAnnotation = async (annotationData) => {
     try {
