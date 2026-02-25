@@ -16,6 +16,11 @@ function PaperSubmission() {
   const [roundInfo, setRoundInfo] = useState(null);
   const [paper, setPaper] = useState(null);
 
+  // Masquerade support
+  const searchParams = new URLSearchParams(window.location.search);
+  const masqueradeUserId = searchParams.get('user_id');
+  const isMasquerading = !!masqueradeUserId;
+
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -26,7 +31,8 @@ function PaperSubmission() {
       setLoading(true);
 
       // Fetch paper if already submitted
-      const paperRes = await axios.get(`/api/paper-review/${roundId}/my-paper`);
+      const params = masqueradeUserId ? `?user_id=${masqueradeUserId}` : '';
+      const paperRes = await axios.get(`/api/paper-review/${roundId}/my-paper${params}`);
       setPaper(paperRes.data);
 
       // For now, we'll get basic info. In a full implementation,
@@ -48,7 +54,7 @@ function PaperSubmission() {
     setPaper(newPaper);
   };
 
-  const isSubmissionOpen = roundInfo?.status === 'submission';
+  const isSubmissionOpen = roundInfo?.status === 'submission' && !isMasquerading;
 
   if (loading) {
     return (
@@ -90,6 +96,14 @@ function PaperSubmission() {
       </header>
 
       <div className="container">
+        {isMasquerading && (
+          <div style={{
+            background: '#fff3cd', color: '#856404', padding: '0.5rem 1rem',
+            textAlign: 'center', fontWeight: 500, fontSize: '0.9rem', borderRadius: '8px', marginBottom: '1rem'
+          }}>
+            Viewing as student (read-only)
+          </div>
+        )}
         <div className="card">
           <h2>Submit Your Paper</h2>
 

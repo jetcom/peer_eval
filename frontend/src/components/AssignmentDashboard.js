@@ -256,21 +256,21 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
                                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                                   <button
                                     className="btn btn-secondary btn-sm"
-                                    onClick={() => navigate(`/paper-review/${evalType.id}/submit`)}
+                                    onClick={() => navigate(`/paper-review/${evalType.id}/submit${masqueradeUser ? `?user_id=${masqueradeUser}` : ''}`)}
                                     style={{ fontSize: '0.85rem' }}
                                   >
                                     📄 Submit Paper
                                   </button>
                                   <button
                                     className="btn btn-secondary btn-sm"
-                                    onClick={() => navigate(`/paper-review/${evalType.id}/review`)}
+                                    onClick={() => navigate(`/paper-review/${evalType.id}/review${masqueradeUser ? `?user_id=${masqueradeUser}` : ''}`)}
                                     style={{ fontSize: '0.85rem' }}
                                   >
                                     ✏️ Review Paper
                                   </button>
                                   <button
                                     className="btn btn-secondary btn-sm"
-                                    onClick={() => navigate(`/paper-review/${evalType.id}/feedback`)}
+                                    onClick={() => navigate(`/paper-review/${evalType.id}/feedback${masqueradeUser ? `?user_id=${masqueradeUser}` : ''}`)}
                                     style={{ fontSize: '0.85rem' }}
                                   >
                                     💬 View Feedback

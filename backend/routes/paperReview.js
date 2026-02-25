@@ -13,6 +13,8 @@ const {
   MAX_FILE_SIZE_PDF,
 } = require('../utils/s3');
 const { isPastDueDate } = require('../utils/dateUtils');
+const { startReviewPeriod } = require('../services/paperReviewService');
+const { sendBulkNudge, notifyTeacherOfNudges } = require('../services/email');
 
 // Configure multer for memory storage with PDF size limit
 const upload = multer({
@@ -181,7 +183,8 @@ router.post('/:roundId/papers', authenticateToken, upload.single('file'), async 
 router.get('/:roundId/my-paper', authenticateToken, async (req, res) => {
   try {
     const roundId = parseInt(req.params.roundId);
-    const userId = req.user.id;
+    const isTeacher = req.user.role === 'teacher' || req.user.role === 'admin';
+    const targetUserId = (isTeacher && req.query.user_id) ? parseInt(req.query.user_id) : req.user.id;
 
     // Look up round by evalTypeId to get actual round.id
     const round = await prisma.paperReviewRound.findUnique({
@@ -193,7 +196,7 @@ router.get('/:roundId/my-paper', authenticateToken, async (req, res) => {
     }
 
     const paper = await prisma.paper.findUnique({
-      where: { roundId_authorId: { roundId: round.id, authorId: userId } }
+      where: { roundId_authorId: { roundId: round.id, authorId: targetUserId } }
     });
 
     if (!paper) {
@@ -339,6 +342,7 @@ router.get('/:roundId/status', authenticateToken, async (req, res) => {
       auto_release_feedback: round.autoReleaseFeedback === 1,
       anonymous_reviews: round.anonymousReviews === 1,
       require_submission_to_review: round.requireSubmissionToReview === 1,
+      auto_start_review: round.autoStartReview === 1,
       total_students: totalStudents,
       submitted_count: submittedCount,
       assignments_count: round.assignments.length,
@@ -720,23 +724,15 @@ router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
     const roundId = parseInt(req.params.roundId);
     const { duration_hours } = req.body;
 
+    // Auth check: verify teacher/admin before delegating to service
     const round = await prisma.paperReviewRound.findUnique({
       where: { evalTypeId: roundId },
       include: {
         evalType: {
           include: {
-            assignment: {
-              include: {
-                class: {
-                  include: {
-                    enrollments: { select: { userId: true } }
-                  }
-                }
-              }
-            }
+            assignment: { select: { classId: true } }
           }
-        },
-        papers: true
+        }
       }
     });
 
@@ -744,68 +740,22 @@ router.post('/:roundId/start-review', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Round not found' });
     }
 
-    // Check user is teacher/admin
     const classId = round.evalType.assignment.classId;
     const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
     if (!canAccess) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    if (round.status !== 'submission') {
-      return res.status(400).json({ error: 'Review period already started' });
+    const result = await startReviewPeriod(roundId, { durationHours: duration_hours });
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
-
-    // Get list of students who submitted (or all students if not requiring submission)
-    let eligibleStudents;
-    if (round.requireSubmissionToReview === 1) {
-      eligibleStudents = round.papers.map(p => p.authorId);
-    } else {
-      eligibleStudents = round.evalType.assignment.class.enrollments.map(e => e.userId);
-    }
-
-    if (eligibleStudents.length < 2) {
-      return res.status(400).json({ error: 'Need at least 2 students to start review' });
-    }
-
-    // Get papers to assign (only from students who submitted)
-    const papersToAssign = round.papers;
-    if (papersToAssign.length < 2) {
-      return res.status(400).json({ error: 'Need at least 2 papers to start review' });
-    }
-
-    // Create circular assignments (shuffle for randomness)
-    const shuffled = [...papersToAssign].sort(() => Math.random() - 0.5);
-    const assignments = shuffled.map((paper, i) => ({
-      roundId: round.id,  // Use actual round.id, not evalTypeId
-      reviewerId: paper.authorId,
-      paperId: shuffled[(i + 1) % shuffled.length].id
-    }));
-
-    // Calculate review deadline
-    const durationHours = duration_hours || round.reviewDurationHours;
-    const reviewStartedAt = new Date();
-    const reviewDeadline = new Date(reviewStartedAt.getTime() + durationHours * 60 * 60 * 1000);
-
-    // Update round and create assignments in transaction
-    await prisma.$transaction([
-      prisma.paperReviewRound.update({
-        where: { evalTypeId: roundId },
-        data: {
-          status: 'review',
-          reviewStartedAt,
-          reviewDeadline: reviewDeadline.toISOString(),
-          reviewDurationHours: durationHours
-        }
-      }),
-      prisma.paperReviewAssignment.createMany({
-        data: assignments
-      })
-    ]);
 
     res.json({
       message: 'Review period started',
-      assignments_created: assignments.length,
-      review_deadline: reviewDeadline.toISOString()
+      assignments_created: result.assignmentsCreated,
+      review_deadline: result.reviewDeadline
     });
   } catch (error) {
     console.error('Start review error:', error);
@@ -856,6 +806,121 @@ router.post('/:roundId/release-feedback', authenticateToken, async (req, res) =>
   } catch (error) {
     console.error('Release feedback error:', error);
     res.status(500).json({ error: 'Failed to release feedback' });
+  }
+});
+
+// Schedule review start with nudge emails to non-submitters (teacher)
+router.post('/:roundId/schedule-start', authenticateToken, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+    const { start_in_hours } = req.body;
+
+    if (!start_in_hours || start_in_hours < 0.5) {
+      return res.status(400).json({ error: 'start_in_hours must be at least 0.5' });
+    }
+
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: {
+              include: {
+                class: {
+                  include: {
+                    enrollments: { select: { userId: true } },
+                    teacher: { select: { id: true, firstName: true, lastName: true, email: true } }
+                  }
+                }
+              }
+            }
+          }
+        },
+        papers: { select: { authorId: true } }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
+    if (round.status !== 'submission') {
+      return res.status(400).json({ error: 'Round is not in submission phase' });
+    }
+
+    const classId = round.evalType.assignment.classId;
+    const canAccess = await isTeacherOrAdmin(req.user.id, req.user.role, classId);
+    if (!canAccess) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Calculate new submission deadline
+    const submissionDeadline = new Date(Date.now() + start_in_hours * 60 * 60 * 1000);
+
+    // Update round: set deadline and enable auto-start
+    await prisma.paperReviewRound.update({
+      where: { evalTypeId: roundId },
+      data: {
+        submissionDeadline: submissionDeadline.toISOString(),
+        autoStartReview: 1
+      }
+    });
+
+    // Find students who haven't submitted
+    const submittedAuthorIds = new Set(round.papers.map(p => p.authorId));
+    const notSubmittedUserIds = round.evalType.assignment.class.enrollments
+      .filter(e => !submittedAuthorIds.has(e.userId))
+      .map(e => e.userId);
+
+    let studentsNudged = 0;
+    if (notSubmittedUserIds.length > 0) {
+      const students = await prisma.user.findMany({
+        where: { id: { in: notSubmittedUserIds } },
+        select: { id: true, firstName: true, lastName: true, email: true }
+      });
+
+      const className = round.evalType.assignment.class.name;
+      const assignmentName = round.evalType.assignment.name;
+      const teacher = round.evalType.assignment.class.teacher;
+      const instructorName = `${teacher.firstName} ${teacher.lastName}`.trim();
+
+      const deadlineStr = submissionDeadline.toLocaleString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+      });
+
+      await sendBulkNudge({
+        students: students.map(s => ({
+          email: s.email,
+          firstName: s.firstName,
+          lastName: s.lastName
+        })),
+        className,
+        assignmentName,
+        instructorName,
+        subject: 'Paper Review Starting Soon — Submit Now',
+        message: `Your instructor is starting the peer review for "${assignmentName}" in ${start_in_hours} hour${start_in_hours !== 1 ? 's' : ''}. Submit your paper before ${deadlineStr} to participate.`
+      });
+
+      studentsNudged = students.length;
+
+      // Notify teacher about the nudge batch
+      await notifyTeacherOfNudges({
+        teacherEmail: teacher.email,
+        teacherName: instructorName,
+        className,
+        students
+      });
+    }
+
+    res.json({
+      scheduled_start: submissionDeadline.toISOString(),
+      students_nudged: studentsNudged,
+      submission_deadline: submissionDeadline.toISOString()
+    });
+  } catch (error) {
+    console.error('Schedule start error:', error);
+    res.status(500).json({ error: 'Failed to schedule review start' });
   }
 });
 
@@ -992,10 +1057,12 @@ router.put('/:roundId/settings', authenticateToken, async (req, res) => {
     const roundId = parseInt(req.params.roundId);
     const {
       submission_deadline,
+      review_deadline,
       review_duration_hours,
       anonymous_reviews,
       require_submission_to_review,
-      auto_release_feedback
+      auto_release_feedback,
+      auto_start_review
     } = req.body;
 
     const round = await prisma.paperReviewRound.findUnique({
@@ -1022,10 +1089,12 @@ router.put('/:roundId/settings', authenticateToken, async (req, res) => {
 
     const updateData = {};
     if (submission_deadline !== undefined) updateData.submissionDeadline = submission_deadline;
+    if (review_deadline !== undefined) updateData.reviewDeadline = review_deadline;
     if (review_duration_hours !== undefined) updateData.reviewDurationHours = review_duration_hours;
     if (anonymous_reviews !== undefined) updateData.anonymousReviews = anonymous_reviews ? 1 : 0;
     if (require_submission_to_review !== undefined) updateData.requireSubmissionToReview = require_submission_to_review ? 1 : 0;
     if (auto_release_feedback !== undefined) updateData.autoReleaseFeedback = auto_release_feedback ? 1 : 0;
+    if (auto_start_review !== undefined) updateData.autoStartReview = auto_start_review ? 1 : 0;
 
     const updated = await prisma.paperReviewRound.update({
       where: { evalTypeId: roundId },
@@ -1035,10 +1104,12 @@ router.put('/:roundId/settings', authenticateToken, async (req, res) => {
     res.json({
       id: updated.id,
       submission_deadline: updated.submissionDeadline,
+      review_deadline: updated.reviewDeadline,
       review_duration_hours: updated.reviewDurationHours,
       anonymous_reviews: updated.anonymousReviews === 1,
       require_submission_to_review: updated.requireSubmissionToReview === 1,
-      auto_release_feedback: updated.autoReleaseFeedback === 1
+      auto_release_feedback: updated.autoReleaseFeedback === 1,
+      auto_start_review: updated.autoStartReview === 1
     });
   } catch (error) {
     console.error('Update settings error:', error);
@@ -1054,7 +1125,8 @@ router.put('/:roundId/settings', authenticateToken, async (req, res) => {
 router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
   try {
     const roundId = parseInt(req.params.roundId);
-    const userId = req.user.id;
+    const isTeacher = req.user.role === 'teacher' || req.user.role === 'admin';
+    const targetUserId = (isTeacher && req.query.user_id) ? parseInt(req.query.user_id) : req.user.id;
 
     // Look up round by evalTypeId to get actual round.id
     const round = await prisma.paperReviewRound.findUnique({
@@ -1066,7 +1138,7 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
     }
 
     const assignment = await prisma.paperReviewAssignment.findUnique({
-      where: { roundId_reviewerId: { roundId: round.id, reviewerId: userId } },
+      where: { roundId_reviewerId: { roundId: round.id, reviewerId: targetUserId } },
       include: {
         paper: {
           include: {

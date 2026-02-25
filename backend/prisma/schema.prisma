@@ -549,6 +549,7 @@ model PaperReviewRound {
   reviewDurationHours       Int       @default(48) @map("review_duration_hours")
   feedbackReleasedAt        DateTime? @map("feedback_released_at")
   autoReleaseFeedback       Int       @default(1) @map("auto_release_feedback")
+  autoStartReview           Int       @default(0) @map("auto_start_review")
   anonymousReviews          Int       @default(1) @map("anonymous_reviews")
   requireSubmissionToReview Int       @default(1) @map("require_submission_to_review")
   createdAt                 DateTime  @default(now()) @map("created_at")

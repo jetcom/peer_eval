@@ -1,6 +1,8 @@
 const cron = require('node-cron');
 const prisma = require('../lib/prisma');
 const emailService = require('./email');
+const { isPastDueDate } = require('../utils/dateUtils');
+const { startReviewPeriod } = require('./paperReviewService');
 
 /**
  * Reminder Scheduler Service
@@ -35,10 +37,65 @@ function formatDateInTimezone(date, timezone) {
 }
 
 /**
+ * Check for paper review rounds that should auto-start their review period.
+ * Runs as part of the 15-minute cron cycle.
+ */
+async function processAutoStartReviews() {
+  console.log('[ReminderScheduler] Checking for auto-start review rounds...');
+
+  try {
+    // Find rounds that are still in submission, have auto-start enabled, and have a deadline set
+    const rounds = await prisma.paperReviewRound.findMany({
+      where: {
+        status: 'submission',
+        autoStartReview: 1,
+        submissionDeadline: { not: null }
+      },
+      include: {
+        evalType: {
+          include: {
+            assignment: {
+              include: {
+                class: { select: { dueDateTimezone: true, name: true } }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    for (const round of rounds) {
+      const timezone = round.evalType.assignment.class.dueDateTimezone || 'America/New_York';
+      const className = round.evalType.assignment.class.name;
+      const assignmentName = round.evalType.assignment.name;
+
+      if (!isPastDueDate(round.submissionDeadline, timezone)) {
+        continue;
+      }
+
+      console.log(`[ReminderScheduler] Auto-starting review for "${assignmentName}" in class "${className}" (evalType ${round.evalTypeId})`);
+
+      const result = await startReviewPeriod(round.evalTypeId);
+
+      if (result.success) {
+        console.log(`[ReminderScheduler] Auto-started review: ${result.assignmentsCreated} assignments created, deadline ${result.reviewDeadline}`);
+      } else {
+        console.warn(`[ReminderScheduler] Auto-start failed for evalType ${round.evalTypeId}: ${result.error}`);
+      }
+    }
+  } catch (err) {
+    console.error('[ReminderScheduler] Error processing auto-start reviews:', err);
+  }
+}
+
+/**
  * Check and send reminders for all active schedules
  */
 async function processReminders() {
   console.log('[ReminderScheduler] Running scheduled reminder check...');
+
+  // Check for auto-start review rounds first
+  await processAutoStartReviews();
 
   try {
     const now = new Date();

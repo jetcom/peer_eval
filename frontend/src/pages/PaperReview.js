@@ -22,6 +22,11 @@ function PaperReview() {
   const [activeAnnotation, setActiveAnnotation] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
 
+  // Masquerade support
+  const searchParams = new URLSearchParams(window.location.search);
+  const masqueradeUserId = searchParams.get('user_id');
+  const isMasquerading = !!masqueradeUserId;
+
   useEffect(() => {
     fetchAssignment();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -30,7 +35,8 @@ function PaperReview() {
   const fetchAssignment = async () => {
     try {
       setLoading(true);
-      const res = await axios.get(`/api/paper-review/${roundId}/my-assignment`);
+      const params = masqueradeUserId ? `?user_id=${masqueradeUserId}` : '';
+      const res = await axios.get(`/api/paper-review/${roundId}/my-assignment${params}`);
       setAssignment(res.data);
       if (res.data?.review) {
         setOverallComments(res.data.review.overall_comments || '');
@@ -63,8 +69,9 @@ function PaperReview() {
     }
   }, [roundId]);
 
-  // Debounced save for comments
+  // Debounced save for comments (skip when masquerading)
   useEffect(() => {
+    if (isMasquerading) return;
     if (!assignment?.review && !overallComments) return;
 
     const timer = setTimeout(() => {
@@ -155,6 +162,7 @@ function PaperReview() {
   }
 
   const isSubmitted = !!assignment.review?.submitted_at;
+  const readOnly = isSubmitted || isMasquerading;
 
   return (
     <div className={darkMode ? 'dark-mode' : ''}>
@@ -174,6 +182,15 @@ function PaperReview() {
         </div>
       </header>
 
+      {isMasquerading && (
+        <div style={{
+          background: '#fff3cd', color: '#856404', padding: '0.5rem 1rem',
+          textAlign: 'center', fontWeight: 500, fontSize: '0.9rem'
+        }}>
+          Viewing as {assignment.paper?.author?.name || 'student'} (read-only)
+        </div>
+      )}
+
       <div className="review-page-container">
         {/* Left: PDF Viewer with Annotations */}
         <div className="pdf-section">
@@ -185,10 +202,10 @@ function PaperReview() {
             <PdfAnnotationViewer
               fileUrl={assignment.paper.url}
               annotations={annotations}
-              onAnnotationAdd={!isSubmitted ? handleAddAnnotation : undefined}
-              onAnnotationDelete={!isSubmitted ? handleDeleteAnnotation : undefined}
+              onAnnotationAdd={!readOnly ? handleAddAnnotation : undefined}
+              onAnnotationDelete={!readOnly ? handleDeleteAnnotation : undefined}
               onPageChange={setCurrentPage}
-              readOnly={isSubmitted}
+              readOnly={readOnly}
             />
           ) : (
             <div className="no-pdf card">Unable to load PDF</div>
@@ -215,11 +232,11 @@ function PaperReview() {
             <AnnotationSidebar
               annotations={annotations}
               onAnnotationClick={setActiveAnnotation}
-              onAnnotationAdd={!isSubmitted ? handleAddAnnotation : undefined}
-              onAnnotationDelete={!isSubmitted ? handleDeleteAnnotation : undefined}
+              onAnnotationAdd={!readOnly ? handleAddAnnotation : undefined}
+              onAnnotationDelete={!readOnly ? handleDeleteAnnotation : undefined}
               activeAnnotationId={activeAnnotation?.id}
               currentPage={currentPage}
-              readOnly={isSubmitted}
+              readOnly={readOnly}
             />
           </div>
 
@@ -231,12 +248,12 @@ function PaperReview() {
               onChange={(e) => setOverallComments(e.target.value)}
               placeholder="Provide overall feedback to help your peer improve their paper..."
               rows={6}
-              disabled={isSubmitted}
+              disabled={readOnly}
             />
 
             <div className="review-actions">
               {saveStatus && <span className="save-status">{saveStatus}</span>}
-              {!isSubmitted && (
+              {!readOnly && (
                 <button
                   className="btn btn-primary"
                   onClick={handleSubmit}

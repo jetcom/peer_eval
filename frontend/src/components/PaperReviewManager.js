@@ -25,8 +25,13 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
     review_duration_hours: 48,
     anonymous_reviews: true,
     require_submission_to_review: true,
-    auto_release_feedback: true
+    auto_release_feedback: true,
+    auto_start_review: false
   });
+  const [editReviewDeadline, setEditReviewDeadline] = useState('');
+  const [showDeadlineEditor, setShowDeadlineEditor] = useState(false);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleMessage, setScheduleMessage] = useState('');
 
   useEffect(() => {
     if (roundId) {
@@ -45,9 +50,13 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
         review_duration_hours: res.data.review_duration_hours || 48,
         anonymous_reviews: res.data.anonymous_reviews,
         require_submission_to_review: res.data.require_submission_to_review,
-        auto_release_feedback: res.data.auto_release_feedback
+        auto_release_feedback: res.data.auto_release_feedback,
+        auto_start_review: res.data.auto_start_review
       });
       setDurationHours(res.data.review_duration_hours || 48);
+      if (res.data.review_deadline) {
+        setEditReviewDeadline(res.data.review_deadline);
+      }
     } catch (err) {
       console.error('Error fetching round status:', err);
       setError(err.response?.data?.error || 'Failed to load status');
@@ -93,6 +102,39 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
       fetchStatus();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to save settings');
+    }
+  };
+
+  const handleUpdateDeadline = async () => {
+    try {
+      await axios.put(`/api/paper-review/${roundId}/settings`, {
+        review_deadline: editReviewDeadline
+      });
+      setShowDeadlineEditor(false);
+      fetchStatus();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update deadline');
+    }
+  };
+
+  const handleScheduleStart = async (hours) => {
+    if (!window.confirm(`Schedule review to start in ${hours} hour${hours > 1 ? 's' : ''}? Students who haven't submitted will be emailed a reminder.`)) {
+      return;
+    }
+
+    setScheduleLoading(true);
+    setScheduleMessage('');
+    try {
+      const res = await axios.post(`/api/paper-review/${roundId}/schedule-start`, {
+        start_in_hours: hours
+      });
+      setScheduleMessage(`Review scheduled! ${res.data.students_nudged} student${res.data.students_nudged !== 1 ? 's' : ''} notified.`);
+      fetchStatus();
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to schedule start');
+    } finally {
+      setScheduleLoading(false);
     }
   };
 
@@ -181,6 +223,11 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
       {status?.submission_deadline && (
         <div className="prm-info">
           <strong>Submission Deadline:</strong> {new Date(status.submission_deadline).toLocaleString()}
+          {status?.auto_start_review && status?.status === 'submission' && (
+            <span style={{ marginLeft: '0.5rem', color: '#e65100', fontSize: '0.85em' }}>
+              (auto-start enabled)
+            </span>
+          )}
         </div>
       )}
       {status?.review_deadline && (
@@ -256,6 +303,22 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
                 onChange={(e) => setSettings({ ...settings, auto_release_feedback: e.target.checked })}
               />
               Auto-release feedback after review deadline
+            </label>
+          </div>
+          <div className="form-group checkbox">
+            <label>
+              <input
+                type="checkbox"
+                checked={settings.auto_start_review}
+                onChange={(e) => setSettings({ ...settings, auto_start_review: e.target.checked })}
+                disabled={!settings.submission_deadline}
+              />
+              Auto-start review period after submission deadline
+              {!settings.submission_deadline && (
+                <span style={{ fontSize: '0.85em', color: '#999', marginLeft: '0.5em' }}>
+                  (set a submission deadline first)
+                </span>
+              )}
             </label>
           </div>
           <button className="btn btn-primary btn-sm" onClick={handleSaveSettings}>
@@ -340,18 +403,66 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
               onClick={handleStartReview}
               disabled={!status?.submitted_count || status.submitted_count < 2}
             >
-              Start Review Period
+              Start Now
             </button>
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <select
+                className="btn btn-secondary"
+                value=""
+                onChange={(e) => {
+                  if (e.target.value) handleScheduleStart(parseFloat(e.target.value));
+                  e.target.value = '';
+                }}
+                disabled={scheduleLoading || !status?.submitted_count || status.submitted_count < 2}
+                style={{ cursor: 'pointer' }}
+              >
+                <option value="" disabled>Start in...</option>
+                <option value="1">Start in 1 hour</option>
+                <option value="2">Start in 2 hours</option>
+                <option value="4">Start in 4 hours</option>
+                <option value="24">Start in 24 hours</option>
+              </select>
+            </div>
+            {scheduleMessage && (
+              <span style={{ color: '#27ae60', fontSize: '0.85rem', fontWeight: 500 }}>{scheduleMessage}</span>
+            )}
             {(!status?.submitted_count || status.submitted_count < 2) && (
               <p className="hint">Need at least 2 papers to start review</p>
             )}
           </div>
         )}
 
-        {status?.status === 'review' && !status?.feedback_released_at && (
-          <button className="btn btn-success" onClick={handleReleaseFeedback}>
-            Release Feedback Early
-          </button>
+        {status?.status === 'review' && (
+          <>
+            {!status?.feedback_released_at && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                <button className="btn btn-success" onClick={handleReleaseFeedback}>
+                  Release Feedback Early
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setShowDeadlineEditor(!showDeadlineEditor)}
+                >
+                  {showDeadlineEditor ? 'Cancel' : 'Change Review Deadline'}
+                </button>
+              </div>
+            )}
+            {showDeadlineEditor && (
+              <div className="prm-settings" style={{ marginBottom: '1rem' }}>
+                <div className="form-group">
+                  <label>Review Deadline</label>
+                  <input
+                    type="datetime-local"
+                    value={editReviewDeadline ? editReviewDeadline.slice(0, 16) : ''}
+                    onChange={(e) => setEditReviewDeadline(e.target.value ? new Date(e.target.value).toISOString() : '')}
+                  />
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={handleUpdateDeadline}>
+                  Update Deadline
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
