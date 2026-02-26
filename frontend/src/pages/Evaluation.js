@@ -627,7 +627,7 @@ function Evaluation() {
                           padding: '8px',
                           textAlign: 'center',
                           borderRadius: '4px',
-                          border: '1px solid #ccc'
+                          border: '1px solid var(--border-color)'
                         }}
                       />
                     </td>

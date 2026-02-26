@@ -229,7 +229,7 @@ const PdfAnnotationViewer = ({
               position: 'absolute',
               left: `${Math.min(Math.max(pendingAnnotation.x, 5), 50)}%`,
               top: `${pendingAnnotation.y + 2}%`,
-              background: '#fff',
+              background: 'var(--bg-surface)',
               borderRadius: '8px',
               padding: '12px',
               boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
@@ -237,6 +237,7 @@ const PdfAnnotationViewer = ({
               minWidth: '250px',
               maxWidth: '320px',
               pointerEvents: 'auto',
+              border: '1px solid var(--border-color)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
@@ -249,12 +250,14 @@ const PdfAnnotationViewer = ({
                 width: '100%',
                 minHeight: '70px',
                 padding: '8px',
-                border: '1px solid #ddd',
+                border: '1px solid var(--border-color)',
                 borderRadius: '4px',
                 fontFamily: 'inherit',
                 fontSize: '13px',
                 resize: 'vertical',
                 boxSizing: 'border-box',
+                background: 'var(--bg-inset)',
+                color: 'var(--text-primary)',
               }}
             />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '8px' }}>
@@ -265,8 +268,9 @@ const PdfAnnotationViewer = ({
                 }}
                 style={{
                   padding: '6px 12px',
-                  background: '#e0e0e0',
-                  border: 'none',
+                  background: 'var(--bg-elevated)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-color)',
                   borderRadius: '4px',
                   fontSize: '12px',
                   cursor: 'pointer',
@@ -279,7 +283,7 @@ const PdfAnnotationViewer = ({
                 disabled={!commentText.trim()}
                 style={{
                   padding: '6px 12px',
-                  background: commentText.trim() ? '#4a90d9' : '#ccc',
+                  background: commentText.trim() ? '#4a90d9' : 'var(--border-strong)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: '4px',

@@ -429,26 +429,26 @@ const AnnotationSidebar = ({
 
         /* Dark mode */
         body.dark-mode .annotation-sidebar {
-          background: #2a2a2a;
+          background: var(--bg-elevated);
         }
 
         body.dark-mode .sidebar-header {
-          background: #333;
-          border-color: #444;
+          background: var(--border-strong);
+          border-color: #4a4a65;
         }
 
         body.dark-mode .page-header {
-          background: #333;
+          background: var(--border-strong);
           color: #aaa;
         }
 
         body.dark-mode .annotation-item {
-          border-color: #444;
+          border-color: #4a4a65;
         }
 
         body.dark-mode .annotation-item:hover {
-          background: #333;
-          border-color: #555;
+          background: var(--border-strong);
+          border-color: #5a5a75;
         }
 
         body.dark-mode .annotation-item.active {
@@ -466,7 +466,7 @@ const AnnotationSidebar = ({
         }
 
         body.dark-mode .annotation-content {
-          color: #e0e0e0;
+          color: var(--text-primary);
         }
 
         body.dark-mode .add-comment-btn {
@@ -474,19 +474,24 @@ const AnnotationSidebar = ({
         }
 
         body.dark-mode .add-comment-form {
-          background: #333;
-          border-color: #444;
+          background: var(--border-strong);
+          border-color: #4a4a65;
         }
 
         body.dark-mode .add-comment-form textarea {
-          background: #2a2a2a;
-          border-color: #444;
-          color: #e0e0e0;
+          background: var(--bg-elevated);
+          border-color: #4a4a65;
+          color: var(--text-primary);
         }
 
         body.dark-mode .cancel-btn {
-          background: #444;
-          color: #e0e0e0;
+          background: #4a4a65;
+          color: var(--text-primary);
+        }
+
+        body.dark-mode .delete-btn:hover {
+          color: #ef5350;
+          background: #3d1a1a;
         }
       `}</style>
     </div>

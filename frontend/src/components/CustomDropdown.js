@@ -95,7 +95,7 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
         style={{
           padding: '12px 16px',
           borderRadius: '4px',
-          border: '1px solid #ccc',
+          border: '1px solid var(--border-color)',
           backgroundColor: darkMode ? '#2a3a5a' : '#fff',
           color: darkMode ? '#e0e0e0' : '#000',
           cursor: 'pointer',
@@ -135,7 +135,7 @@ function CustomDropdown({ value, onChange, options, darkMode, style, placeholder
             left: dropdownPosition.left,
             width: dropdownPosition.width,
             backgroundColor: darkMode ? '#2a3a5a' : '#fff',
-            border: '1px solid #ccc',
+            border: '1px solid var(--border-color)',
             borderRadius: '4px',
             maxHeight: '300px',
             overflowY: 'auto',
