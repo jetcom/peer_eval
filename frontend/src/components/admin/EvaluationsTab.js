@@ -276,10 +276,10 @@ function EvaluationsTab({
                                 }}>
                                   {attachments.map(att => (
                                     <div key={att.id} style={{
-                                      border: '1px solid #ddd',
+                                      border: '1px solid var(--border-color)',
                                       borderRadius: '6px',
                                       overflow: 'hidden',
-                                      background: '#fff'
+                                      background: 'var(--bg-elevated)'
                                     }}>
                                       <a href={att.url} target="_blank" rel="noopener noreferrer">
                                         <img
@@ -295,7 +295,7 @@ function EvaluationsTab({
                                       <div style={{
                                         padding: '6px 8px',
                                         fontSize: '0.75rem',
-                                        color: '#666',
+                                        color: 'var(--text-secondary)',
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         whiteSpace: 'nowrap'
@@ -306,7 +306,7 @@ function EvaluationsTab({
                                   ))}
                                 </div>
                               ) : (
-                                <div style={{ marginTop: '8px', color: '#888', fontStyle: 'italic' }}>
+                                <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                                   No images attached
                                 </div>
                               )}
@@ -476,7 +476,7 @@ function EvaluationsTab({
                               ))}
                             </div>
                           ) : (
-                            <div style={{ marginTop: '8px', color: '#888', fontStyle: 'italic' }}>
+                            <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                               No images attached
                             </div>
                           )}
