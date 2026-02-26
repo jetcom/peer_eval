@@ -5,6 +5,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
+import EvaluationsTab from '../components/admin/EvaluationsTab';
+import ReportsTab from '../components/admin/ReportsTab';
+import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 import TemplatesTab from '../components/admin/TemplatesTab';
 function TeacherDashboard() {
@@ -31,6 +34,8 @@ function TeacherDashboard() {
   const [uploading, setUploading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [selectedStudents, setSelectedStudents] = useState(new Set());
+  const [reportGroup, setReportGroup] = useState('all');
+  const [showExtensionsModal, setShowExtensionsModal] = useState(false);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -589,6 +594,12 @@ function TeacherDashboard() {
                   </button>
                 )}
                 <button
+                  className={`tab ${activeTab === 'evaluations' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('evaluations')}
+                >
+                  Evaluations
+                </button>
+                <button
                   className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
                   onClick={() => setActiveTab('reports')}
                 >
@@ -898,12 +909,31 @@ function TeacherDashboard() {
               </div>
             )}
 
+            {activeTab === 'evaluations' && (
+              <EvaluationsTab
+                selectedClass={selectedClass?.toString()}
+                classes={classes}
+                classStudents={students}
+                classGroups={groups}
+                evaluations={evaluations}
+                assignmentEvaluations={assignmentEvaluations}
+                onManageExtensions={() => setShowExtensionsModal(true)}
+              />
+            )}
+
             {activeTab === 'reports' && (
-              <div className="card">
-                <h2>Reports</h2>
-                <p>Evaluation reports for this class will appear here.</p>
-                {/* TODO: Add reports similar to AdminDashboard but scoped to this class */}
-              </div>
+              <ReportsTab
+                darkMode={darkMode}
+                selectedClass={selectedClass?.toString()}
+                classes={classes}
+                classStudents={students}
+                classGroups={groups}
+                evaluations={evaluations}
+                finalCommentsData={finalCommentsData}
+                reportGroup={reportGroup}
+                setReportGroup={setReportGroup}
+                assignmentEvaluations={assignmentEvaluations}
+              />
             )}
           </>
         )}
@@ -916,6 +946,18 @@ function TeacherDashboard() {
             setEditingClass={setEditingClass}
             onSubmit={handleUpdateClass}
             onClose={() => setEditingClass(null)}
+          />
+        )}
+
+        {showExtensionsModal && selectedClass && (
+          <ManageExtensionsModal
+            darkMode={darkMode}
+            classId={selectedClass}
+            classStudents={students}
+            onClose={() => setShowExtensionsModal(false)}
+            onSave={() => {
+              setMessage({ type: 'success', text: 'Extensions saved successfully' });
+            }}
           />
         )}
           </>
