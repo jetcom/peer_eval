@@ -544,9 +544,8 @@ router.get('/all', authenticateToken, requireTeacher, async (req, res) => {
             lastName: true,
             groupMemberships: {
               include: {
-                group: { select: { name: true } }
-              },
-              take: 1
+                group: { select: { name: true, classId: true } }
+              }
             }
           }
         },
@@ -589,7 +588,7 @@ router.get('/all', authenticateToken, requireTeacher, async (req, res) => {
         updated_at: e.updatedAt,
         evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`.trim(),
         evaluatee_name: `${e.evaluatee.firstName} ${e.evaluatee.lastName}`.trim(),
-        group_name: e.evaluatee.groupMemberships[0]?.group?.name || null,
+        group_name: e.evaluatee.groupMemberships.find(gm => gm.group?.classId === e.classId)?.group?.name || null,
         attachments: attachmentsWithUrls
       };
     }));
@@ -626,9 +625,8 @@ router.get('/all-final-comments', authenticateToken, requireTeacher, async (req,
             lastName: true,
             groupMemberships: {
               include: {
-                group: { select: { name: true } }
-              },
-              take: 1
+                group: { select: { name: true, classId: true } }
+              }
             }
           }
         }
@@ -650,7 +648,7 @@ router.get('/all-final-comments', authenticateToken, requireTeacher, async (req,
       updated_at: fc.updatedAt,
       evaluator_name: `${fc.evaluator.firstName} ${fc.evaluator.lastName}`.trim(),
       evaluatee_name: `${fc.evaluatee.firstName} ${fc.evaluatee.lastName}`.trim(),
-      group_name: fc.evaluatee.groupMemberships[0]?.group?.name || null
+      group_name: fc.evaluatee.groupMemberships.find(gm => gm.group?.classId === fc.classId)?.group?.name || null
     })));
   } catch (err) {
     console.error('get all final comments error:', err);
