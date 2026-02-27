@@ -1499,7 +1499,7 @@ router.get('/:roundId/my-feedback', authenticateToken, async (req, res) => {
 router.get('/class/:classId/report', authenticateToken, async (req, res) => {
   try {
     const classId = parseInt(req.params.classId);
-    if (!await isTeacherOrAdmin(req.user.userId, req.user.role, classId)) {
+    if (!await isTeacherOrAdmin(req.user.id, req.user.role, classId)) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
