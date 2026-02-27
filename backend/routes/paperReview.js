@@ -1521,8 +1521,7 @@ router.get('/class/:classId/report', authenticateToken, async (req, res) => {
       include: {
         evalType: {
           include: {
-            assignment: { select: { name: true } },
-            evalTypeMaster: { select: { name: true } }
+            assignment: { select: { name: true } }
           }
         },
         papers: {
@@ -1592,7 +1591,7 @@ router.get('/class/:classId/report', authenticateToken, async (req, res) => {
       return {
         round_id: round.id,
         assignment_name: round.evalType.assignment.name,
-        eval_type_name: round.evalType.evalTypeMaster?.name || 'Paper Review',
+        eval_type_name: round.evalType.name || 'Paper Review',
         status: round.status,
         submission_deadline: round.submissionDeadline,
         review_deadline: round.reviewDeadline,

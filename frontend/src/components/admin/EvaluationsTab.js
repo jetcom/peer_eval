@@ -72,7 +72,10 @@ function EvaluationsTab({
 
   // Assignment-based class evaluations view
   if (isAssignmentMode) {
-    const assignments = assignmentEvaluations?.assignments || [];
+    // Filter out assignments that only have paper_review eval types
+    const assignments = (assignmentEvaluations?.assignments || []).filter(a =>
+      a.eval_types?.some(et => et.eval_type !== 'paper_review')
+    );
     const individualEvals = assignmentEvaluations?.individual_evaluations || [];
     const groupEvals = assignmentEvaluations?.group_evaluations || [];
 

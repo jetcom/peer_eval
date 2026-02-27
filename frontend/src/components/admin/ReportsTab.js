@@ -89,7 +89,11 @@ function ReportsTab({
 
   // Assignment-based class reports view
   if (isAssignmentMode) {
-    const assignments = assignmentEvaluations?.assignments || [];
+    const allAssignments = assignmentEvaluations?.assignments || [];
+    // Filter out assignments that only have paper_review eval types (no numeric scores)
+    const assignments = allAssignments.filter(a =>
+      a.eval_types?.some(et => et.eval_type !== 'paper_review')
+    );
     const individualEvals = assignmentEvaluations?.individual_evaluations || [];
     const groupEvals = assignmentEvaluations?.group_evaluations || [];
     const students = getStudentsInGroup();
