@@ -560,7 +560,7 @@ function ReportsTab({
               <button
                 onClick={() => {
                   const className = selectedClassData?.name || 'class';
-                  const headers = ['Round', 'Student', 'Paper Submitted', 'Late', 'Review Completed', 'Reviewer', 'Comments Received', 'Teacher Reviewed'];
+                  const headers = ['Round', 'Student', 'Paper Submitted', 'Review Completed', 'Reviewer', 'Comments Received', 'Teacher Reviewed'];
                   const rows = [];
                   paperReviewData.rounds.forEach(round => {
                     round.papers.forEach(paper => {
@@ -568,7 +568,6 @@ function ReportsTab({
                         round.assignment_name,
                         paper.author_name,
                         paper.submitted_at ? 'Yes' : 'No',
-                        paper.is_late ? 'Yes' : 'No',
                         paper.review?.submitted_at ? 'Yes' : 'No',
                         paper.review?.reviewer_name || '',
                         paper.review?.overall_comments || '',
@@ -579,7 +578,7 @@ function ReportsTab({
                       rows.push([
                         round.assignment_name,
                         student.name,
-                        'No', '', 'No', '', '', 'No'
+                        'No', 'No', '', '', 'No'
                       ]);
                     });
                   });
@@ -630,7 +629,6 @@ function ReportsTab({
                           <td style={{ padding: '10px' }}><strong>{paper.author_name}</strong></td>
                           <td style={{ textAlign: 'center', padding: '10px' }}>
                             <span style={{ color: '#27ae60' }}>Submitted</span>
-                            {paper.is_late && <span style={{ color: '#e74c3c', marginLeft: '4px', fontSize: '0.8rem' }}>(late)</span>}
                           </td>
                           <td style={{ textAlign: 'center', padding: '10px' }}>
                             {paper.review?.submitted_at ? (

@@ -1506,100 +1506,108 @@ router.get('/class/:classId/report', authenticateToken, async (req, res) => {
     // Get all students enrolled in the class
     const enrollments = await prisma.classEnrollment.findMany({
       where: { classId },
-      include: { user: { select: { id: true, firstName: true, lastName: true } } }
+      include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } }
     });
     const students = enrollments
-      .filter(e => e.user)
+      .filter(e => e.user && e.user.role === 'student')
       .map(e => ({ id: e.user.id, name: `${e.user.firstName} ${e.user.lastName}` }));
-    const studentIds = new Set(students.map(s => s.id));
 
-    // Find all paper review rounds for this class
-    const rounds = await prisma.paperReviewRound.findMany({
-      where: {
-        evalType: { assignment: { classId } }
-      },
+    // Find paper review rounds via Assignment -> EvalType -> PaperReviewRound
+    const assignments = await prisma.assignment.findMany({
+      where: { classId },
       include: {
-        evalType: {
+        evalTypes: {
+          where: { evalType: 'paper_review' },
           include: {
-            assignment: { select: { name: true } }
-          }
-        },
-        papers: {
-          include: {
-            author: { select: { id: true, firstName: true, lastName: true } },
-            assignedReview: {
+            paperReviewRound: {
               include: {
-                reviewer: { select: { id: true, firstName: true, lastName: true } },
-                review: {
+                papers: {
                   include: {
-                    annotations: { select: { id: true } }
+                    author: { select: { id: true, firstName: true, lastName: true } },
+                    assignedReview: {
+                      include: {
+                        reviewer: { select: { id: true, firstName: true, lastName: true } },
+                        review: {
+                          include: {
+                            annotations: { select: { id: true } }
+                          }
+                        }
+                      }
+                    },
+                    teacherReviews: {
+                      include: {
+                        teacher: { select: { id: true, firstName: true, lastName: true } },
+                        annotations: { select: { id: true } }
+                      }
+                    }
                   }
                 }
-              }
-            },
-            teacherReviews: {
-              include: {
-                teacher: { select: { id: true, firstName: true, lastName: true } },
-                annotations: { select: { id: true } }
               }
             }
           }
         }
       },
-      orderBy: { createdAt: 'asc' }
+      orderBy: { orderIndex: 'asc' }
     });
 
-    const result = rounds.map(round => {
-      const paperAuthorIds = new Set(round.papers.map(p => p.authorId));
-      const studentsWithoutPapers = students.filter(s => !paperAuthorIds.has(s.id));
+    // Flatten: each assignment may have one paper_review eval type with one round
+    const result = [];
+    for (const assignment of assignments) {
+      for (const evalType of assignment.evalTypes) {
+        const round = evalType.paperReviewRound;
+        if (!round) continue;
 
-      const papers = round.papers.map(paper => {
-        const peerAssignment = paper.assignedReview;
-        const peerReview = peerAssignment?.review;
-        const teacherReview = paper.teacherReviews[0] || null;
+        const paperAuthorIds = new Set(round.papers.map(p => p.authorId));
+        const studentsWithoutPapers = students.filter(s => !paperAuthorIds.has(s.id));
 
-        const result = {
-          id: paper.id,
-          author_id: paper.authorId,
-          author_name: `${paper.author.firstName} ${paper.author.lastName}`,
-          submitted_at: paper.submittedAt,
-          is_late: !!paper.isLate,
-          review: null,
-          teacher_review: null
-        };
+        const papers = round.papers.map(paper => {
+          const peerAssignment = paper.assignedReview;
+          const peerReview = peerAssignment?.review;
+          const teacherReview = paper.teacherReviews[0] || null;
 
-        if (peerAssignment) {
-          result.review = {
-            reviewer_id: peerAssignment.reviewerId,
-            reviewer_name: `${peerAssignment.reviewer.firstName} ${peerAssignment.reviewer.lastName}`,
-            submitted_at: peerReview?.submittedAt || null,
-            overall_comments: peerReview?.overallComments || null,
-            annotation_count: peerReview?.annotations?.length || 0
+          const entry = {
+            id: paper.id,
+            author_id: paper.authorId,
+            author_name: `${paper.author.firstName} ${paper.author.lastName}`,
+            submitted_at: paper.submittedAt,
+            is_late: !!paper.isLate,
+            review: null,
+            teacher_review: null
           };
-        }
 
-        if (teacherReview) {
-          result.teacher_review = {
-            overall_comments: teacherReview.overallComments || null,
-            annotation_count: teacherReview.annotations?.length || 0
-          };
-        }
+          if (peerAssignment) {
+            entry.review = {
+              reviewer_id: peerAssignment.reviewerId,
+              reviewer_name: `${peerAssignment.reviewer.firstName} ${peerAssignment.reviewer.lastName}`,
+              submitted_at: peerReview?.submittedAt || null,
+              overall_comments: peerReview?.overallComments || null,
+              annotation_count: peerReview?.annotations?.length || 0
+            };
+          }
 
-        return result;
-      });
+          if (teacherReview) {
+            entry.teacher_review = {
+              overall_comments: teacherReview.overallComments || null,
+              annotation_count: teacherReview.annotations?.length || 0
+            };
+          }
 
-      return {
-        round_id: round.id,
-        assignment_name: round.evalType.assignment.name,
-        eval_type_name: round.evalType.name || 'Paper Review',
-        status: round.status,
-        submission_deadline: round.submissionDeadline,
-        review_deadline: round.reviewDeadline,
-        feedback_released_at: round.feedbackReleasedAt,
-        papers,
-        students_without_papers: studentsWithoutPapers
-      };
-    });
+          return entry;
+        });
+
+        result.push({
+          round_id: round.id,
+          assignment_name: assignment.name,
+          eval_type_name: evalType.name || 'Paper Review',
+          status: round.status,
+          submission_deadline: round.submissionDeadline,
+          review_deadline: round.reviewDeadline,
+          feedback_released_at: round.feedbackReleasedAt,
+          papers,
+          students_without_papers: studentsWithoutPapers
+        });
+      }
+    }
 
     res.json({ rounds: result });
   } catch (error) {

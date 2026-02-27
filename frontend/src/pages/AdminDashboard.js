@@ -119,7 +119,10 @@ function AdminDashboard() {
           try {
             const [assignmentEvalsRes, paperReviewRes] = await Promise.all([
               axios.get(`/api/assignments/evaluations/admin/${selectedClass}`),
-              axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(() => ({ data: null }))
+              axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(err => {
+                console.error('Failed to fetch paper review report:', err.response?.status, err.response?.data);
+                return { data: null };
+              })
             ]);
             setAssignmentEvaluations(assignmentEvalsRes.data);
             setPaperReviewData(paperReviewRes.data);
