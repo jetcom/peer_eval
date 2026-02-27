@@ -1128,9 +1128,16 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
     const isTeacher = req.user.role === 'teacher' || req.user.role === 'admin';
     const targetUserId = (isTeacher && req.query.user_id) ? parseInt(req.query.user_id) : req.user.id;
 
-    // Look up round by evalTypeId to get actual round.id
+    // Look up round by evalTypeId to get actual round.id and criteria
     const round = await prisma.paperReviewRound.findUnique({
-      where: { evalTypeId: roundId }
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            criteria: { orderBy: { orderIndex: 'asc' } }
+          }
+        }
+      }
     });
 
     if (!round) {
@@ -1148,7 +1155,8 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
         round: true,
         review: {
           include: {
-            annotations: true
+            annotations: true,
+            scores: true
           }
         }
       }
@@ -1160,6 +1168,17 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
 
     // Get presigned URL for the paper
     const paperUrl = await getPresignedUrl(assignment.paper.s3Key);
+
+    // Map criteria to snake_case for frontend
+    const criteria = (round.evalType?.criteria || []).map(c => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      order_index: c.orderIndex,
+      min_value: c.minValue,
+      max_value: c.maxValue,
+      question_type: c.questionType
+    }));
 
     res.json({
       id: assignment.id,
@@ -1173,6 +1192,7 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
           name: `${assignment.paper.author.firstName} ${assignment.paper.author.lastName}`.trim()
         }
       },
+      criteria,
       review_deadline: assignment.round.reviewDeadline,
       review: assignment.review ? {
         id: assignment.review.id,
@@ -1184,6 +1204,11 @@ router.get('/:roundId/my-assignment', authenticateToken, async (req, res) => {
           position: JSON.parse(a.positionData),
           content: a.content,
           color: a.color
+        })),
+        scores: assignment.review.scores.map(s => ({
+          criterion_id: s.criterionId,
+          score: s.score,
+          text_response: s.textResponse
         }))
       } : null
     });
@@ -1198,7 +1223,7 @@ router.post('/:roundId/my-review', authenticateToken, async (req, res) => {
   try {
     const roundId = parseInt(req.params.roundId);
     const userId = req.user.id;
-    const { overall_comments, submit } = req.body;
+    const { overall_comments, scores, submit } = req.body;
 
     // Look up round by evalTypeId to get actual round.id
     const round = await prisma.paperReviewRound.findUnique({
@@ -1256,10 +1281,44 @@ router.post('/:roundId/my-review', authenticateToken, async (req, res) => {
       });
     }
 
+    // Upsert scores if provided
+    if (scores && Array.isArray(scores)) {
+      for (const s of scores) {
+        await prisma.paperReviewScore.upsert({
+          where: {
+            reviewId_criterionId: {
+              reviewId: review.id,
+              criterionId: s.criterion_id
+            }
+          },
+          update: {
+            score: s.score ?? null,
+            textResponse: s.text_response ?? null
+          },
+          create: {
+            reviewId: review.id,
+            criterionId: s.criterion_id,
+            score: s.score ?? null,
+            textResponse: s.text_response ?? null
+          }
+        });
+      }
+    }
+
+    // Fetch saved scores to return
+    const savedScores = await prisma.paperReviewScore.findMany({
+      where: { reviewId: review.id }
+    });
+
     res.json({
       id: review.id,
       overall_comments: review.overallComments,
-      submitted_at: review.submittedAt
+      submitted_at: review.submittedAt,
+      scores: savedScores.map(s => ({
+        criterion_id: s.criterionId,
+        score: s.score,
+        text_response: s.textResponse
+      }))
     });
   } catch (error) {
     console.error('Save review error:', error);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -21,6 +21,9 @@ function PaperReview() {
   const [saveStatus, setSaveStatus] = useState('');
   const [activeAnnotation, setActiveAnnotation] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
+  const [criteria, setCriteria] = useState([]);
+  const [scores, setScores] = useState({}); // { criterionId: { score, text_response } }
+  const scoresRef = useRef({});
 
   // Masquerade support
   const searchParams = new URLSearchParams(window.location.search);
@@ -38,9 +41,17 @@ function PaperReview() {
       const params = masqueradeUserId ? `?user_id=${masqueradeUserId}` : '';
       const res = await axios.get(`/api/paper-review/${roundId}/my-assignment${params}`);
       setAssignment(res.data);
+      setCriteria(res.data?.criteria || []);
       if (res.data?.review) {
         setOverallComments(res.data.review.overall_comments || '');
         setAnnotations(res.data.review.annotations || []);
+        // Build scores map from existing review scores
+        const scoresMap = {};
+        (res.data.review.scores || []).forEach(s => {
+          scoresMap[s.criterion_id] = { score: s.score, text_response: s.text_response || '' };
+        });
+        setScores(scoresMap);
+        scoresRef.current = scoresMap;
       }
     } catch (err) {
       console.error('Error fetching assignment:', err);
@@ -50,13 +61,23 @@ function PaperReview() {
     }
   };
 
-  // Auto-save comments with debounce
-  const saveComments = useCallback(async (comments) => {
+  // Build scores array for API from current scores state
+  const buildScoresPayload = useCallback((currentScores) => {
+    return Object.entries(currentScores).map(([criterionId, data]) => ({
+      criterion_id: parseInt(criterionId),
+      score: data.score ?? null,
+      text_response: data.text_response || null
+    }));
+  }, []);
+
+  // Auto-save review (comments + scores) with debounce
+  const saveReview = useCallback(async (comments, currentScores) => {
     setSaving(true);
     setSaveStatus('Saving...');
     try {
       await axios.post(`/api/paper-review/${roundId}/my-review`, {
         overall_comments: comments,
+        scores: buildScoresPayload(currentScores),
         submit: false
       });
       setSaveStatus('Saved');
@@ -67,21 +88,38 @@ function PaperReview() {
       setSaving(false);
       setTimeout(() => setSaveStatus(''), 2000);
     }
-  }, [roundId]);
+  }, [roundId, buildScoresPayload]);
 
-  // Debounced save for comments (skip when masquerading)
+  // Debounced auto-save for comments and scores (skip when masquerading)
   useEffect(() => {
     if (isMasquerading) return;
-    if (!assignment?.review && !overallComments) return;
+    if (!assignment?.review && !overallComments && Object.keys(scores).length === 0) return;
 
     const timer = setTimeout(() => {
-      if (overallComments !== (assignment?.review?.overall_comments || '')) {
-        saveComments(overallComments);
+      const commentsChanged = overallComments !== (assignment?.review?.overall_comments || '');
+      const scoresChanged = JSON.stringify(scores) !== JSON.stringify(scoresRef.current);
+      if (commentsChanged || scoresChanged) {
+        scoresRef.current = { ...scores };
+        saveReview(overallComments, scores);
       }
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [overallComments, assignment, saveComments, isMasquerading]);
+  }, [overallComments, scores, assignment, saveReview, isMasquerading]);
+
+  const handleScoreChange = (criterionId, value) => {
+    setScores(prev => ({
+      ...prev,
+      [criterionId]: { ...prev[criterionId], score: parseInt(value) }
+    }));
+  };
+
+  const handleTextResponseChange = (criterionId, value) => {
+    setScores(prev => ({
+      ...prev,
+      [criterionId]: { ...prev[criterionId], text_response: value }
+    }));
+  };
 
   const handleAddAnnotation = async (annotationData) => {
     try {
@@ -114,6 +152,7 @@ function PaperReview() {
     try {
       await axios.post(`/api/paper-review/${roundId}/my-review`, {
         overall_comments: overallComments,
+        scores: buildScoresPayload(scores),
         submit: true
       });
       setSaveStatus('Submitted!');
@@ -240,6 +279,60 @@ function PaperReview() {
             />
           </div>
 
+          {/* Rubric criteria */}
+          {criteria.length > 0 && (
+            <div className="criteria-panel card" style={{ overflowY: 'auto', flexShrink: 0 }}>
+              <h4>Review Criteria</h4>
+              {criteria.map(criterion => (
+                <div key={criterion.id} className="criteria-item">
+                  <div className="criteria-label">
+                    {criterion.name}
+                    {criterion.description && (
+                      <span className="criteria-description"> - {criterion.description}</span>
+                    )}
+                  </div>
+                  {(criterion.question_type || 'likert') === 'open_response' ? (
+                    <div style={{ marginTop: '8px' }}>
+                      <textarea
+                        value={scores[criterion.id]?.text_response || ''}
+                        onChange={(e) => handleTextResponseChange(criterion.id, e.target.value)}
+                        placeholder={`Enter your response for "${criterion.name}"...`}
+                        disabled={readOnly}
+                        rows={3}
+                        style={{ width: '100%', resize: 'vertical' }}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="likert-scale">
+                        {Array.from(
+                          { length: criterion.max_value - criterion.min_value + 1 },
+                          (_, i) => criterion.min_value + i
+                        ).map(value => (
+                          <label key={value} className="likert-option">
+                            <input
+                              type="radio"
+                              name={`criterion-${criterion.id}`}
+                              value={value}
+                              checked={scores[criterion.id]?.score === value}
+                              onChange={(e) => handleScoreChange(criterion.id, e.target.value)}
+                              disabled={readOnly}
+                            />
+                            <span>{value}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="likert-labels">
+                        <span>{criterion.min_value} - Low</span>
+                        <span>{criterion.max_value} - High</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Overall comments */}
           <div className="comments-panel card">
             <h4>Overall Comments</h4>
@@ -321,7 +414,7 @@ function PaperReview() {
           display: flex;
           flex-direction: column;
           gap: 1rem;
-          overflow: hidden;
+          overflow-y: auto;
         }
 
         .deadline-banner {
@@ -340,6 +433,62 @@ function PaperReview() {
           border-radius: 8px;
           font-size: 0.9rem;
           flex-shrink: 0;
+        }
+
+        .criteria-panel h4 {
+          margin: 0 0 0.75rem 0;
+          font-size: 1rem;
+        }
+
+        .criteria-item {
+          margin-bottom: 1rem;
+          padding-bottom: 1rem;
+          border-bottom: 1px solid #eee;
+        }
+
+        .criteria-item:last-child {
+          margin-bottom: 0;
+          padding-bottom: 0;
+          border-bottom: none;
+        }
+
+        .criteria-label {
+          font-weight: 600;
+          font-size: 0.95rem;
+          margin-bottom: 0.5rem;
+        }
+
+        .criteria-description {
+          font-weight: 400;
+          color: #666;
+          font-size: 0.9rem;
+        }
+
+        .likert-scale {
+          display: flex;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          margin-top: 0.25rem;
+        }
+
+        .likert-option {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          cursor: pointer;
+          font-size: 0.9rem;
+        }
+
+        .likert-option input[type="radio"]:disabled {
+          cursor: not-allowed;
+        }
+
+        .likert-labels {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.8rem;
+          color: #888;
+          margin-top: 0.25rem;
         }
 
         .annotations-panel {
@@ -429,6 +578,24 @@ function PaperReview() {
         body.dark-mode .submitted-banner {
           background: #1e4620;
           color: #a3d9a5;
+        }
+
+        body.dark-mode .criteria-item {
+          border-color: #444;
+        }
+
+        body.dark-mode .criteria-description {
+          color: #aaa;
+        }
+
+        body.dark-mode .likert-labels {
+          color: #888;
+        }
+
+        body.dark-mode .criteria-panel textarea {
+          background: #2a2a2a;
+          border-color: #444;
+          color: #e0e0e0;
         }
 
         body.dark-mode .comments-panel textarea {

@@ -330,9 +330,10 @@ model EvalTypeCriterion {
   maxValue     Int     @default(5) @map("max_value")
   questionType String  @default("likert") @map("question_type")
 
-  evalType    AssignmentEvalType          @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
-  scores      AssignmentEvaluationScore[]
-  groupScores GroupEvaluationScore[]
+  evalType          AssignmentEvalType          @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  scores            AssignmentEvaluationScore[]
+  groupScores       GroupEvaluationScore[]
+  paperReviewScores PaperReviewScore[]
 
   @@map("eval_type_criteria")
 }
@@ -616,6 +617,7 @@ model PaperReview {
   paper       Paper?                 @relation("TeacherReviews", fields: [paperId], references: [id], onDelete: Cascade)
   teacher     User?                  @relation("TeacherPaperReviews", fields: [teacherId], references: [id])
   annotations PaperAnnotation[]
+  scores      PaperReviewScore[]
 
   @@unique([paperId, teacherId])  // One teacher review per paper
   @@map("paper_reviews")
@@ -634,4 +636,19 @@ model PaperAnnotation {
   review PaperReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
   @@map("paper_annotations")
+}
+
+// Rubric scores for paper reviews (mirrors AssignmentEvaluationScore)
+model PaperReviewScore {
+  id           Int     @id @default(autoincrement())
+  reviewId     Int     @map("review_id")
+  criterionId  Int     @map("criterion_id")
+  score        Int?
+  textResponse String? @map("text_response")
+
+  review    PaperReview       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  criterion EvalTypeCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, criterionId])
+  @@map("paper_review_scores")
 }
