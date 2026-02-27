@@ -62,13 +62,13 @@ function Landing() {
             <span className="landing-logo-text">PeerEval</span>
           </div>
           <div className="landing-nav-actions">
-            <a href="https://peerevals.app/login" className="landing-login-link">
+            <a href="/login" className="landing-login-link">
               Login
             </a>
             <button className="theme-toggle" onClick={toggleDarkMode}>
               {darkMode ? '☀️ Light' : '🌙 Dark'}
             </button>
-            <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-primary">
+            <a href="/register-instructor" className="landing-btn landing-btn-primary">
               Get Started
             </a>
           </div>
@@ -88,7 +88,7 @@ function Landing() {
             in group projects.
           </p>
           <div className="landing-hero-actions">
-            <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-primary landing-btn-lg">
+            <a href="/register-instructor" className="landing-btn landing-btn-primary landing-btn-lg">
               Get Started Free
             </a>
             <a href="#features" className="landing-btn landing-btn-outline landing-btn-lg">
@@ -321,7 +321,7 @@ function Landing() {
         <div className="landing-cta-content">
           <h2>Ready to Transform Your Peer Evaluations?</h2>
           <p>Join educators who are making team assessments more meaningful and manageable. It's completely free.</p>
-          <a href="https://peerevals.app/register-instructor" className="landing-btn landing-btn-white landing-btn-lg">
+          <a href="/register-instructor" className="landing-btn landing-btn-white landing-btn-lg">
             Start Using PeerEval
           </a>
         </div>
@@ -335,8 +335,8 @@ function Landing() {
             <span className="landing-logo-text">PeerEval</span>
           </div>
           <div className="landing-footer-links">
-            <a href="https://peerevals.app/login">Sign In</a>
-            <a href="https://peerevals.app/register-instructor">Register</a>
+            <a href="/login">Sign In</a>
+            <a href="/register-instructor">Register</a>
             <a href="mailto:support@peerevals.app">Contact</a>
           </div>
           <div className="landing-footer-copyright">
