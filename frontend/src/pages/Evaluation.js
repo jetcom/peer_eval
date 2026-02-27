@@ -571,7 +571,7 @@ function Evaluation() {
                 <>Instructor: {group.class.teacher_name}</>
               )}
             </p>
-            {group?.class?.show_groups && <p style={{ color: darkMode ? '#a0a0a0' : '#666', margin: 0 }}>
+            {!!group?.class?.show_groups && <p style={{ color: darkMode ? '#a0a0a0' : '#666', margin: 0 }}>
               Group: {group.name}
             </p>}
           </div>

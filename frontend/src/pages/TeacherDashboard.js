@@ -585,7 +585,7 @@ function TeacherDashboard() {
                 >
                   Students ({students.length})
                 </button>
-                {currentClass?.show_groups && (
+                {!!currentClass?.show_groups && (
                   <button
                     className={`tab ${activeTab === 'groups' ? 'active' : ''}`}
                     onClick={() => setActiveTab('groups')}
@@ -713,7 +713,7 @@ function TeacherDashboard() {
                             <th>Last Name</th>
                             <th>First Name</th>
                             <th>Email</th>
-                            {currentClass?.show_groups && <th>Group</th>}
+                            {!!currentClass?.show_groups && <th>Group</th>}
                             <th>Actions</th>
                           </tr>
                         </thead>
@@ -741,7 +741,7 @@ function TeacherDashboard() {
                                 <td>{student.last_name}</td>
                                 <td>{student.first_name}</td>
                                 <td>{student.email}</td>
-                                {currentClass?.show_groups && (
+                                {!!currentClass?.show_groups && (
                                   <td>
                                     <select
                                       value={studentGroup?.id || ''}
@@ -819,7 +819,7 @@ function TeacherDashboard() {
                                   {student.email}
                                 </span>
                               </div>
-                              {currentClass?.show_groups && (
+                              {!!currentClass?.show_groups && (
                                 <div className="mobile-card-row">
                                   <span className="mobile-card-label">Group</span>
                                   <select
@@ -870,7 +870,7 @@ function TeacherDashboard() {
               </div>
             )}
 
-            {currentClass?.show_groups && activeTab === 'groups' && (
+            {!!currentClass?.show_groups && activeTab === 'groups' && (
               <div className="admin-grid">
                 <div className="card">
                   <h2>Create Group</h2>

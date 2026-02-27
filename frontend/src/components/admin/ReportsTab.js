@@ -34,7 +34,7 @@ function ReportsTab({
   setReportGroup,
   assignmentEvaluations
 }) {
-  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+  const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   // Image viewer state
   const [viewerImages, setViewerImages] = useState(null);

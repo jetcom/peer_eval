@@ -70,7 +70,7 @@ function AdminDashboard() {
   const [copyingClass, setCopyingClass] = useState(null);
   const [pendingInstructorCount, setPendingInstructorCount] = useState(0);
 
-  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+  const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   useEffect(() => {
     fetchData();

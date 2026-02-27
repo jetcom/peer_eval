@@ -115,7 +115,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
   return (
     <>
       {/* Group Info */}
-      {currentClass?.show_groups && assignmentData.group && (
+      {!!currentClass?.show_groups && assignmentData.group && (
         <div className="card">
           <h2>Your Group: {assignmentData.group.name}</h2>
           <p>Members:</p>

@@ -37,7 +37,7 @@ function UsersTab({
   useEffect(() => {
     setSelectedUsers(new Set());
   }, [selectedClass]);
-  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+  const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   // Find which group a student belongs to
   const getStudentGroup = (studentId) => {

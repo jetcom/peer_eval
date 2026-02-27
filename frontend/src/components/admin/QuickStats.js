@@ -15,7 +15,7 @@ function QuickStats({
   }
 
   const currentClass = classes.find(c => c.id.toString() === selectedClass);
-  const showGroups = currentClass?.show_groups;
+  const showGroups = !!currentClass?.show_groups;
   const isAssignmentMode = currentClass?.evaluation_mode === 'assignments';
 
   // Filter to students only

@@ -416,7 +416,7 @@ function Dashboard() {
             ) : group && (
               /* Phase-based evaluation mode */
               <>
-                {currentClass?.show_groups && (
+                {!!currentClass?.show_groups && (
                   <div className="card">
                     <h2>Your Group: {group.name}</h2>
                     <p>Members:</p>

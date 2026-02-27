@@ -26,7 +26,7 @@ function ProgressTab({
 
   // Get class config
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
-  const showGroups = selectedClassData?.show_groups;
+  const showGroups = !!selectedClassData?.show_groups;
   const isAssignmentMode = selectedClassData?.evaluation_mode === 'assignments';
 
   // Filter to students only

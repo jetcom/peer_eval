@@ -15,7 +15,7 @@ function EvaluationsTab({
   const [attachments, setAttachments] = useState([]); // Attachments for expanded eval
   const [loadingAttachments, setLoadingAttachments] = useState(false);
 
-  const showGroups = classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+  const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
   // Fetch attachments when an evaluation is expanded
   useEffect(() => {
