@@ -89,6 +89,60 @@ async function processAutoStartReviews() {
 }
 
 /**
+ * Check for paper review rounds that should auto-complete and release feedback.
+ * Runs as part of the 15-minute cron cycle.
+ */
+async function processAutoReleaseFeedback() {
+  console.log('[ReminderScheduler] Checking for auto-release feedback rounds...');
+
+  try {
+    // Find rounds in review status with auto-release enabled and a review deadline set
+    const rounds = await prisma.paperReviewRound.findMany({
+      where: {
+        status: 'review',
+        autoReleaseFeedback: 1,
+        reviewDeadline: { not: null }
+      },
+      include: {
+        evalType: {
+          include: {
+            assignment: {
+              include: {
+                class: { select: { dueDateTimezone: true, name: true } }
+              }
+            }
+          }
+        }
+      }
+    });
+
+    for (const round of rounds) {
+      const timezone = round.evalType.assignment.class.dueDateTimezone || 'America/New_York';
+      const className = round.evalType.assignment.class.name;
+      const assignmentName = round.evalType.assignment.name;
+
+      if (!isPastDueDate(round.reviewDeadline, timezone)) {
+        continue;
+      }
+
+      console.log(`[ReminderScheduler] Auto-releasing feedback for "${assignmentName}" in class "${className}" (evalType ${round.evalTypeId})`);
+
+      await prisma.paperReviewRound.update({
+        where: { id: round.id },
+        data: {
+          status: 'completed',
+          feedbackReleasedAt: new Date()
+        }
+      });
+
+      console.log(`[ReminderScheduler] Auto-released feedback for "${assignmentName}" — status set to completed`);
+    }
+  } catch (err) {
+    console.error('[ReminderScheduler] Error processing auto-release feedback:', err);
+  }
+}
+
+/**
  * Check and send reminders for all active schedules
  */
 async function processReminders() {
@@ -96,6 +150,9 @@ async function processReminders() {
 
   // Check for auto-start review rounds first
   await processAutoStartReviews();
+
+  // Check for auto-release feedback on completed review rounds
+  await processAutoReleaseFeedback();
 
   try {
     const now = new Date();
