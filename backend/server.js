@@ -73,8 +73,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-// Serve frontend in production
-if (process.env.NODE_ENV === 'production') {
+// Serve frontend in non-development environments (production, beta, etc.)
+if (process.env.NODE_ENV !== 'development') {
   const frontendBuildPath = path.join(__dirname, '../frontend/build');
   app.use(express.static(frontendBuildPath));
 
@@ -87,6 +87,10 @@ if (process.env.NODE_ENV === 'production') {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
-  // Start the reminder scheduler
-  startScheduler();
+  // Start the reminder scheduler (production only — avoid duplicate jobs from beta/staging)
+  if (process.env.NODE_ENV === 'production') {
+    startScheduler();
+  } else {
+    console.log(`Scheduler disabled for NODE_ENV=${process.env.NODE_ENV}`);
+  }
 });
