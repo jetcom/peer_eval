@@ -1528,16 +1528,20 @@ router.get('/class/:classId/report', authenticateToken, async (req, res) => {
                       include: {
                         reviewer: { select: { id: true, firstName: true, lastName: true } },
                         review: {
-                          include: {
-                            annotations: { select: { id: true } }
+                          select: {
+                            id: true,
+                            overallComments: true,
+                            submittedAt: true,
+                            _count: { select: { annotations: true } }
                           }
                         }
                       }
                     },
                     teacherReviews: {
-                      include: {
-                        teacher: { select: { id: true, firstName: true, lastName: true } },
-                        annotations: { select: { id: true } }
+                      select: {
+                        id: true,
+                        overallComments: true,
+                        _count: { select: { annotations: true } }
                       }
                     }
                   }
@@ -1581,14 +1585,14 @@ router.get('/class/:classId/report', authenticateToken, async (req, res) => {
               reviewer_name: `${peerAssignment.reviewer.firstName} ${peerAssignment.reviewer.lastName}`,
               submitted_at: peerReview?.submittedAt || null,
               overall_comments: peerReview?.overallComments || null,
-              annotation_count: peerReview?.annotations?.length || 0
+              annotation_count: peerReview?._count?.annotations || 0
             };
           }
 
           if (teacherReview) {
             entry.teacher_review = {
               overall_comments: teacherReview.overallComments || null,
-              annotation_count: teacherReview.annotations?.length || 0
+              annotation_count: teacherReview._count?.annotations || 0
             };
           }
 
