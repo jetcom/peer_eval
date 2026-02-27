@@ -23,6 +23,7 @@ function TeacherDashboard() {
   const [evaluations, setEvaluations] = useState([]);
   const [finalCommentsData, setFinalCommentsData] = useState([]);
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
+  const [paperReviewData, setPaperReviewData] = useState(null);
 
   // Form states
   const [newClass, setNewClass] = useState({ name: '', section: '', semester: '' });
@@ -68,14 +69,20 @@ function TeacherDashboard() {
       const currentClass = classes.find(c => c.id === selectedClass);
       if (currentClass?.evaluation_mode === 'assignments') {
         try {
-          const assignmentEvalsRes = await axios.get(`/api/assignments/evaluations/admin/${selectedClass}`);
+          const [assignmentEvalsRes, paperReviewRes] = await Promise.all([
+            axios.get(`/api/assignments/evaluations/admin/${selectedClass}`),
+            axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(() => ({ data: null }))
+          ]);
           setAssignmentEvaluations(assignmentEvalsRes.data);
+          setPaperReviewData(paperReviewRes.data);
         } catch (err) {
           console.error('Failed to fetch assignment evaluations:', err);
           setAssignmentEvaluations(null);
+          setPaperReviewData(null);
         }
       } else {
         setAssignmentEvaluations(null);
+        setPaperReviewData(null);
       }
     } catch (err) {
       setMessage({ type: 'error', text: 'Failed to load class data' });
@@ -917,6 +924,7 @@ function TeacherDashboard() {
                 classGroups={groups}
                 evaluations={evaluations}
                 assignmentEvaluations={assignmentEvaluations}
+                paperReviewData={paperReviewData}
                 onManageExtensions={() => setShowExtensionsModal(true)}
               />
             )}
@@ -933,6 +941,7 @@ function TeacherDashboard() {
                 reportGroup={reportGroup}
                 setReportGroup={setReportGroup}
                 assignmentEvaluations={assignmentEvaluations}
+                paperReviewData={paperReviewData}
               />
             )}
           </>

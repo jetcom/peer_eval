@@ -7,6 +7,7 @@ function EvaluationsTab({
   classGroups,
   evaluations,
   assignmentEvaluations,
+  paperReviewData,
   onManageExtensions
 }) {
   const [filterAssignment, setFilterAssignment] = useState('all');
@@ -14,6 +15,7 @@ function EvaluationsTab({
   const [expandedEval, setExpandedEval] = useState(null); // { type: 'individual'|'group'|'phase', id: number }
   const [attachments, setAttachments] = useState([]); // Attachments for expanded eval
   const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [expandedPaperReview, setExpandedPaperReview] = useState(null);
 
   const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
@@ -101,6 +103,7 @@ function EvaluationsTab({
     const evalTypes = [...new Set([...individualEvals, ...groupEvals].map(e => e.eval_type))];
 
     return (
+      <>
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '10px' }}>
           <h2 style={{ margin: 0 }}>Evaluations for {currentClass?.name}</h2>
@@ -325,6 +328,114 @@ function EvaluationsTab({
           Showing {allEvals.length} evaluations ({individualEvals.length} individual, {groupEvals.length} group)
         </p>
       </div>
+
+      {/* Paper Reviews Section */}
+      {paperReviewData?.rounds?.length > 0 && (
+        <div className="card" style={{ marginTop: '20px' }}>
+          <h2 style={{ marginBottom: '15px' }}>Paper Review Submissions</h2>
+          {paperReviewData.rounds.map(round => {
+            // Collect all reviews for this round
+            const reviews = round.papers
+              .filter(p => p.review?.submitted_at)
+              .map(p => ({
+                id: `${round.round_id}-${p.id}`,
+                paper_id: p.id,
+                author_name: p.author_name,
+                reviewer_name: p.review.reviewer_name,
+                submitted_at: p.review.submitted_at,
+                overall_comments: p.review.overall_comments,
+                annotation_count: p.review.annotation_count
+              }));
+            const teacherReviews = round.papers
+              .filter(p => p.teacher_review?.overall_comments)
+              .map(p => ({
+                id: `teacher-${round.round_id}-${p.id}`,
+                paper_id: p.id,
+                author_name: p.author_name,
+                reviewer_name: 'Teacher',
+                submitted_at: null,
+                overall_comments: p.teacher_review.overall_comments,
+                annotation_count: p.teacher_review.annotation_count
+              }));
+            const allReviews = [...reviews, ...teacherReviews];
+
+            if (allReviews.length === 0) return null;
+
+            return (
+              <div key={round.round_id} style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                  <h3 style={{ margin: 0 }}>{round.assignment_name}</h3>
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: '3px',
+                    fontSize: '0.8rem',
+                    background: round.status === 'completed' ? '#27ae60' : round.status === 'review' ? '#3498db' : '#f39c12',
+                    color: 'white'
+                  }}>
+                    {round.status}
+                  </span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', padding: '10px' }}>Paper Author</th>
+                        <th style={{ textAlign: 'left', padding: '10px' }}>Reviewer</th>
+                        <th style={{ textAlign: 'center', padding: '10px' }}>Annotations</th>
+                        <th style={{ textAlign: 'left', padding: '10px' }}>Submitted</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allReviews.map((review, idx) => {
+                        const isExpanded = expandedPaperReview === review.id;
+                        return (
+                          <React.Fragment key={review.id}>
+                            <tr
+                              style={{
+                                background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.05)',
+                                cursor: review.overall_comments ? 'pointer' : 'default'
+                              }}
+                              onClick={() => review.overall_comments && setExpandedPaperReview(isExpanded ? null : review.id)}
+                              title={review.overall_comments ? 'Click to view comments' : ''}
+                            >
+                              <td style={{ padding: '10px' }}>
+                                {review.overall_comments && <span style={{ marginRight: '8px' }}>{isExpanded ? '▼' : '▶'}</span>}
+                                {review.author_name}
+                              </td>
+                              <td style={{ padding: '10px' }}>{review.reviewer_name}</td>
+                              <td style={{ textAlign: 'center', padding: '10px' }}>{review.annotation_count}</td>
+                              <td style={{ padding: '10px', fontSize: '0.85rem' }}>
+                                {review.submitted_at ? new Date(review.submitted_at).toLocaleString() : '-'}
+                              </td>
+                            </tr>
+                            {isExpanded && review.overall_comments && (
+                              <tr style={{ background: 'rgba(0,0,0,0.02)' }}>
+                                <td colSpan="4" style={{ padding: '15px 20px' }}>
+                                  <strong>Comments:</strong>
+                                  <div style={{
+                                    marginTop: '8px',
+                                    padding: '12px',
+                                    background: 'rgba(0,0,0,0.03)',
+                                    borderRadius: '4px',
+                                    whiteSpace: 'pre-wrap'
+                                  }}>
+                                    {review.overall_comments}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      </>
     );
   }
 

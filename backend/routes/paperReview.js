@@ -1495,4 +1495,118 @@ router.get('/:roundId/my-feedback', authenticateToken, async (req, res) => {
   }
 });
 
+// GET /class/:classId/report - Paper review report for a class (teacher/admin only)
+router.get('/class/:classId/report', authenticateToken, async (req, res) => {
+  try {
+    const classId = parseInt(req.params.classId);
+    if (!await isTeacherOrAdmin(req.user.userId, req.user.role, classId)) {
+      return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    // Get all students enrolled in the class
+    const enrollments = await prisma.classEnrollment.findMany({
+      where: { classId },
+      include: { user: { select: { id: true, firstName: true, lastName: true } } }
+    });
+    const students = enrollments
+      .filter(e => e.user)
+      .map(e => ({ id: e.user.id, name: `${e.user.firstName} ${e.user.lastName}` }));
+    const studentIds = new Set(students.map(s => s.id));
+
+    // Find all paper review rounds for this class
+    const rounds = await prisma.paperReviewRound.findMany({
+      where: {
+        evalType: { assignment: { classId } }
+      },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { name: true } },
+            evalTypeMaster: { select: { name: true } }
+          }
+        },
+        papers: {
+          include: {
+            author: { select: { id: true, firstName: true, lastName: true } },
+            assignedReview: {
+              include: {
+                reviewer: { select: { id: true, firstName: true, lastName: true } },
+                review: {
+                  include: {
+                    annotations: { select: { id: true } }
+                  }
+                }
+              }
+            },
+            teacherReviews: {
+              include: {
+                teacher: { select: { id: true, firstName: true, lastName: true } },
+                annotations: { select: { id: true } }
+              }
+            }
+          }
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const result = rounds.map(round => {
+      const paperAuthorIds = new Set(round.papers.map(p => p.authorId));
+      const studentsWithoutPapers = students.filter(s => !paperAuthorIds.has(s.id));
+
+      const papers = round.papers.map(paper => {
+        const peerAssignment = paper.assignedReview;
+        const peerReview = peerAssignment?.review;
+        const teacherReview = paper.teacherReviews[0] || null;
+
+        const result = {
+          id: paper.id,
+          author_id: paper.authorId,
+          author_name: `${paper.author.firstName} ${paper.author.lastName}`,
+          submitted_at: paper.submittedAt,
+          is_late: !!paper.isLate,
+          review: null,
+          teacher_review: null
+        };
+
+        if (peerAssignment) {
+          result.review = {
+            reviewer_id: peerAssignment.reviewerId,
+            reviewer_name: `${peerAssignment.reviewer.firstName} ${peerAssignment.reviewer.lastName}`,
+            submitted_at: peerReview?.submittedAt || null,
+            overall_comments: peerReview?.overallComments || null,
+            annotation_count: peerReview?.annotations?.length || 0
+          };
+        }
+
+        if (teacherReview) {
+          result.teacher_review = {
+            overall_comments: teacherReview.overallComments || null,
+            annotation_count: teacherReview.annotations?.length || 0
+          };
+        }
+
+        return result;
+      });
+
+      return {
+        round_id: round.id,
+        assignment_name: round.evalType.assignment.name,
+        eval_type_name: round.evalType.evalTypeMaster?.name || 'Paper Review',
+        status: round.status,
+        submission_deadline: round.submissionDeadline,
+        review_deadline: round.reviewDeadline,
+        feedback_released_at: round.feedbackReleasedAt,
+        papers,
+        students_without_papers: studentsWithoutPapers
+      };
+    });
+
+    res.json({ rounds: result });
+  } catch (error) {
+    console.error('Paper review class report error:', error);
+    res.status(500).json({ error: 'Failed to get paper review report' });
+  }
+});
+
 module.exports = router;

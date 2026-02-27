@@ -63,6 +63,7 @@ function AdminDashboard() {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
+  const [paperReviewData, setPaperReviewData] = useState(null);
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -101,6 +102,7 @@ function AdminDashboard() {
         setClassGroups([]);
         setClassStudents([]);
         setAssignmentEvaluations(null);
+        setPaperReviewData(null);
         return;
       }
       try {
@@ -115,14 +117,20 @@ function AdminDashboard() {
         const currentClass = classes.find(c => c.id.toString() === selectedClass);
         if (currentClass?.evaluation_mode === 'assignments') {
           try {
-            const assignmentEvalsRes = await axios.get(`/api/assignments/evaluations/admin/${selectedClass}`);
+            const [assignmentEvalsRes, paperReviewRes] = await Promise.all([
+              axios.get(`/api/assignments/evaluations/admin/${selectedClass}`),
+              axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(() => ({ data: null }))
+            ]);
             setAssignmentEvaluations(assignmentEvalsRes.data);
+            setPaperReviewData(paperReviewRes.data);
           } catch (err) {
             console.error('Failed to fetch assignment evaluations:', err);
             setAssignmentEvaluations(null);
+            setPaperReviewData(null);
           }
         } else {
           setAssignmentEvaluations(null);
+          setPaperReviewData(null);
         }
       } catch (err) {
         console.error('Failed to fetch class data:', err);
@@ -928,6 +936,7 @@ function AdminDashboard() {
             classGroups={classGroups}
             evaluations={evaluations}
             assignmentEvaluations={assignmentEvaluations}
+            paperReviewData={paperReviewData}
             onManageExtensions={() => setShowExtensionsModal(true)}
           />
         )}
@@ -957,6 +966,7 @@ function AdminDashboard() {
             reportGroup={reportGroup}
             setReportGroup={setReportGroup}
             assignmentEvaluations={assignmentEvaluations}
+            paperReviewData={paperReviewData}
           />
         )}
 
