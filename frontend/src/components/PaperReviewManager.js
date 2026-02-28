@@ -138,6 +138,23 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
     }
   };
 
+  const handleSubmitAllReviews = async () => {
+    const pendingCount = status?.assignments?.filter(a => !a.review_submitted).length || 0;
+    if (!window.confirm(`Submit ${pendingCount} unsubmitted review${pendingCount !== 1 ? 's' : ''}? This will make them visible to paper authors once feedback is released.`)) {
+      return;
+    }
+
+    try {
+      const res = await axios.post(`/api/paper-review/${roundId}/submit-all-reviews`);
+      setError(null);
+      fetchStatus();
+      if (onUpdate) onUpdate();
+      alert(`${res.data.submitted_count} review${res.data.submitted_count !== 1 ? 's' : ''} submitted.`);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to submit reviews');
+    }
+  };
+
   const handleUploadForStudent = async (e) => {
     e.preventDefault();
     if (!selectedStudent || !uploadFile) {
@@ -536,6 +553,15 @@ const PaperReviewManager = ({ roundId, onUpdate }) => {
               ))}
             </tbody>
           </table>
+          {status.assignments.some(a => !a.review_submitted) && (
+            <button
+              onClick={handleSubmitAllReviews}
+              className="btn btn-primary"
+              style={{ marginTop: '10px' }}
+            >
+              Submit All Pending Reviews ({status.assignments.filter(a => !a.review_submitted).length})
+            </button>
+          )}
         </div>
       )}
 

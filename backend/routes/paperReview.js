@@ -383,6 +383,47 @@ router.get('/:roundId/status', authenticateToken, async (req, res) => {
   }
 });
 
+// Submit all unsubmitted reviews for a round (teacher/admin)
+router.post('/:roundId/submit-all-reviews', authenticateToken, async (req, res) => {
+  try {
+    const roundId = parseInt(req.params.roundId);
+
+    const round = await prisma.paperReviewRound.findUnique({
+      where: { evalTypeId: roundId },
+      include: {
+        evalType: {
+          include: {
+            assignment: { select: { classId: true } }
+          }
+        }
+      }
+    });
+
+    if (!round) {
+      return res.status(404).json({ error: 'Round not found' });
+    }
+
+    const classId = round.evalType.assignment.classId;
+    if (!await isTeacherOrAdmin(req.user.id, req.user.role, classId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Find all unsubmitted reviews (have a review record but submittedAt is null)
+    const result = await prisma.paperReview.updateMany({
+      where: {
+        assignment: { roundId: round.id },
+        submittedAt: null
+      },
+      data: { submittedAt: new Date() }
+    });
+
+    res.json({ submitted_count: result.count });
+  } catch (error) {
+    console.error('Submit all reviews error:', error);
+    res.status(500).json({ error: 'Failed to submit reviews' });
+  }
+});
+
 // Get paper URL for viewing (teacher)
 router.get('/:roundId/papers/:paperId/view', authenticateToken, async (req, res) => {
   try {
@@ -1519,7 +1560,9 @@ router.get('/:roundId/my-feedback', authenticateToken, async (req, res) => {
     }
 
     const review = paper.assignedReview.review;
-    const reviewer = round.anonymousReviews === 1 ? null : {
+    // Default to anonymous (anonymousReviews is 1 by default, but may be null for older rounds)
+    const isAnonymous = round.anonymousReviews !== 0;
+    const reviewer = isAnonymous ? null : {
       id: paper.assignedReview.reviewer.id,
       name: `${paper.assignedReview.reviewer.firstName} ${paper.assignedReview.reviewer.lastName}`.trim()
     };
