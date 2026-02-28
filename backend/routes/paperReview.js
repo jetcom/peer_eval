@@ -408,16 +408,35 @@ router.post('/:roundId/submit-all-reviews', authenticateToken, async (req, res) 
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    // Find all unsubmitted reviews (have a review record but submittedAt is null)
-    const result = await prisma.paperReview.updateMany({
+    const now = new Date();
+
+    // Submit existing reviews that are saved but not submitted
+    const updated = await prisma.paperReview.updateMany({
       where: {
         assignment: { roundId: round.id },
         submittedAt: null
       },
-      data: { submittedAt: new Date() }
+      data: { submittedAt: now }
     });
 
-    res.json({ submitted_count: result.count });
+    // Create and submit empty reviews for assignments that have no review record at all
+    const assignmentsWithoutReview = await prisma.paperReviewAssignment.findMany({
+      where: {
+        roundId: round.id,
+        review: null
+      }
+    });
+
+    for (const a of assignmentsWithoutReview) {
+      await prisma.paperReview.create({
+        data: {
+          assignmentId: a.id,
+          submittedAt: now
+        }
+      });
+    }
+
+    res.json({ submitted_count: updated.count + assignmentsWithoutReview.length });
   } catch (error) {
     console.error('Submit all reviews error:', error);
     res.status(500).json({ error: 'Failed to submit reviews' });
