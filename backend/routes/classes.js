@@ -349,7 +349,7 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
             if (template && template.criteria && template.criteria.length > 0) {
               for (let k = 0; k < template.criteria.length; k++) {
                 const c = template.criteria[k];
-                await prisma.assignmentEvalTypeCriteria.create({
+                await prisma.evalTypeCriterion.create({
                   data: {
                     evalTypeId: createdEvalType.id,
                     name: c.name,
