@@ -78,9 +78,9 @@ function PaperReview() {
       await axios.post(`/api/paper-review/${roundId}/my-review`, {
         overall_comments: comments,
         scores: buildScoresPayload(currentScores),
-        submit: false
+        submit: !!(comments || Object.keys(currentScores).length > 0)
       });
-      setSaveStatus('Saved');
+      setSaveStatus('Saved & submitted');
     } catch (err) {
       setSaveStatus('Error saving');
       console.error('Save error:', err);
