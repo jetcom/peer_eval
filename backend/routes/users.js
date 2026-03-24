@@ -1,9 +1,10 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const { parse } = require('csv-parse');
 const prisma = require('../lib/prisma');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, JWT_SECRET } = require('../middleware/auth');
 const emailService = require('../services/email');
 
 const router = express.Router();
@@ -399,6 +400,208 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
     res.status(500).json({ error: 'Failed to reject teacher' });
   }
 });
+
+// ============================================
+// Token-based approve/reject from email links
+// ============================================
+
+const REJECTION_REASONS = [
+  'Not affiliated with a recognized educational institution',
+  'Email domain does not match a known university',
+  'Duplicate or existing account found',
+  'Insufficient information provided',
+  'University or department could not be verified',
+];
+
+function generateInstructorActionToken(userId) {
+  return jwt.sign(
+    { userId, purpose: 'instructor-review' },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
+function verifyInstructorActionToken(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.purpose !== 'instructor-review') return null;
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+// One-click approve from email
+router.get('/:id/approve-teacher-email', async (req, res) => {
+  const token = req.query.token;
+  const decoded = verifyInstructorActionToken(token);
+
+  if (!decoded || decoded.userId !== parseInt(req.params.id)) {
+    return res.status(400).send(renderActionPage('Invalid or Expired Link',
+      'This approval link is invalid or has expired. Please log in to the admin dashboard to review pending instructors.', 'error'));
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { role: true, email: true, firstName: true, lastName: true }
+    });
+
+    if (!user) {
+      return res.send(renderActionPage('User Not Found',
+        'This user no longer exists in the system.', 'error'));
+    }
+
+    if (user.role !== 'pending_teacher') {
+      return res.send(renderActionPage('Already Processed',
+        `${user.firstName} ${user.lastName} is no longer pending (current role: ${user.role}).`, 'info'));
+    }
+
+    await prisma.user.update({
+      where: { id: decoded.userId },
+      data: { role: 'teacher' }
+    });
+
+    try {
+      await emailService.notifyInstructorApproved({
+        instructor: { firstName: user.firstName, email: user.email }
+      });
+    } catch (emailErr) {
+      console.error('Failed to send approval email:', emailErr);
+    }
+
+    res.send(renderActionPage('Instructor Approved',
+      `<strong>${user.firstName} ${user.lastName}</strong> (${user.email}) has been approved as an instructor. They have been notified by email.`, 'success'));
+  } catch (err) {
+    console.error('Email approve teacher error:', err);
+    res.status(500).send(renderActionPage('Error', 'Something went wrong. Please try again from the admin dashboard.', 'error'));
+  }
+});
+
+// Reject form from email — shows reason picker
+router.get('/:id/reject-teacher-email', async (req, res) => {
+  const token = req.query.token;
+  const decoded = verifyInstructorActionToken(token);
+
+  if (!decoded || decoded.userId !== parseInt(req.params.id)) {
+    return res.status(400).send(renderActionPage('Invalid or Expired Link',
+      'This rejection link is invalid or has expired. Please log in to the admin dashboard to review pending instructors.', 'error'));
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { role: true, email: true, firstName: true, lastName: true, university: true, department: true }
+    });
+
+    if (!user) {
+      return res.send(renderActionPage('User Not Found',
+        'This user no longer exists in the system.', 'error'));
+    }
+
+    if (user.role !== 'pending_teacher') {
+      return res.send(renderActionPage('Already Processed',
+        `${user.firstName} ${user.lastName} is no longer pending (current role: ${user.role}).`, 'info'));
+    }
+
+    const reasonOptions = REJECTION_REASONS.map(r =>
+      `<option value="${r}">${r}</option>`
+    ).join('\n');
+
+    const formHtml = `
+      <p>You are about to reject the instructor request from:</p>
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
+        <p style="margin: 4px 0;"><strong>Name:</strong> ${user.firstName} ${user.lastName}</p>
+        <p style="margin: 4px 0;"><strong>Email:</strong> ${user.email}</p>
+        <p style="margin: 4px 0;"><strong>University:</strong> ${user.university || 'Not specified'}</p>
+        <p style="margin: 4px 0;"><strong>Department:</strong> ${user.department || 'Not specified'}</p>
+      </div>
+      <form method="POST" action="/api/users/${decoded.userId}/reject-teacher-email?token=${encodeURIComponent(token)}">
+        <label style="display: block; font-weight: 600; margin-bottom: 6px;">Reason for rejection:</label>
+        <select name="reason" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; margin-bottom: 12px;">
+          <option value="">— Select a reason —</option>
+          ${reasonOptions}
+          <option value="__other__">Other (specify below)</option>
+        </select>
+        <label style="display: block; font-weight: 600; margin-bottom: 6px;">Or enter a custom reason:</label>
+        <textarea name="customReason" rows="3" placeholder="Optional — custom reason"
+          style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; box-sizing: border-box; margin-bottom: 16px;"></textarea>
+        <button type="submit"
+          style="background: #dc2626; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-size: 16px; cursor: pointer;">
+          Reject Instructor
+        </button>
+      </form>
+    `;
+    res.send(renderActionPage('Reject Instructor Request', formHtml, 'form'));
+  } catch (err) {
+    console.error('Email reject teacher form error:', err);
+    res.status(500).send(renderActionPage('Error', 'Something went wrong. Please try again from the admin dashboard.', 'error'));
+  }
+});
+
+// Handle reject form submission
+router.post('/:id/reject-teacher-email', express.urlencoded({ extended: false }), async (req, res) => {
+  const token = req.query.token;
+  const decoded = verifyInstructorActionToken(token);
+
+  if (!decoded || decoded.userId !== parseInt(req.params.id)) {
+    return res.status(400).send(renderActionPage('Invalid or Expired Link',
+      'This rejection link is invalid or has expired.', 'error'));
+  }
+
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
+      select: { role: true, email: true, firstName: true, lastName: true }
+    });
+
+    if (!user || user.role !== 'pending_teacher') {
+      return res.send(renderActionPage('Already Processed',
+        'This instructor request has already been processed.', 'info'));
+    }
+
+    const reason = (req.body.reason === '__other__' || !req.body.reason)
+      ? (req.body.customReason || '').trim()
+      : req.body.reason;
+
+    try {
+      await emailService.notifyInstructorRejected({
+        instructor: { firstName: user.firstName, email: user.email },
+        reason: reason || undefined
+      });
+    } catch (emailErr) {
+      console.error('Failed to send rejection email:', emailErr);
+    }
+
+    await prisma.user.delete({ where: { id: decoded.userId } });
+
+    res.send(renderActionPage('Instructor Rejected',
+      `<strong>${user.firstName} ${user.lastName}</strong>'s instructor request has been rejected.${reason ? ` Reason: "${reason}"` : ''} They have been notified by email.`, 'success'));
+  } catch (err) {
+    console.error('Email reject teacher error:', err);
+    res.status(500).send(renderActionPage('Error', 'Something went wrong. Please try again from the admin dashboard.', 'error'));
+  }
+});
+
+function renderActionPage(title, body, type) {
+  const colors = {
+    success: { bg: '#f0fdf4', border: '#16a34a', icon: '&#10003;' },
+    error: { bg: '#fef2f2', border: '#dc2626', icon: '&#10007;' },
+    info: { bg: '#eff6ff', border: '#2563eb', icon: '&#8505;' },
+    form: { bg: '#ffffff', border: '#6b7280', icon: '' },
+  };
+  const c = colors[type] || colors.info;
+
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${title} — PeerEvals</title></head>
+<body style="margin:0;padding:40px 20px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f9fafb;">
+<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 1px 3px rgba(0,0,0,0.1);border-top:4px solid ${c.border};">
+  <h2 style="margin:0 0 16px;color:#1a1a1a;">${c.icon ? `<span style="color:${c.border}">${c.icon}</span> ` : ''}${title}</h2>
+  <div style="color:#374151;line-height:1.6;">${body}</div>
+</div>
+</body></html>`;
+}
 
 // Generate a secure random password
 function generateTempPassword(length = 12) {

@@ -143,6 +143,15 @@ router.post('/register-instructor', async (req, res) => {
       console.log('Found admins for new instructor notification:', adminEmails);
 
       if (adminEmails.length > 0) {
+        const actionToken = jwt.sign(
+          { userId: user.id, purpose: 'instructor-review' },
+          JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+        const appUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
+        const approveUrl = `${appUrl}/api/users/${user.id}/approve-teacher-email?token=${encodeURIComponent(actionToken)}`;
+        const rejectUrl = `${appUrl}/api/users/${user.id}/reject-teacher-email?token=${encodeURIComponent(actionToken)}`;
+
         const result = await emailService.notifyAdminNewInstructor({
           adminEmails,
           instructor: {
@@ -151,7 +160,9 @@ router.post('/register-instructor', async (req, res) => {
             email,
             university,
             department
-          }
+          },
+          approveUrl,
+          rejectUrl
         });
         console.log('Admin notification email result:', result);
       } else {
@@ -333,8 +344,18 @@ router.post('/test-email', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
+    // Generate a dummy token for test email
+    const testToken = jwt.sign(
+      { userId: 0, purpose: 'instructor-review' },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    const appUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
+
     const result = await emailService.notifyAdminNewInstructor({
       adminEmails: [req.user.email],
+      approveUrl: `${appUrl}/api/users/0/approve-teacher-email?token=${encodeURIComponent(testToken)}`,
+      rejectUrl: `${appUrl}/api/users/0/reject-teacher-email?token=${encodeURIComponent(testToken)}`,
       instructor: {
         firstName: 'Test',
         lastName: 'Instructor',

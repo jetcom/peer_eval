@@ -74,7 +74,7 @@ function stripHtml(html) {
 /**
  * Notify admins when a new instructor registers
  */
-async function notifyAdminNewInstructor({ adminEmails, instructor }) {
+async function notifyAdminNewInstructor({ adminEmails, instructor, approveUrl, rejectUrl }) {
   const { firstName, lastName, email, university, department } = instructor;
 
   const html = `
@@ -89,10 +89,23 @@ async function notifyAdminNewInstructor({ adminEmails, instructor }) {
         <p style="margin: 5px 0;"><strong>Department:</strong> ${department || 'Not specified'}</p>
       </div>
 
+      ${approveUrl ? `
       <p>
+        <a href="${approveUrl}"
+           style="display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-right: 12px;">
+          Approve
+        </a>
+        <a href="${rejectUrl}"
+           style="display: inline-block; background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
+          Reject
+        </a>
+      </p>
+      ` : ''}
+
+      <p style="margin-top: 20px;">
         <a href="${APP_URL}/admin?tab=instructors"
-           style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
-          Review Pending Instructors
+           style="color: #2563eb; text-decoration: underline;">
+          Or review on the website
         </a>
       </p>
 
