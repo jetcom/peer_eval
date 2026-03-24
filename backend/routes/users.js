@@ -406,6 +406,7 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
 // ============================================
 
 const REJECTION_REASONS = [
+  'Student account — registered as instructor by mistake',
   'Not affiliated with a recognized educational institution',
   'Email domain does not match a known university',
   'Duplicate or existing account found',

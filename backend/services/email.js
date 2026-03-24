@@ -159,8 +159,29 @@ async function notifyInstructorApproved({ instructor }) {
  */
 async function notifyInstructorRejected({ instructor, reason }) {
   const { firstName, email } = instructor;
+  const isStudentMistake = reason && reason.toLowerCase().includes('student');
 
-  const html = `
+  const html = isStudentMistake ? `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Welcome to PeerEvals, ${firstName}!</h2>
+      <p>It looks like you registered for an instructor account, but you're actually a student. No worries — your instructor has already created an account for you!</p>
+
+      <div style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2563eb;">
+        <p style="margin: 0 0 10px; font-weight: 600;">How to sign in:</p>
+        <ol style="margin: 0; padding-left: 20px;">
+          <li>Go to the <a href="${APP_URL}/login" style="color: #2563eb;">PeerEvals login page</a></li>
+          <li>Sign in with the email address your instructor has on file for you</li>
+          <li>If you don't know your password, use the <a href="${APP_URL}/forgot-password" style="color: #2563eb;">Forgot Password</a> link to reset it</li>
+        </ol>
+      </div>
+
+      <p>If you're still having trouble signing in, please contact your instructor for help — they can verify your account and reset your password if needed.</p>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — The PeerEvals Team
+      </p>
+    </div>
+  ` : `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #1a1a1a;">Instructor Account Request Update</h2>
       <p>Hi ${firstName},</p>
@@ -182,7 +203,9 @@ async function notifyInstructorRejected({ instructor, reason }) {
 
   return sendEmail({
     to: email,
-    subject: 'PeerEvals Instructor Account Request Update',
+    subject: isStudentMistake
+      ? 'PeerEvals — How to Sign In to Your Student Account'
+      : 'PeerEvals Instructor Account Request Update',
     html,
   });
 }
