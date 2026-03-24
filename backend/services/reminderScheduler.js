@@ -173,10 +173,16 @@ async function processReminders() {
 }
 
 /**
- * Process a single reminder schedule
+ * Process a single reminder schedule.
+ *
+ * Strategy: find due dates that are in the future but within `hoursBeforeDue`
+ * hours from now.  If such a due date exists AND we haven't already sent a
+ * reminder for it, send one.  This is self-healing — if a cron cycle is missed
+ * the next cycle will still catch it, rather than requiring an exact 30-minute
+ * window hit.
  */
 async function processSchedule(schedule, now) {
-  const { id, classId, hoursBeforeDue, nudgeTemplateId, lastSentAt } = schedule;
+  const { id, classId, hoursBeforeDue, nudgeTemplateId } = schedule;
 
   try {
     // Get class info
@@ -194,50 +200,39 @@ async function processSchedule(schedule, now) {
       return;
     }
 
-    // Get the class timezone for proper date comparison
     const classTimezone = classInfo.dueDateTimezone || 'America/New_York';
 
-    // Calculate the reminder window
-    // We look for due dates that are within hoursBeforeDue hours from now
-    const reminderWindowStart = new Date(now.getTime() + (hoursBeforeDue - 0.25) * 60 * 60 * 1000);
-    const reminderWindowEnd = new Date(now.getTime() + (hoursBeforeDue + 0.25) * 60 * 60 * 1000);
+    // Build the "now" and "horizon" strings in the class's local timezone.
+    // We want due dates where:  now < dueDate <= now + hoursBeforeDue
+    // i.e. the due date is in the future but close enough to warrant a reminder.
+    const nowStr = formatDateInTimezone(now, classTimezone);
+    const horizon = new Date(now.getTime() + hoursBeforeDue * 60 * 60 * 1000);
+    const horizonStr = formatDateInTimezone(horizon, classTimezone);
 
-    // Convert to strings in class timezone for comparison with stored due dates
-    // Due dates are stored as "YYYY-MM-DDTHH:MM" strings in the class's local timezone
-    const windowStartStr = formatDateInTimezone(reminderWindowStart, classTimezone);
-    const windowEndStr = formatDateInTimezone(reminderWindowEnd, classTimezone);
+    console.log(`[ReminderScheduler] Class ${classId} (${classTimezone}): now=${nowStr}, horizon=${horizonStr} (${hoursBeforeDue}h)`);
 
-    console.log(`[ReminderScheduler] Class ${classId} (${classTimezone}): checking window ${windowStartStr} to ${windowEndStr}`);
-
-    // Check if this is assignment-based or phase-based
     const isAssignmentMode = classInfo.evaluationMode === 'assignments';
 
     let studentsToRemind = [];
     let assignmentName = null;
     let dueDate = null;
+    let phase = null;
 
     if (isAssignmentMode) {
-      // Find assignments with eval types due within the window
-      // Use timezone-aware string comparison
+      // Find assignments with eval types due between now and the horizon
       const assignments = await prisma.assignment.findMany({
         where: {
           classId,
           evalTypes: {
             some: {
-              dueDate: {
-                gte: windowStartStr,
-                lte: windowEndStr
-              }
+              dueDate: { gt: nowStr, lte: horizonStr }
             }
           }
         },
         include: {
           evalTypes: {
             where: {
-              dueDate: {
-                gte: windowStartStr,
-                lte: windowEndStr
-              }
+              dueDate: { gt: nowStr, lte: horizonStr }
             }
           }
         }
@@ -245,7 +240,8 @@ async function processSchedule(schedule, now) {
 
       if (assignments.length === 0) return;
 
-      // Get students enrolled in the class
+      console.log(`[ReminderScheduler] Class ${classId}: found ${assignments.length} assignment(s) due within ${hoursBeforeDue}h`);
+
       const enrollments = await prisma.classEnrollment.findMany({
         where: { classId },
         include: {
@@ -256,14 +252,12 @@ async function processSchedule(schedule, now) {
       const students = enrollments
         .filter(e => e.user.role === 'student')
         .map(e => e.user);
-
       const studentIds = students.map(s => s.id);
 
       for (const assignment of assignments) {
         dueDate = assignment.evalTypes[0]?.dueDate;
         assignmentName = assignment.name;
 
-        // Get submitted evaluations for this assignment
         const submittedEvals = await prisma.assignmentEvaluation.findMany({
           where: {
             assignmentId: assignment.id,
@@ -273,14 +267,11 @@ async function processSchedule(schedule, now) {
         });
 
         const completedIds = new Set(submittedEvals.map(e => e.evaluatorId));
-
-        // Filter out students who have already been reminded in the last 4 hours
         const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
         for (const student of students) {
           if (completedIds.has(student.id)) continue;
 
-          // Check if we already sent a reminder to this student recently
           const recentReminder = await prisma.reminderLog.findFirst({
             where: {
               classId,
@@ -297,21 +288,17 @@ async function processSchedule(schedule, now) {
       }
     } else {
       // Phase-based mode
-      // dueDate is stored as String in class timezone format (YYYY-MM-DDTHH:MM)
-      // Use timezone-aware string comparison
       const phaseDueDates = await prisma.phaseDueDate.findMany({
         where: {
           classId,
-          dueDate: {
-            gte: windowStartStr,
-            lte: windowEndStr
-          }
+          dueDate: { gt: nowStr, lte: horizonStr }
         }
       });
 
       if (phaseDueDates.length === 0) return;
 
-      // Get students enrolled in the class
+      console.log(`[ReminderScheduler] Class ${classId}: found phase ${phaseDueDates[0].phase} due ${phaseDueDates[0].dueDate} (within ${hoursBeforeDue}h)`);
+
       const enrollments = await prisma.classEnrollment.findMany({
         where: { classId },
         include: {
@@ -322,12 +309,11 @@ async function processSchedule(schedule, now) {
       const students = enrollments
         .filter(e => e.user.role === 'student')
         .map(e => e.user);
-
       const studentIds = students.map(s => s.id);
-      const phase = phaseDueDates[0].phase;
+
+      phase = phaseDueDates[0].phase;
       dueDate = phaseDueDates[0].dueDate;
 
-      // Get groups to determine who each student should evaluate
       const groupMembers = await prisma.groupMember.findMany({
         where: {
           userId: { in: studentIds },
@@ -352,13 +338,10 @@ async function processSchedule(schedule, now) {
 
         const teammateIds = membership.group.members
           .map(m => m.user.id)
-          .filter(id => id !== student.id);
+          .filter(tid => tid !== student.id);
 
         if (teammateIds.length === 0) continue;
 
-        // Check completions for this phase
-        // Note: Some older evaluations might have classId: null if submitted without class_id in URL
-        // So we check for either the specific classId OR null
         const submitted = await prisma.evaluation.findMany({
           where: {
             evaluatorId: student.id,
@@ -373,11 +356,10 @@ async function processSchedule(schedule, now) {
         });
 
         const evaluatedIds = new Set(submitted.map(e => e.evaluateeId));
-        const hasIncomplete = teammateIds.some(id => !evaluatedIds.has(id));
+        const hasIncomplete = teammateIds.some(tid => !evaluatedIds.has(tid));
 
         if (!hasIncomplete) continue;
 
-        // Check if we already sent a reminder to this student recently
         const recentReminder = await prisma.reminderLog.findFirst({
           where: {
             classId,
@@ -397,7 +379,7 @@ async function processSchedule(schedule, now) {
       return;
     }
 
-    console.log(`[ReminderScheduler] Sending ${studentsToRemind.length} reminders for class ${classInfo.name}`);
+    console.log(`[ReminderScheduler] Sending ${studentsToRemind.length} reminders for class ${classInfo.name} (due ${dueDate})`);
 
     // Get template if specified
     let templateSubject = null;
@@ -413,7 +395,6 @@ async function processSchedule(schedule, now) {
     }
 
     // Log the reminders BEFORE sending to prevent duplicates during deployments
-    // If server crashes after logging but before sending, we skip a reminder (better than duplicates)
     const logsToCreate = studentsToRemind.map(student => ({
       classId,
       userId: student.id,
@@ -426,13 +407,11 @@ async function processSchedule(schedule, now) {
       data: logsToCreate
     });
 
-    // Update lastSentAt on the schedule
     await prisma.reminderSchedule.update({
       where: { id },
       data: { lastSentAt: now }
     });
 
-    // Now send the reminders (logs already written, so no duplicates if this crashes)
     const result = await emailService.sendBulkNudge({
       students: studentsToRemind,
       className: classInfo.name,
@@ -442,7 +421,6 @@ async function processSchedule(schedule, now) {
       subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
     });
 
-    // Notify teacher
     if (result.successful > 0 && classInfo.teacher) {
       await emailService.notifyTeacherOfNudges({
         teacherEmail: classInfo.teacher.email,

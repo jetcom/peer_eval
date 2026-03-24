@@ -117,8 +117,6 @@ async function checkIfPhasePastDue(userId, phase, classId) {
       }
     }
 
-    // Debug logging
-    console.log('Extension check:', { classId: classInfo.id, userId, phaseNum, extension, allExtensions: extensions });
 
     // Get phase due dates for this class
     const phaseDueDatesRows = await prisma.phaseDueDate.findMany({
@@ -175,7 +173,6 @@ async function checkIfPhasePastDue(userId, phase, classId) {
 
     // Compare as strings (both in the same timezone context)
     const isPastDue = nowInTz > effectiveDueDate;
-    console.log('Due date comparison:', { timezone, nowInTz, effectiveDueDate, isPastDue, hasExtension: !!extension });
 
     return { isPastDue, effectiveDueDate };
   } catch (err) {
