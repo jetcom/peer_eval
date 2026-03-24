@@ -90,7 +90,7 @@ async function notifyAdminNewInstructor({ adminEmails, instructor }) {
       </div>
 
       <p>
-        <a href="${APP_URL}/admin/users"
+        <a href="${APP_URL}/admin?tab=instructors"
            style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px;">
           Review Pending Instructors
         </a>
