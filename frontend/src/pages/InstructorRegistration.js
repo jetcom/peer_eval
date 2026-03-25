@@ -81,7 +81,7 @@ function InstructorRegistration() {
 
   return (
     <div className="login-container">
-      <div className="login-card">
+      <div className="login-card" style={{ maxWidth: '600px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Instructor Registration</h1>
           <button
