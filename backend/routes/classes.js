@@ -3,7 +3,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const emailService = require('../services/email');
 
 const router = express.Router();
@@ -54,6 +54,114 @@ const formatClassResponse = (c) => ({
     acc[pd.phase] = pd.dueDate;
     return acc;
   }, {})
+});
+
+// Course analytics (admin only) - all classes with instructor, student count, eval types, submission stats
+router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const classes = await prisma.class.findMany({
+      include: {
+        teacher: {
+          select: { id: true, firstName: true, lastName: true, email: true }
+        },
+        instructors: {
+          include: {
+            user: { select: { id: true, firstName: true, lastName: true, email: true } }
+          }
+        },
+        _count: {
+          select: { enrollments: true, groups: true, evaluations: true }
+        },
+        assignments: {
+          include: {
+            evalTypes: {
+              select: {
+                id: true,
+                evalType: true,
+                name: true,
+                targetType: true,
+                _count: {
+                  select: { evaluations: true, groupEvaluations: true }
+                }
+              }
+            }
+          },
+          orderBy: { orderIndex: 'asc' }
+        },
+        phaseDueDates: true,
+        criteria: {
+          select: { id: true, name: true },
+          orderBy: { orderIndex: 'asc' }
+        }
+      },
+      orderBy: [
+        { archived: 'asc' },
+        { createdAt: 'desc' }
+      ]
+    });
+
+    const result = classes.map(c => {
+      // Collect unique eval types across all assignments
+      const evalTypesUsed = [...new Set(
+        c.assignments.flatMap(a => a.evalTypes.map(et => et.evalType))
+      )];
+
+      // Count total submissions across assignment eval types
+      const assignmentSubmissions = c.assignments.reduce((sum, a) =>
+        sum + a.evalTypes.reduce((s, et) =>
+          s + et._count.evaluations + et._count.groupEvaluations, 0), 0);
+
+      return {
+        id: c.id,
+        name: c.name,
+        section: c.section,
+        semester: c.semester,
+        archived: c.archived,
+        evaluation_mode: c.evaluationMode,
+        num_phases: c.numPhases,
+        has_final_evaluation: c.hasFinalEvaluation,
+        show_groups: c.showGroups,
+        created_at: c.createdAt,
+        teacher: {
+          id: c.teacher.id,
+          name: `${c.teacher.firstName} ${c.teacher.lastName}`.trim(),
+          email: c.teacher.email
+        },
+        co_instructors: c.instructors.map(i => ({
+          id: i.user.id,
+          name: `${i.user.firstName} ${i.user.lastName}`.trim(),
+          email: i.user.email
+        })),
+        student_count: c._count.enrollments,
+        group_count: c._count.groups,
+        phase_eval_count: c._count.evaluations,
+        assignment_eval_count: assignmentSubmissions,
+        eval_types_used: evalTypesUsed,
+        assignments: c.assignments.map(a => ({
+          id: a.id,
+          name: a.name,
+          due_date: a.dueDate,
+          eval_types: a.evalTypes.map(et => ({
+            id: et.id,
+            eval_type: et.evalType,
+            name: et.name,
+            target_type: et.targetType,
+            submission_count: et._count.evaluations + et._count.groupEvaluations
+          }))
+        })),
+        phase_due_dates: c.phaseDueDates.reduce((acc, pd) => {
+          acc[pd.phase] = pd.dueDate;
+          return acc;
+        }, {}),
+        criteria: c.criteria.map(cr => cr.name)
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Course analytics error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Get all classes (admin sees all, teacher sees their own)

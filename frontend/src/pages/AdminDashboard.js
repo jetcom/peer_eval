@@ -21,6 +21,7 @@ import QuickStats from '../components/admin/QuickStats';
 import ClassSelector from '../components/admin/ClassSelector';
 import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
 import CopyClassModal from '../components/admin/CopyClassModal';
+import CoursesTab from '../components/admin/CoursesTab';
 
 function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -874,6 +875,14 @@ function AdminDashboard() {
           </button>
           {user?.role === 'admin' && (
             <button
+              className={`admin-tab ${activeTab === 'courses' ? 'active' : ''}`}
+              onClick={() => setActiveTab('courses')}
+            >
+              Courses
+            </button>
+          )}
+          {user?.role === 'admin' && (
+            <button
               className={`admin-tab ${activeTab === 'instructors' ? 'active' : ''}`}
               onClick={() => setActiveTab('instructors')}
             >
@@ -992,6 +1001,10 @@ function AdminDashboard() {
             selectedClass={selectedClass}
             classes={classes}
           />
+        )}
+
+        {activeTab === 'courses' && user?.role === 'admin' && (
+          <CoursesTab darkMode={darkMode} />
         )}
 
         {activeTab === 'instructors' && user?.role === 'admin' && (
