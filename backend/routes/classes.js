@@ -59,46 +59,89 @@ const formatClassResponse = (c) => ({
 // Course analytics (admin only) - all classes with instructor, student count, eval types, submission stats
 router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const classes = await prisma.class.findMany({
-      include: {
-        teacher: {
-          select: { id: true, firstName: true, lastName: true, email: true }
-        },
-        instructors: {
-          include: {
-            user: { select: { id: true, firstName: true, lastName: true, email: true } }
-          }
-        },
-        _count: {
-          select: { enrollments: true, groups: true, evaluations: true }
-        },
-        assignments: {
-          include: {
-            evalTypes: {
-              select: {
-                id: true,
-                evalType: true,
-                name: true,
-                targetType: true,
-                _count: {
-                  select: { evaluations: true, groupEvaluations: true }
-                }
-              }
+    const [classes, phaseSubmissionDates, assignmentSubmissionDates] = await Promise.all([
+      prisma.class.findMany({
+        include: {
+          teacher: {
+            select: { id: true, firstName: true, lastName: true, email: true }
+          },
+          instructors: {
+            include: {
+              user: { select: { id: true, firstName: true, lastName: true, email: true } }
             }
           },
-          orderBy: { orderIndex: 'asc' }
+          enrollments: {
+            select: { userId: true }
+          },
+          _count: {
+            select: { enrollments: true, groups: true, evaluations: true }
+          },
+          assignments: {
+            include: {
+              evalTypes: {
+                include: {
+                  _count: {
+                    select: { evaluations: true, groupEvaluations: true }
+                  }
+                }
+              }
+            },
+            orderBy: { orderIndex: 'asc' }
+          },
+          phaseDueDates: true,
+          criteria: {
+            select: { id: true, name: true },
+            orderBy: { orderIndex: 'asc' }
+          }
         },
-        phaseDueDates: true,
-        criteria: {
-          select: { id: true, name: true },
-          orderBy: { orderIndex: 'asc' }
-        }
-      },
-      orderBy: [
-        { archived: 'asc' },
-        { createdAt: 'desc' }
-      ]
-    });
+        orderBy: [
+          { archived: 'asc' },
+          { createdAt: 'desc' }
+        ]
+      }),
+      // Submission timeline: phase evaluations grouped by date
+      prisma.evaluation.groupBy({
+        by: ['classId', 'createdAt'],
+        _count: true,
+        orderBy: { createdAt: 'asc' }
+      }),
+      // Submission timeline: assignment evaluations with dates
+      prisma.assignmentEvaluation.findMany({
+        where: { submittedAt: { not: null } },
+        select: {
+          submittedAt: true,
+          evalType: {
+            select: {
+              evalType: true,
+              assignment: { select: { classId: true } }
+            }
+          }
+        },
+        orderBy: { submittedAt: 'asc' }
+      })
+    ]);
+
+    // Build submission timeline lookup by classId -> date -> count
+    const timelineByClass = {};
+    for (const row of phaseSubmissionDates) {
+      const classId = row.classId;
+      const date = new Date(row.createdAt).toISOString().slice(0, 10);
+      if (!timelineByClass[classId]) timelineByClass[classId] = {};
+      timelineByClass[classId][date] = (timelineByClass[classId][date] || 0) + row._count;
+    }
+    for (const row of assignmentSubmissionDates) {
+      const classId = row.evalType.assignment.classId;
+      const date = new Date(row.submittedAt).toISOString().slice(0, 10);
+      if (!timelineByClass[classId]) timelineByClass[classId] = {};
+      timelineByClass[classId][date] = (timelineByClass[classId][date] || 0) + 1;
+    }
+
+    // Build global eval type counts from assignment submissions
+    const evalTypeCounts = {};
+    for (const row of assignmentSubmissionDates) {
+      const et = row.evalType.evalType;
+      evalTypeCounts[et] = (evalTypeCounts[et] || 0) + 1;
+    }
 
     const result = classes.map(c => {
       // Collect unique eval types across all assignments
@@ -110,6 +153,34 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       const assignmentSubmissions = c.assignments.reduce((sum, a) =>
         sum + a.evalTypes.reduce((s, et) =>
           s + et._count.evaluations + et._count.groupEvaluations, 0), 0);
+
+      // Compute expected submissions for completion rate
+      const studentCount = c._count.enrollments;
+      let expectedSubmissions = 0;
+      if (c.evaluationMode === 'phases') {
+        // Each student evaluates every other student per phase
+        const totalPhases = c.numPhases + (c.hasFinalEvaluation ? 1 : 0);
+        expectedSubmissions = studentCount * (studentCount - 1) * totalPhases;
+      } else {
+        // Assignment-based: per eval type
+        for (const a of c.assignments) {
+          for (const et of a.evalTypes) {
+            if (et.targetType === 'individual') {
+              const targets = et.includeSelf ? studentCount : (studentCount - 1);
+              expectedSubmissions += studentCount * targets;
+            } else {
+              // Group evals: each student evaluates each group (rough estimate)
+              expectedSubmissions += studentCount;
+            }
+          }
+        }
+      }
+
+      // Submission timeline for this class
+      const timeline = timelineByClass[c.id] || {};
+      const timelineEntries = Object.entries(timeline)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, count]) => ({ date, count }));
 
       return {
         id: c.id,
@@ -132,11 +203,17 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
           name: `${i.user.firstName} ${i.user.lastName}`.trim(),
           email: i.user.email
         })),
-        student_count: c._count.enrollments,
+        student_count: studentCount,
         group_count: c._count.groups,
         phase_eval_count: c._count.evaluations,
         assignment_eval_count: assignmentSubmissions,
+        total_submissions: c._count.evaluations + assignmentSubmissions,
+        expected_submissions: expectedSubmissions,
+        completion_rate: expectedSubmissions > 0
+          ? Math.round(((c._count.evaluations + assignmentSubmissions) / expectedSubmissions) * 100)
+          : 0,
         eval_types_used: evalTypesUsed,
+        submission_timeline: timelineEntries,
         assignments: c.assignments.map(a => ({
           id: a.id,
           name: a.name,
@@ -157,7 +234,32 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
       };
     });
 
-    res.json(result);
+    // Add global stats
+    const globalEvalTypeCounts = { ...evalTypeCounts };
+    // Add phase evals as their own type
+    const totalPhaseEvals = classes.reduce((s, c) => s + c._count.evaluations, 0);
+    if (totalPhaseEvals > 0) {
+      globalEvalTypeCounts['phase'] = totalPhaseEvals;
+    }
+
+    // Build global submission timeline (all classes combined)
+    const globalTimeline = {};
+    for (const classTimeline of Object.values(timelineByClass)) {
+      for (const [date, count] of Object.entries(classTimeline)) {
+        globalTimeline[date] = (globalTimeline[date] || 0) + count;
+      }
+    }
+    const globalTimelineEntries = Object.entries(globalTimeline)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, count]) => ({ date, count }));
+
+    res.json({
+      courses: result,
+      global_stats: {
+        eval_type_counts: globalEvalTypeCounts,
+        submission_timeline: globalTimelineEntries
+      }
+    });
   } catch (err) {
     console.error('Course analytics error:', err);
     res.status(500).json({ error: 'Database error' });
