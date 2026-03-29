@@ -217,6 +217,7 @@ async function processSchedule(schedule, now) {
     let assignmentName = null;
     let dueDate = null;
     let phase = null;
+    let firstAssignmentId = null;
 
     if (isAssignmentMode) {
       // Find assignments with eval types due between now and the horizon
@@ -240,6 +241,7 @@ async function processSchedule(schedule, now) {
 
       if (assignments.length === 0) return;
 
+      firstAssignmentId = assignments[0]?.id || null;
       console.log(`[ReminderScheduler] Class ${classId}: found ${assignments.length} assignment(s) due within ${hoursBeforeDue}h`);
 
       const enrollments = await prisma.classEnrollment.findMany({
@@ -399,7 +401,7 @@ async function processSchedule(schedule, now) {
       classId,
       userId: student.id,
       phase: isAssignmentMode ? null : phase,
-      assignmentId: isAssignmentMode ? (assignments?.[0]?.id || null) : null,
+      assignmentId: isAssignmentMode ? firstAssignmentId : null,
       sentAt: now
     }));
 
