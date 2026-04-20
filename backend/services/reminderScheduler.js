@@ -260,9 +260,10 @@ async function processSchedule(schedule, now) {
         dueDate = assignment.evalTypes[0]?.dueDate;
         assignmentName = assignment.name;
 
+        const evalTypeIds = assignment.evalTypes.map(et => et.id);
         const submittedEvals = await prisma.assignmentEvaluation.findMany({
           where: {
-            assignmentId: assignment.id,
+            evalTypeId: { in: evalTypeIds },
             evaluatorId: { in: studentIds }
           },
           select: { evaluatorId: true }
