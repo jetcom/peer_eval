@@ -345,20 +345,32 @@ async function processSchedule(schedule, now) {
 
         if (teammateIds.length === 0) continue;
 
-        const submitted = await prisma.evaluation.findMany({
-          where: {
-            evaluatorId: student.id,
-            evaluateeId: { in: teammateIds },
-            phase,
-            OR: [
-              { classId },
-              { classId: null }
-            ]
-          },
-          select: { evaluateeId: true }
-        });
+        let submittedIds;
+        if (phase === 0) {
+          // Final Evaluation uses final_comments table, not evaluations
+          const submitted = await prisma.finalComment.findMany({
+            where: {
+              evaluatorId: student.id,
+              evaluateeId: { in: teammateIds },
+              OR: [{ classId }, { classId: null }]
+            },
+            select: { evaluateeId: true }
+          });
+          submittedIds = submitted.map(e => e.evaluateeId);
+        } else {
+          const submitted = await prisma.evaluation.findMany({
+            where: {
+              evaluatorId: student.id,
+              evaluateeId: { in: teammateIds },
+              phase,
+              OR: [{ classId }, { classId: null }]
+            },
+            select: { evaluateeId: true }
+          });
+          submittedIds = submitted.map(e => e.evaluateeId);
+        }
 
-        const evaluatedIds = new Set(submitted.map(e => e.evaluateeId));
+        const evaluatedIds = new Set(submittedIds);
         const hasIncomplete = teammateIds.some(tid => !evaluatedIds.has(tid));
 
         if (!hasIncomplete) continue;
