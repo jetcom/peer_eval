@@ -290,7 +290,7 @@ async function processSchedule(schedule, now) {
         }
       }
     } else {
-      // Phase-based mode
+      // Phase-based mode — loop over every phase due in this window
       const phaseDueDates = await prisma.phaseDueDate.findMany({
         where: {
           classId,
@@ -299,8 +299,6 @@ async function processSchedule(schedule, now) {
       });
 
       if (phaseDueDates.length === 0) return;
-
-      console.log(`[ReminderScheduler] Class ${classId}: found phase ${phaseDueDates[0].phase} due ${phaseDueDates[0].dueDate} (within ${hoursBeforeDue}h)`);
 
       const enrollments = await prisma.classEnrollment.findMany({
         where: { classId },
@@ -313,9 +311,6 @@ async function processSchedule(schedule, now) {
         .filter(e => e.user.role === 'student')
         .map(e => e.user);
       const studentIds = students.map(s => s.id);
-
-      phase = phaseDueDates[0].phase;
-      dueDate = phaseDueDates[0].dueDate;
 
       const groupMembers = await prisma.groupMember.findMany({
         where: {
@@ -335,59 +330,128 @@ async function processSchedule(schedule, now) {
 
       const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
 
-      for (const student of students) {
-        const membership = groupMembers.find(gm => gm.userId === student.id);
-        if (!membership) continue;
+      // studentId → Set of phases still needing a reminder (incomplete + not recently reminded)
+      const studentPhasesMap = new Map();
 
-        const teammateIds = membership.group.members
-          .map(m => m.user.id)
-          .filter(tid => tid !== student.id);
+      for (const pdd of phaseDueDates) {
+        const phaseNum = pdd.phase;
 
-        if (teammateIds.length === 0) continue;
+        console.log(`[ReminderScheduler] Class ${classId}: found phase ${phaseNum} due ${pdd.dueDate} (within ${hoursBeforeDue}h)`);
 
-        let submittedIds;
-        if (phase === 0) {
-          // Final Evaluation uses final_comments table, not evaluations
-          const submitted = await prisma.finalComment.findMany({
-            where: {
-              evaluatorId: student.id,
-              evaluateeId: { in: teammateIds },
-              OR: [{ classId }, { classId: null }]
-            },
-            select: { evaluateeId: true }
-          });
-          submittedIds = submitted.map(e => e.evaluateeId);
-        } else {
-          const submitted = await prisma.evaluation.findMany({
-            where: {
-              evaluatorId: student.id,
-              evaluateeId: { in: teammateIds },
-              phase,
-              OR: [{ classId }, { classId: null }]
-            },
-            select: { evaluateeId: true }
-          });
-          submittedIds = submitted.map(e => e.evaluateeId);
-        }
+        for (const student of students) {
+          const membership = groupMembers.find(gm => gm.userId === student.id);
+          if (!membership) continue;
 
-        const evaluatedIds = new Set(submittedIds);
-        const hasIncomplete = teammateIds.some(tid => !evaluatedIds.has(tid));
+          const teammateIds = membership.group.members
+            .map(m => m.user.id)
+            .filter(tid => tid !== student.id);
 
-        if (!hasIncomplete) continue;
+          if (teammateIds.length === 0) continue;
 
-        const recentReminder = await prisma.reminderLog.findFirst({
-          where: {
-            classId,
-            userId: student.id,
-            phase,
-            sentAt: { gte: fourHoursAgo }
+          let submittedIds;
+          if (phaseNum === 0) {
+            // Final Evaluation uses final_comments table, not evaluations
+            const submitted = await prisma.finalComment.findMany({
+              where: {
+                evaluatorId: student.id,
+                evaluateeId: { in: teammateIds },
+                OR: [{ classId }, { classId: null }]
+              },
+              select: { evaluateeId: true }
+            });
+            submittedIds = submitted.map(e => e.evaluateeId);
+          } else {
+            const submitted = await prisma.evaluation.findMany({
+              where: {
+                evaluatorId: student.id,
+                evaluateeId: { in: teammateIds },
+                phase: phaseNum,
+                OR: [{ classId }, { classId: null }]
+              },
+              select: { evaluateeId: true }
+            });
+            submittedIds = submitted.map(e => e.evaluateeId);
           }
-        });
 
-        if (!recentReminder) {
-          studentsToRemind.push(student);
+          const evaluatedIds = new Set(submittedIds);
+          const hasIncomplete = teammateIds.some(tid => !evaluatedIds.has(tid));
+
+          if (!hasIncomplete) continue;
+
+          const recentReminder = await prisma.reminderLog.findFirst({
+            where: {
+              classId,
+              userId: student.id,
+              phase: phaseNum,
+              sentAt: { gte: fourHoursAgo }
+            }
+          });
+
+          if (!recentReminder) {
+            if (!studentPhasesMap.has(student.id)) studentPhasesMap.set(student.id, { student, phases: [] });
+            studentPhasesMap.get(student.id).phases.push(phaseNum);
+          }
         }
       }
+
+      if (studentPhasesMap.size === 0) return;
+
+      const phaseStudents = [...studentPhasesMap.values()].map(e => e.student);
+
+      console.log(`[ReminderScheduler] Sending ${phaseStudents.length} reminders for class ${classInfo.name}`);
+
+      let templateSubject = null;
+      let templateMessage = null;
+      if (nudgeTemplateId) {
+        const template = await prisma.nudgeTemplate.findUnique({
+          where: { id: nudgeTemplateId }
+        });
+        if (template) {
+          templateSubject = template.subject;
+          templateMessage = template.message;
+        }
+      }
+
+      // Log one entry per (student, phase) for per-phase dedup tracking
+      const logsToCreate = [];
+      for (const { student, phases } of studentPhasesMap.values()) {
+        for (const phaseNum of phases) {
+          logsToCreate.push({ classId, userId: student.id, phase: phaseNum, assignmentId: null, sentAt: now });
+        }
+      }
+      await prisma.reminderLog.createMany({ data: logsToCreate });
+
+      await prisma.reminderSchedule.update({
+        where: { id },
+        data: { lastSentAt: now }
+      });
+
+      const result = await emailService.sendBulkNudge({
+        students: phaseStudents,
+        className: classInfo.name,
+        assignmentName: null,
+        message: templateMessage,
+        instructorName: `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`,
+        subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
+      });
+
+      if (result.successful > 0 && classInfo.teacher) {
+        await emailService.notifyTeacherOfNudges({
+          teacherEmail: classInfo.teacher.email,
+          teacherName: classInfo.teacher.firstName,
+          className: classInfo.name,
+          students: phaseStudents.map(s => ({
+            firstName: s.firstName,
+            lastName: s.lastName,
+            email: s.email
+          })),
+          isReminder: true
+        });
+      }
+
+      console.log(`[ReminderScheduler] Sent ${result.successful} reminders, ${result.failed} failed for class ${classInfo.name}`);
+
+      return;
     }
 
     if (studentsToRemind.length === 0) {
