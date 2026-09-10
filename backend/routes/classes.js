@@ -1004,6 +1004,14 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       }
     });
 
+    // If the CSV includes groups, make sure the roster's Group column is turned on
+    if (uniqueGroupNames.size > 0 && !classData.showGroups) {
+      await prisma.class.update({
+        where: { id: classId },
+        data: { showGroups: 1 }
+      });
+    }
+
     // Create groups map
     const groupMap = new Map();
     for (const groupName of uniqueGroupNames) {
