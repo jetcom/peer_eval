@@ -3,6 +3,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
+const { naturalCompare } = require('../utils/naturalSort');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const emailService = require('../services/email');
 
@@ -1194,9 +1195,10 @@ router.get('/:id/groups', authenticateToken, requireTeacherOrAdmin, async (req, 
           ]
         },
         _count: { select: { members: true } }
-      },
-      orderBy: { name: 'asc' }
+      }
     });
+
+    groups.sort((a, b) => naturalCompare(a.name, b.name));
 
     res.json(groups.map(g => ({
       id: g.id,

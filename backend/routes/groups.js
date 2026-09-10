@@ -3,6 +3,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { naturalCompare } = require('../utils/naturalSort');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -26,9 +27,8 @@ const formatGroup = (g) => ({
 // Get all groups (admin only)
 router.get('/', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const groups = await prisma.group.findMany({
-      orderBy: { name: 'asc' }
-    });
+    const groups = await prisma.group.findMany();
+    groups.sort((a, b) => naturalCompare(a.name, b.name));
 
     res.json(groups.map(formatGroup));
   } catch (err) {
@@ -54,9 +54,10 @@ router.get('/with-members', authenticateToken, requireAdmin, async (req, res) =>
             }
           }
         }
-      },
-      orderBy: { name: 'asc' }
+      }
     });
+
+    groups.sort((a, b) => naturalCompare(a.name, b.name));
 
     res.json(groups.map(g => ({
       ...formatGroup(g),
