@@ -382,6 +382,7 @@ table tr:hover {
 
 /* File upload */
 .file-upload {
+  display: block;
   border: 2px dashed #ddd;
   padding: 30px;
   text-align: center;
