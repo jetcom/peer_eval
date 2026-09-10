@@ -194,7 +194,14 @@ function UsersTab({
           placeholder="Search by name or email..."
           value={userSearchQuery}
           onChange={(e) => onUserSearch(e.target.value)}
-          style={{ width: '100%', padding: '10px', marginBottom: '10px' }}
+          style={{
+            width: '100%',
+            padding: '10px',
+            marginBottom: '10px',
+            background: darkMode ? '#1a1a1a' : '#fff',
+            color: darkMode ? '#e0e0e0' : '#333',
+            border: `1px solid ${darkMode ? '#444' : '#ccc'}`
+          }}
         />
         {userSearchResults.length > 0 && (
           <table>
