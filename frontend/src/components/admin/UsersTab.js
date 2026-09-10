@@ -49,57 +49,65 @@ function UsersTab({
     <>
       <div className="admin-grid">
         <div className="card">
-          <h2>Add User to System</h2>
-          <form onSubmit={onCreateUser}>
-            <div className="form-group">
-              <label>Email</label>
-              <input
-                type="email"
-                value={newUser.email}
-                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Password</label>
-              <input
-                type="password"
-                value={newUser.password}
-                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>First Name</label>
-              <input
-                type="text"
-                value={newUser.first_name}
-                onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Last Name</label>
-              <input
-                type="text"
-                value={newUser.last_name}
-                onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <label>Role</label>
-              <select
-                value={newUser.role}
-                onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-              >
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <button type="submit" className="btn btn-primary">Add User</button>
-          </form>
+          <details>
+            <summary style={{ cursor: 'pointer', fontSize: '1.17rem', fontWeight: 'bold' }}>
+              Add a Single User to the System
+            </summary>
+            <p style={{ margin: '10px 0 15px', color: darkMode ? '#a0a0a0' : '#666' }}>
+              Most students are added via CSV import, not this form — use this only to create one
+              account by hand (e.g. a teacher or admin account).
+            </p>
+            <form onSubmit={onCreateUser}>
+              <div className="form-group">
+                <label>Email</label>
+                <input
+                  type="email"
+                  value={newUser.email}
+                  onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input
+                  type="password"
+                  value={newUser.password}
+                  onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>First Name</label>
+                <input
+                  type="text"
+                  value={newUser.first_name}
+                  onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Last Name</label>
+                <input
+                  type="text"
+                  value={newUser.last_name}
+                  onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Role</label>
+                <select
+                  value={newUser.role}
+                  onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                >
+                  <option value="student">Student</option>
+                  <option value="teacher">Teacher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <button type="submit" className="btn btn-primary">Add User</button>
+            </form>
+          </details>
         </div>
 
         <div className="card">
