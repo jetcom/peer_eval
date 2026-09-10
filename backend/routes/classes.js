@@ -577,6 +577,10 @@ router.post('/', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
       }
     }
 
+    await prisma.reminderSchedule.create({
+      data: { classId: classData.id, hoursBeforeDue: 24, enabled: 1 }
+    });
+
     res.json({
       id: classData.id,
       name,
@@ -1583,6 +1587,7 @@ router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, r
       where,
       include: {
         instructors: true,
+        reminderSchedules: true,
         criteria: { orderBy: { orderIndex: 'asc' } },
         assignments: {
           include: {
@@ -1716,6 +1721,23 @@ router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, r
           }
         }
       }
+    }
+
+    // Copy reminder schedules from source, or create a default 24h schedule
+    const sourceSchedules = sourceClass.reminderSchedules || [];
+    if (sourceSchedules.length > 0) {
+      await prisma.reminderSchedule.createMany({
+        data: sourceSchedules.map(s => ({
+          classId: newClass.id,
+          hoursBeforeDue: s.hoursBeforeDue,
+          enabled: s.enabled,
+          nudgeTemplateId: s.nudgeTemplateId || null
+        }))
+      });
+    } else {
+      await prisma.reminderSchedule.create({
+        data: { classId: newClass.id, hoursBeforeDue: 24, enabled: 1 }
+      });
     }
 
     // Fetch the new class with all relations

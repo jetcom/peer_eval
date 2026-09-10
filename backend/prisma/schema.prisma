@@ -83,8 +83,9 @@ model Class {
   finalComments FinalComment[]
   phaseDueDates PhaseDueDate[]
   extensions    StudentExtension[]
-  criteria      ClassEvalCriterion[]
-  assignments   Assignment[]
+  criteria           ClassEvalCriterion[]
+  assignments        Assignment[]
+  reminderSchedules  ReminderSchedule[]
 
   @@map("classes")
 }
@@ -448,6 +449,8 @@ model ReminderSchedule {
   nudgeTemplateId Int?     @map("nudge_template_id")
   lastSentAt      DateTime? @map("last_sent_at")
   createdAt       DateTime @default(now()) @map("created_at")
+
+  class           Class    @relation(fields: [classId], references: [id])
 
   @@unique([classId, hoursBeforeDue])
   @@map("reminder_schedules")
