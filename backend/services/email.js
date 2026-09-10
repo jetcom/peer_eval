@@ -694,6 +694,42 @@ ${studentList}
 }
 
 /**
+ * Notify a teacher that a paper review round failed to auto-start its
+ * review period (e.g. not enough papers were submitted by the deadline)
+ */
+async function notifyTeacherOfAutoStartFailure({ teacherEmail, teacherName, className, assignmentName, reason }) {
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Paper Review Could Not Auto-Start</h2>
+      <p>Hi ${teacherName},</p>
+      <p>
+        The submission deadline for <strong>${assignmentName}</strong> in <strong>${className}</strong>
+        has passed, but the review period could not start automatically:
+      </p>
+
+      <div style="background: #fdecea; color: #611a15; padding: 16px 20px; border-radius: 8px; margin: 20px 0; font-size: 14px;">
+        ${reason}
+      </div>
+
+      <p>
+        You can start the review period manually once this is resolved, from the assignment's
+        paper review settings.
+      </p>
+
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — PeerEvals System
+      </p>
+    </div>
+  `;
+
+  return sendEmail({
+    to: teacherEmail,
+    subject: `Action Needed: Paper Review Didn't Auto-Start for ${assignmentName}`,
+    html,
+  });
+}
+
+/**
  * Send forgot password email with reset link
  */
 async function sendForgotPasswordEmail({ user, resetToken }) {
@@ -756,4 +792,5 @@ module.exports = {
   sendClassEnrollmentEmail,
   sendEvaluationConfirmation,
   notifyTeacherOfNudges,
+  notifyTeacherOfAutoStartFailure,
 };

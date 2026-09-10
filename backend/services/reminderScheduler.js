@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const prisma = require('../lib/prisma');
 const emailService = require('./email');
-const { isPastDueDate } = require('../utils/dateUtils');
+const { isPastDueDate, getNowInTimezone } = require('../utils/dateUtils');
 const { startReviewPeriod } = require('./paperReviewService');
 
 /**
@@ -56,7 +56,13 @@ async function processAutoStartReviews() {
           include: {
             assignment: {
               include: {
-                class: { select: { dueDateTimezone: true, name: true } }
+                class: {
+                  select: {
+                    dueDateTimezone: true,
+                    name: true,
+                    teacher: { select: { email: true, firstName: true } }
+                  }
+                }
               }
             }
           }
@@ -68,6 +74,7 @@ async function processAutoStartReviews() {
       const timezone = round.evalType.assignment.class.dueDateTimezone || 'America/New_York';
       const className = round.evalType.assignment.class.name;
       const assignmentName = round.evalType.assignment.name;
+      const teacher = round.evalType.assignment.class.teacher;
 
       if (!isPastDueDate(round.submissionDeadline, timezone)) {
         continue;
@@ -81,6 +88,23 @@ async function processAutoStartReviews() {
         console.log(`[ReminderScheduler] Auto-started review: ${result.assignmentsCreated} assignments created, deadline ${result.reviewDeadline}`);
       } else {
         console.warn(`[ReminderScheduler] Auto-start failed for evalType ${round.evalTypeId}: ${result.error}`);
+
+        // Only notify on the cycle that first catches this, not every 15 minutes
+        // for as long as the round stays unresolved
+        const minutesSinceDeadline = (new Date(getNowInTimezone(timezone)) - new Date(round.submissionDeadline)) / 60000;
+        if (teacher && minutesSinceDeadline < 20) {
+          try {
+            await emailService.notifyTeacherOfAutoStartFailure({
+              teacherEmail: teacher.email,
+              teacherName: teacher.firstName,
+              className,
+              assignmentName,
+              reason: result.error
+            });
+          } catch (emailErr) {
+            console.error(`[ReminderScheduler] Failed to notify teacher of auto-start failure for evalType ${round.evalTypeId}:`, emailErr.message);
+          }
+        }
       }
     }
   } catch (err) {
