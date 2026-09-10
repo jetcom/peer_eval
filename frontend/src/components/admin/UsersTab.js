@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import ClassRoster from './ClassRoster';
 
 function UsersTab({
   darkMode,
@@ -18,6 +19,7 @@ function UsersTab({
   userSearchResults,
   onCreateUser,
   onUploadStudents,
+  fileInputRef,
   uploading,
   onUserSearch,
   onAddToClass,
@@ -32,19 +34,7 @@ function UsersTab({
   onBulkResetPasswords,
   currentUser
 }) {
-  const [selectedUsers, setSelectedUsers] = useState(new Set());
-
-  // Clear selection when class changes
-  useEffect(() => {
-    setSelectedUsers(new Set());
-  }, [selectedClass]);
   const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
-
-  // Find which group a student belongs to
-  const getStudentGroup = (studentId) => {
-    if (!classGroups) return null;
-    return classGroups.find(g => g.members?.some(m => m.id === studentId));
-  };
 
   if (!selectedClass) {
     return (
@@ -148,7 +138,7 @@ function UsersTab({
             </label>
           )}
           <label className="file-upload" style={uploading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
-            <input type="file" accept=".csv" onChange={onUploadStudents} disabled={uploading} />
+            <input type="file" accept=".csv" ref={fileInputRef} onChange={onUploadStudents} disabled={uploading} />
             <p>{uploading ? 'Uploading...' : 'Click to upload CSV file'}</p>
           </label>
 
@@ -244,173 +234,25 @@ function UsersTab({
       </div>
 
       {/* Users in current class */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
-          <h2 style={{ margin: 0 }}>Users in {classes.find(c => c.id === parseInt(selectedClass))?.name} ({classStudents.length})</h2>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {onBulkResetPasswords && classStudents.filter(s => s.role === 'student' && s.must_change_password === 1).length > 0 && (
-              <button
-                className="btn btn-secondary"
-                onClick={onBulkResetPasswords}
-                style={{ fontSize: '0.85rem', padding: '8px 16px' }}
-                title="Reset passwords and send credential emails to students who have never logged in"
-              >
-                Reset Unsent Passwords ({classStudents.filter(s => s.role === 'student' && s.must_change_password === 1).length})
-              </button>
-            )}
-            {onSendAllInvites && classStudents.filter(s => s.role === 'student').length > 0 && (
-              <button
-                className="btn btn-primary"
-                onClick={onSendAllInvites}
-                style={{ fontSize: '0.85rem', padding: '8px 16px' }}
-                title="Send enrollment/invite email to all students in this class"
-              >
-                Send All Invites
-              </button>
-            )}
-          </div>
-        </div>
-        {classStudents.length === 0 ? (
-          <p>No users enrolled in this class yet.</p>
-        ) : (
-          <>
-          {selectedUsers.size > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '12px',
-              padding: '8px 12px', marginBottom: '10px',
-              background: darkMode ? '#1a3a6e' : '#e8f4fc',
-              borderRadius: '6px', fontSize: '0.9rem'
-            }}>
-              <span>{selectedUsers.size} selected</span>
-              <button className="btn btn-danger btn-sm" onClick={() => {
-                if (onBulkRemove) onBulkRemove([...selectedUsers], () => setSelectedUsers(new Set()));
-              }}>
-                Remove Selected
-              </button>
-              <button className="btn btn-secondary btn-sm" onClick={() => setSelectedUsers(new Set())}>
-                Clear
-              </button>
-            </div>
-          )}
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: '30px' }}>
-                  <input
-                    type="checkbox"
-                    checked={classStudents.length > 0 && selectedUsers.size === classStudents.length}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedUsers(new Set(classStudents.map(s => s.id)));
-                      } else {
-                        setSelectedUsers(new Set());
-                      }
-                    }}
-                    style={{ width: 'auto' }}
-                  />
-                </th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Role</th>
-                {showGroups && <th>Group</th>}
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {classStudents.map(u => {
-                const studentGroup = getStudentGroup(u.id);
-                return (
-                <tr key={u.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={selectedUsers.has(u.id)}
-                      onChange={(e) => {
-                        const next = new Set(selectedUsers);
-                        if (e.target.checked) next.add(u.id);
-                        else next.delete(u.id);
-                        setSelectedUsers(next);
-                      }}
-                      style={{ width: 'auto' }}
-                    />
-                  </td>
-                  <td>
-                    {u.last_name}, {u.first_name}
-                    {u.protected === 1 && <span style={{ marginLeft: '8px', color: '#7f8c8d', fontSize: '12px' }}>(protected)</span>}
-                  </td>
-                  <td>{u.email}</td>
-                  <td>{u.role}</td>
-                  {showGroups && (
-                    <td>
-                      {studentGroup ? (
-                        <span
-                          onClick={() => onViewGroup && onViewGroup(studentGroup.id)}
-                          style={{
-                            color: '#3498db',
-                            cursor: 'pointer',
-                            textDecoration: 'underline'
-                          }}
-                          title="Click to view group members"
-                        >
-                          {studentGroup.name}
-                        </span>
-                      ) : (
-                        <span style={{ color: '#999', fontStyle: 'italic' }}>—</span>
-                      )}
-                    </td>
-                  )}
-                  <td>
-                    {onEditStudent && (
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => onEditStudent(u)}
-                        style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
-                      >
-                        Edit
-                      </button>
-                    )}
-                    {onSendInvite && (
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => onSendInvite(u.id, `${u.first_name} ${u.last_name}`)}
-                        style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
-                        title="Send enrollment notification email"
-                      >
-                        Send Invite
-                      </button>
-                    )}
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => onResetPassword(u.id, `${u.first_name} ${u.last_name}`)}
-                      style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
-                    >
-                      Reset Password
-                    </button>
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => onRemoveFromClass(u.id, `${u.first_name} ${u.last_name}`)}
-                      style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
-                    >
-                      Remove
-                    </button>
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => onDeleteUser(u.id)}
-                      disabled={u.id === currentUser?.id || u.protected === 1}
-                      title={u.protected === 1 ? 'Cannot delete protected admin' : 'Delete user from system'}
-                      style={{ fontSize: '0.8rem', padding: '4px 8px' }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              );
-              })}
-            </tbody>
-          </table>
-          </>
-        )}
-      </div>
+      <ClassRoster
+        darkMode={darkMode}
+        title={`Users in ${classes.find(c => c.id === parseInt(selectedClass))?.name}`}
+        students={classStudents}
+        groups={classGroups}
+        showGroups={showGroups}
+        showRoleColumn
+        onEditStudent={onEditStudent}
+        onSendInvite={onSendInvite}
+        onResetPassword={onResetPassword}
+        onRemoveStudent={onRemoveFromClass}
+        onViewGroup={onViewGroup}
+        onDeleteUser={onDeleteUser}
+        currentUser={currentUser}
+        onBulkRemove={onBulkRemove}
+        onBulkResetPasswords={onBulkResetPasswords}
+        onSendAllInvites={onSendAllInvites}
+        resetKey={selectedClass}
+      />
     </>
   );
 }
