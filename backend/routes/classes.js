@@ -864,6 +864,36 @@ router.delete('/:id/students/:userId', authenticateToken, requireTeacherOrAdmin,
   }
 });
 
+// Update a student's name
+router.put('/:id/students/:userId', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const userId = parseInt(req.params.userId);
+    const { first_name, last_name } = req.body;
+
+    if (!first_name || !last_name) {
+      return res.status(400).json({ error: 'first_name and last_name are required' });
+    }
+
+    const enrollment = await prisma.classEnrollment.findUnique({
+      where: { classId_userId: { classId: id, userId } }
+    });
+    if (!enrollment) {
+      return res.status(404).json({ error: 'Student not found in this class' });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: { firstName: first_name, lastName: last_name }
+    });
+
+    res.json({ id: user.id, first_name: user.firstName, last_name: user.lastName });
+  } catch (err) {
+    console.error('Update student error:', err);
+    res.status(500).json({ error: 'Failed to update student' });
+  }
+});
+
 // Bulk remove students from a class
 router.post('/:id/students/bulk-remove', authenticateToken, requireTeacherOrAdmin, async (req, res) => {
   try {
@@ -962,7 +992,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     });
 
     if (records.length === 0) {
-      return res.json({ created: 0, enrolled: 0, errors: [], credentials: [] });
+      return res.json({ created: 0, enrolled: 0, group_changes: 0, names_updated: 0, errors: [], credentials: [] });
     }
 
     // Collect unique group names
@@ -1004,6 +1034,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       try {
         let user = await prisma.user.findUnique({ where: { email } });
         let isNew = false;
+        let nameUpdated = false;
 
         if (!user) {
           // Create new user
@@ -1029,6 +1060,13 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           });
           isNew = true;
           credentials.push({ email, password: generatedPassword });
+        } else if (user.firstName !== first_name || user.lastName !== last_name) {
+          // Update name if it changed since it was last imported
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { firstName: first_name, lastName: last_name }
+          });
+          nameUpdated = true;
         }
 
         // Check if already enrolled before upserting
@@ -1043,7 +1081,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           create: { classId, userId: user.id }
         });
 
-        results.push({ id: user.id, email, first_name, last_name, existing: !isNew, alreadyEnrolled: !!existingEnrollment });
+        results.push({ id: user.id, email, first_name, last_name, existing: !isNew, alreadyEnrolled: !!existingEnrollment, nameUpdated });
 
         // Add to group if specified
         if (group_name && group_name.trim()) {
@@ -1117,6 +1155,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       created: results.filter(r => !r.existing).length,
       enrolled: results.length,
       group_changes: groupChanges,
+      names_updated: results.filter(r => r.nameUpdated).length,
       errors,
       credentials,
       emails_sent: emailsSent

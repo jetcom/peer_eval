@@ -10,6 +10,7 @@ import ReportsTab from '../components/admin/ReportsTab';
 import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 import TemplatesTab from '../components/admin/TemplatesTab';
+import EditStudentModal from '../components/admin/EditStudentModal';
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -30,6 +31,7 @@ function TeacherDashboard() {
   const [newGroup, setNewGroup] = useState({ name: '' });
   const [activeTab, setActiveTab] = useState('progress');
   const [editingClass, setEditingClass] = useState(null);
+  const [editingStudent, setEditingStudent] = useState(null);
   const [topLevelView, setTopLevelView] = useState('classes'); // 'classes' or 'templates'
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -233,6 +235,9 @@ function TeacherDashboard() {
       if (res.data.group_changes > 0) {
         messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
       }
+      if (res.data.names_updated > 0) {
+        messageText += ` Updated ${res.data.names_updated} student name${res.data.names_updated !== 1 ? 's' : ''}.`;
+      }
       if (res.data.emails_sent > 0) {
         messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
       }
@@ -293,6 +298,25 @@ function TeacherDashboard() {
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reset passwords' });
+    }
+  };
+
+  const handleEditStudent = (student) => {
+    setEditingStudent({ id: student.id, first_name: student.first_name, last_name: student.last_name });
+  };
+
+  const handleUpdateStudent = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`/api/classes/${selectedClass}/students/${editingStudent.id}`, {
+        first_name: editingStudent.first_name,
+        last_name: editingStudent.last_name
+      });
+      setMessage({ type: 'success', text: 'Student updated successfully.' });
+      setEditingStudent(null);
+      fetchClassData();
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to update student' });
     }
   };
 
@@ -773,6 +797,13 @@ function TeacherDashboard() {
                                   <button
                                     className="btn btn-secondary"
                                     style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
+                                    onClick={() => handleEditStudent(student)}
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className="btn btn-secondary"
+                                    style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
                                     onClick={() => handleSendInvite(student.id, fullName)}
                                     title="Send enrollment notification email"
                                   >
@@ -850,6 +881,12 @@ function TeacherDashboard() {
                                 </div>
                               )}
                               <div className="mobile-card-actions">
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => handleEditStudent(student)}
+                                >
+                                  Edit
+                                </button>
                                 <button
                                   className="btn btn-secondary"
                                   onClick={() => handleSendInvite(student.id, fullName)}
@@ -958,6 +995,16 @@ function TeacherDashboard() {
             setEditingClass={setEditingClass}
             onSubmit={handleUpdateClass}
             onClose={() => setEditingClass(null)}
+          />
+        )}
+
+        {editingStudent && (
+          <EditStudentModal
+            darkMode={darkMode}
+            editingStudent={editingStudent}
+            setEditingStudent={setEditingStudent}
+            onSubmit={handleUpdateStudent}
+            onClose={() => setEditingStudent(null)}
           />
         )}
 
