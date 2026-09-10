@@ -26,6 +26,7 @@ function UsersTab({
   onDeleteUser,
   onSendInvite,
   onSendAllInvites,
+  onEditStudent,
   onViewGroup,
   onBulkRemove,
   onBulkResetPasswords,
@@ -359,6 +360,15 @@ function UsersTab({
                     </td>
                   )}
                   <td>
+                    {onEditStudent && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => onEditStudent(u)}
+                        style={{ marginRight: '5px', fontSize: '0.8rem', padding: '4px 8px' }}
+                      >
+                        Edit
+                      </button>
+                    )}
                     {onSendInvite && (
                       <button
                         className="btn btn-secondary"

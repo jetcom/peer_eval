@@ -22,6 +22,7 @@ import ClassSelector from '../components/admin/ClassSelector';
 import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
 import CopyClassModal from '../components/admin/CopyClassModal';
 import CoursesTab from '../components/admin/CoursesTab';
+import EditStudentModal from '../components/admin/EditStudentModal';
 
 function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -56,6 +57,7 @@ function AdminDashboard() {
   const [showManageMembersModal, setShowManageMembersModal] = useState(false);
   const [showEditClassModal, setShowEditClassModal] = useState(false);
   const [editingClass, setEditingClass] = useState(null);
+  const [editingStudent, setEditingStudent] = useState(null);
   // eslint-disable-next-line no-unused-vars
   const [showClassDropdown, setShowClassDropdown] = useState(false);
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
@@ -239,6 +241,9 @@ function AdminDashboard() {
       if (res.data.group_changes > 0) {
         messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
       }
+      if (res.data.names_updated > 0) {
+        messageText += ` Updated ${res.data.names_updated} student name${res.data.names_updated !== 1 ? 's' : ''}.`;
+      }
       if (res.data.emails_sent > 0) {
         messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
       }
@@ -369,6 +374,26 @@ function AdminDashboard() {
     ).slice(0, 10); // Limit to 10 results
 
     setUserSearchResults(results);
+  };
+
+  const handleEditStudent = (student) => {
+    setEditingStudent({ id: student.id, first_name: student.first_name, last_name: student.last_name });
+  };
+
+  const handleUpdateStudent = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`/api/classes/${selectedClass}/students/${editingStudent.id}`, {
+        first_name: editingStudent.first_name,
+        last_name: editingStudent.last_name
+      });
+      setMessage({ type: 'success', text: 'Student updated successfully.' });
+      setEditingStudent(null);
+      const studentsRes = await axios.get(`/api/classes/${selectedClass}/students`);
+      setClassStudents(studentsRes.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to update student' });
+    }
   };
 
   const handleRemoveFromClass = async (userId, userName) => {
@@ -748,6 +773,16 @@ function AdminDashboard() {
         />
       )}
 
+      {editingStudent && (
+        <EditStudentModal
+          darkMode={darkMode}
+          editingStudent={editingStudent}
+          setEditingStudent={setEditingStudent}
+          onSubmit={handleUpdateStudent}
+          onClose={() => setEditingStudent(null)}
+        />
+      )}
+
       {showManageMembersModal && (
         <ManageMembersModal
           darkMode={darkMode}
@@ -918,6 +953,7 @@ function AdminDashboard() {
             onAddToClass={handleAddToClass}
             onResetPassword={handleResetPassword}
             onRemoveFromClass={handleRemoveFromClass}
+            onEditStudent={handleEditStudent}
             onDeleteUser={handleDeleteUser}
             onSendInvite={handleSendInvite}
             onSendAllInvites={handleSendAllInvites}
