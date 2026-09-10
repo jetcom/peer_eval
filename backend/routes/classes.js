@@ -1660,6 +1660,7 @@ router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, r
         allowLate: sourceClass.allowLate,
         lateWindowHours: sourceClass.lateWindowHours,
         includeSelfEval: sourceClass.includeSelfEval,
+        showGroups: sourceClass.showGroups,
         peerTemplateId: sourceClass.peerTemplateId,
         audienceTemplateId: sourceClass.audienceTemplateId,
         selfTemplateId: sourceClass.selfTemplateId,
