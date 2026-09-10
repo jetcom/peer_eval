@@ -164,37 +164,53 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
         continue;
       }
 
-      // Password: use university_id or auto-generate
-      let generatedPassword;
-      if (university_id) {
-        generatedPassword = university_id;
-      } else {
-        const username = email.split('@')[0];
-        generatedPassword = `${username}Pass123`;
-      }
-      const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
-
       try {
-        const user = await prisma.user.create({
-          data: {
-            email,
-            password: hashedPassword,
-            firstName: first_name,
-            lastName: last_name,
-            universityId: university_id || null,
-            role: role || 'student',
-            mustChangePassword: 1
+        let user = await prisma.user.findUnique({ where: { email } });
+        let isNew = false;
+        let nameUpdated = false;
+
+        if (!user) {
+          // Password: use university_id or auto-generate
+          let generatedPassword;
+          if (university_id) {
+            generatedPassword = university_id;
+          } else {
+            const username = email.split('@')[0];
+            generatedPassword = `${username}Pass123`;
           }
-        });
+          const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
+
+          user = await prisma.user.create({
+            data: {
+              email,
+              password: hashedPassword,
+              firstName: first_name,
+              lastName: last_name,
+              universityId: university_id || null,
+              role: role || 'student',
+              mustChangePassword: 1
+            }
+          });
+          isNew = true;
+          credentials.push({ email, password: generatedPassword });
+        } else if (user.firstName !== first_name || user.lastName !== last_name) {
+          // Update name if it changed since it was last imported
+          user = await prisma.user.update({
+            where: { id: user.id },
+            data: { firstName: first_name, lastName: last_name }
+          });
+          nameUpdated = true;
+        }
 
         results.push({
           id: user.id,
           email: user.email,
           first_name: user.firstName,
           last_name: user.lastName,
-          role: user.role
+          role: user.role,
+          existing: !isNew,
+          nameUpdated
         });
-        credentials.push({ email, password: generatedPassword });
 
         // If group_name is provided, add user to group
         if (group_name) {
@@ -235,7 +251,12 @@ router.post('/upload-csv', authenticateToken, requireAdmin, upload.single('file'
       }
     }
 
-    res.json({ created: results.length, errors, credentials });
+    res.json({
+      created: results.filter(r => !r.existing).length,
+      updated: results.filter(r => r.nameUpdated).length,
+      errors,
+      credentials
+    });
   } catch (err) {
     console.error('CSV parse error:', err);
     res.status(400).json({ error: 'Failed to parse CSV: ' + err.message });
