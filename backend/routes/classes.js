@@ -942,6 +942,7 @@ router.post('/:id/students/bulk-remove', authenticateToken, requireTeacherOrAdmi
 // Upload students via CSV to a class
 router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, upload.single('file'), async (req, res) => {
   const classId = parseInt(req.params.id);
+  const dryRun = req.body?.preview === 'true' || req.body?.preview === true;
 
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -993,7 +994,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     });
 
     if (records.length === 0) {
-      return res.json({ created: 0, enrolled: 0, group_changes: 0, names_updated: 0, errors: [], credentials: [] });
+      return res.json({ preview: dryRun, created: 0, enrolled: 0, group_changes: 0, names_updated: 0, new_groups: 0, errors: [], credentials: [] });
     }
 
     // Collect unique group names
@@ -1006,28 +1007,34 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     });
 
     // If the CSV includes groups, make sure the roster's Group column is turned on
-    if (uniqueGroupNames.size > 0 && !classData.showGroups) {
+    if (!dryRun && uniqueGroupNames.size > 0 && !classData.showGroups) {
       await prisma.class.update({
         where: { id: classId },
         data: { showGroups: 1 }
       });
     }
 
-    // Create groups map
+    // Resolve groups map (read-only lookups happen either way; only
+    // create the group for real when this isn't a preview)
     const groupMap = new Map();
+    let newGroupsCount = 0;
     for (const groupName of uniqueGroupNames) {
       let group = await prisma.group.findFirst({
         where: { name: groupName, classId }
       });
       if (!group) {
-        group = await prisma.group.create({
-          data: { name: groupName, classId }
-        });
+        newGroupsCount++;
+        if (!dryRun) {
+          group = await prisma.group.create({
+            data: { name: groupName, classId }
+          });
+        }
       }
-      groupMap.set(groupName, group.id);
+      groupMap.set(groupName, group?.id ?? null);
     }
 
-    // Process students
+    // Process students. Every read (findUnique/findFirst) below always runs
+    // so a preview reflects real data; every write is skipped when dryRun.
     for (const record of records) {
       const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
       const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
@@ -1046,54 +1053,62 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
         let nameUpdated = false;
 
         if (!user) {
-          // Create new user
-          let generatedPassword;
-          if (university_id) {
-            generatedPassword = university_id;
-          } else {
-            const username = email.split('@')[0];
-            generatedPassword = `${username}Pass123`;
-          }
-          const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
-
-          user = await prisma.user.create({
-            data: {
-              email,
-              password: hashedPassword,
-              firstName: first_name,
-              lastName: last_name,
-              universityId: university_id || null,
-              role: 'student',
-              mustChangePassword: 1
-            }
-          });
           isNew = true;
-          credentials.push({ email, password: generatedPassword });
+          if (!dryRun) {
+            // Create new user
+            let generatedPassword;
+            if (university_id) {
+              generatedPassword = university_id;
+            } else {
+              const username = email.split('@')[0];
+              generatedPassword = `${username}Pass123`;
+            }
+            const hashedPassword = bcrypt.hashSync(generatedPassword, 10);
+
+            user = await prisma.user.create({
+              data: {
+                email,
+                password: hashedPassword,
+                firstName: first_name,
+                lastName: last_name,
+                universityId: university_id || null,
+                role: 'student',
+                mustChangePassword: 1
+              }
+            });
+            credentials.push({ email, password: generatedPassword });
+          }
         } else if (user.firstName !== first_name || user.lastName !== last_name) {
-          // Update name if it changed since it was last imported
-          user = await prisma.user.update({
-            where: { id: user.id },
-            data: { firstName: first_name, lastName: last_name }
-          });
+          // Name changed since it was last imported
           nameUpdated = true;
+          if (!dryRun) {
+            user = await prisma.user.update({
+              where: { id: user.id },
+              data: { firstName: first_name, lastName: last_name }
+            });
+          }
         }
 
-        // Check if already enrolled before upserting
-        const existingEnrollment = await prisma.classEnrollment.findUnique({
-          where: { classId_userId: { classId, userId: user.id } }
-        });
+        // Check if already enrolled before upserting (skip for a
+        // brand-new user being previewed — nothing to look up yet)
+        const existingEnrollment = user
+          ? await prisma.classEnrollment.findUnique({
+              where: { classId_userId: { classId, userId: user.id } }
+            })
+          : null;
 
-        // Enroll in class
-        await prisma.classEnrollment.upsert({
-          where: { classId_userId: { classId, userId: user.id } },
-          update: {},
-          create: { classId, userId: user.id }
-        });
+        if (!dryRun) {
+          await prisma.classEnrollment.upsert({
+            where: { classId_userId: { classId, userId: user.id } },
+            update: {},
+            create: { classId, userId: user.id }
+          });
+        }
 
-        results.push({ id: user.id, email, first_name, last_name, existing: !isNew, alreadyEnrolled: !!existingEnrollment, nameUpdated });
+        results.push({ id: user?.id ?? null, email, first_name, last_name, existing: !isNew, alreadyEnrolled: !!existingEnrollment, nameUpdated });
 
-        // Add to group if specified
-        if (group_name && group_name.trim()) {
+        // Add to group if specified (only meaningful once the user exists)
+        if (group_name && group_name.trim() && user) {
           const groupId = groupMap.get(group_name.trim());
           if (groupId) {
             // Check if student's current group differs from the new one
@@ -1104,20 +1119,22 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
               groupChanges++;
             }
 
-            // Remove from any existing groups in this class first
-            await prisma.groupMember.deleteMany({
-              where: {
-                userId: user.id,
-                group: { classId }
-              }
-            });
+            if (!dryRun) {
+              // Remove from any existing groups in this class first
+              await prisma.groupMember.deleteMany({
+                where: {
+                  userId: user.id,
+                  group: { classId }
+                }
+              });
 
-            // Add to new group
-            await prisma.groupMember.upsert({
-              where: { groupId_userId: { groupId, userId: user.id } },
-              update: {},
-              create: { groupId, userId: user.id }
-            });
+              // Add to new group
+              await prisma.groupMember.upsert({
+                where: { groupId_userId: { groupId, userId: user.id } },
+                update: {},
+                create: { groupId, userId: user.id }
+              });
+            }
           }
         }
       } catch (err) {
@@ -1129,8 +1146,8 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       }
     }
 
-    // Send emails if requested
-    const sendEmails = req.body?.send_emails !== 'false' && req.body?.send_emails !== false;
+    // Send emails if requested (never during a preview)
+    const sendEmails = !dryRun && req.body?.send_emails !== 'false' && req.body?.send_emails !== false;
     let emailsSent = 0;
     if (sendEmails && results.length > 0) {
       // Welcome emails for new users (with credentials)
@@ -1161,10 +1178,12 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     }
 
     res.json({
+      preview: dryRun,
       created: results.filter(r => !r.existing).length,
       enrolled: results.length,
       group_changes: groupChanges,
       names_updated: results.filter(r => r.nameUpdated).length,
+      new_groups: newGroupsCount,
       errors,
       credentials,
       emails_sent: emailsSent

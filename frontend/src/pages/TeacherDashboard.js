@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,6 +11,8 @@ import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
 import TemplatesTab from '../components/admin/TemplatesTab';
 import EditStudentModal from '../components/admin/EditStudentModal';
+import ClassRoster from '../components/admin/ClassRoster';
+import CsvImportPreviewModal from '../components/admin/CsvImportPreviewModal';
 function TeacherDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
@@ -36,9 +38,11 @@ function TeacherDashboard() {
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [selectedStudents, setSelectedStudents] = useState(new Set());
   const [reportGroup, setReportGroup] = useState('all');
   const [showExtensionsModal, setShowExtensionsModal] = useState(false);
+  const [pendingCsvFile, setPendingCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState(null);
+  const fileInputRef = useRef(null);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -102,7 +106,6 @@ function TeacherDashboard() {
     if (selectedClass) {
       fetchClassData();
     }
-    setSelectedStudents(new Set());
   }, [selectedClass, fetchClassData]);
 
   const handleCreateClass = async (e) => {
@@ -217,45 +220,74 @@ function TeacherDashboard() {
     }
   };
 
-  const handleFileUpload = async (e) => {
+  const buildUploadMessage = (data) => {
+    const allFailed = data.errors?.length > 0 && data.created === 0 && data.enrolled === 0;
+    let messageText = allFailed
+      ? 'Upload failed — no students were enrolled.'
+      : `Uploaded: ${data.enrolled} enrolled, ${data.created} new users created.`;
+    if (data.group_changes > 0) {
+      messageText += ` Updated ${data.group_changes} group assignment${data.group_changes !== 1 ? 's' : ''}.`;
+    }
+    if (data.names_updated > 0) {
+      messageText += ` Updated ${data.names_updated} student name${data.names_updated !== 1 ? 's' : ''}.`;
+    }
+    if (data.emails_sent > 0) {
+      messageText += ` Sent ${data.emails_sent} welcome email${data.emails_sent !== 1 ? 's' : ''}.`;
+    }
+    if (data.errors?.length > 0) {
+      const errorDetails = data.errors.slice(0, 5).map(e =>
+        `${e.email || 'unknown'}: ${e.error}`
+      ).join('; ');
+      const moreErrors = data.errors.length > 5 ? ` (and ${data.errors.length - 5} more)` : '';
+      messageText += ` ${data.errors.length} error${data.errors.length !== 1 ? 's' : ''}: ${errorDetails}${moreErrors}`;
+    }
+    return { type: allFailed ? 'error' : 'success', text: messageText };
+  };
+
+  const handleFileSelected = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('preview', 'true');
+
+    try {
+      const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData);
+      setPendingCsvFile(file);
+      setCsvPreview(res.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to read CSV' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+    setUploading(false);
+  };
+
+  const handleConfirmCsvImport = async () => {
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', pendingCsvFile);
     formData.append('send_emails', sendEmailsOnUpload);
 
     try {
       const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData);
-      const allFailed = res.data.errors?.length > 0 && res.data.created === 0 && res.data.enrolled === 0;
-      let messageText = allFailed
-        ? 'Upload failed — no students were enrolled.'
-        : `Uploaded: ${res.data.enrolled} enrolled, ${res.data.created} new users created.`;
-      if (res.data.group_changes > 0) {
-        messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
-      }
-      if (res.data.names_updated > 0) {
-        messageText += ` Updated ${res.data.names_updated} student name${res.data.names_updated !== 1 ? 's' : ''}.`;
-      }
-      if (res.data.emails_sent > 0) {
-        messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
-      }
-      if (res.data.errors?.length > 0) {
-        const errorDetails = res.data.errors.slice(0, 5).map(e =>
-          `${e.email || 'unknown'}: ${e.error}`
-        ).join('; ');
-        const moreErrors = res.data.errors.length > 5 ? ` (and ${res.data.errors.length - 5} more)` : '';
-        messageText += ` ${res.data.errors.length} error${res.data.errors.length !== 1 ? 's' : ''}: ${errorDetails}${moreErrors}`;
-      }
-      setMessage({ type: allFailed ? 'error' : 'success', text: messageText });
+      setMessage(buildUploadMessage(res.data));
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload' });
     }
 
     setUploading(false);
-    e.target.value = '';
+    setPendingCsvFile(null);
+    setCsvPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleCancelCsvImport = () => {
+    setPendingCsvFile(null);
+    setCsvPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleAddToGroup = async (userId, groupId) => {
@@ -331,13 +363,13 @@ function TeacherDashboard() {
     }
   };
 
-  const handleBulkRemove = async () => {
-    if (selectedStudents.size === 0) return;
-    if (!window.confirm(`Remove ${selectedStudents.size} student${selectedStudents.size !== 1 ? 's' : ''} from this class? This will unenroll them but not delete their accounts.`)) return;
+  const handleBulkRemove = async (userIds, onDone) => {
+    if (userIds.length === 0) return;
+    if (!window.confirm(`Remove ${userIds.length} student${userIds.length !== 1 ? 's' : ''} from this class? This will unenroll them but not delete their accounts.`)) return;
     try {
-      await axios.post(`/api/classes/${selectedClass}/students/bulk-remove`, { user_ids: [...selectedStudents] });
-      setMessage({ type: 'success', text: `Removed ${selectedStudents.size} student${selectedStudents.size !== 1 ? 's' : ''} from class.` });
-      setSelectedStudents(new Set());
+      await axios.post(`/api/classes/${selectedClass}/students/bulk-remove`, { user_ids: userIds });
+      setMessage({ type: 'success', text: `Removed ${userIds.length} student${userIds.length !== 1 ? 's' : ''} from class.` });
+      if (onDone) onDone();
       fetchClassData();
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to remove students' });
@@ -675,245 +707,27 @@ function TeacherDashboard() {
                     <span style={{ fontSize: '0.9rem' }}>Send notification emails to uploaded students</span>
                   </label>
                   <label className="file-upload" style={uploading ? { opacity: 0.6, pointerEvents: 'none' } : {}}>
-                    <input type="file" accept=".csv" onChange={handleFileUpload} disabled={uploading} />
+                    <input type="file" accept=".csv" ref={fileInputRef} onChange={handleFileSelected} disabled={uploading} />
                     <p>{uploading ? 'Uploading...' : 'Click to upload CSV file'}</p>
                   </label>
                 </div>
 
-                <div className="card">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '15px' }}>
-                    <h2 style={{ margin: 0 }}>Students in Class</h2>
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                      {students.filter(s => s.role === 'student' && s.must_change_password === 1).length > 0 && (
-                        <button
-                          className="btn btn-secondary"
-                          onClick={handleBulkResetPasswords}
-                          style={{ fontSize: '0.85rem', padding: '8px 16px' }}
-                          title="Reset passwords and send credential emails to students who have never logged in"
-                        >
-                          Reset Unsent Passwords ({students.filter(s => s.role === 'student' && s.must_change_password === 1).length})
-                        </button>
-                      )}
-                      {students.length > 0 && (
-                        <button
-                          className="btn btn-primary"
-                          onClick={handleSendAllInvites}
-                          style={{ fontSize: '0.85rem', padding: '8px 16px' }}
-                          title="Send enrollment/invite email to all students"
-                        >
-                          Send All Invites
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {students.length === 0 ? (
-                    <p>No students enrolled yet.</p>
-                  ) : (
-                    <>
-                      {selectedStudents.size > 0 && (
-                        <div style={{
-                          display: 'flex', alignItems: 'center', gap: '12px',
-                          padding: '8px 12px', marginBottom: '10px',
-                          background: darkMode ? '#1a3a6e' : '#e8f4fc',
-                          borderRadius: '6px', fontSize: '0.9rem'
-                        }}>
-                          <span>{selectedStudents.size} selected</span>
-                          <button className="btn btn-danger btn-sm" onClick={handleBulkRemove}>
-                            Remove Selected
-                          </button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setSelectedStudents(new Set())}>
-                            Clear
-                          </button>
-                        </div>
-                      )}
-                      {/* Desktop table view */}
-                      <table className="desktop-table">
-                        <thead>
-                          <tr>
-                            <th style={{ width: '30px' }}>
-                              <input
-                                type="checkbox"
-                                checked={students.length > 0 && selectedStudents.size === students.length}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedStudents(new Set(students.map(s => s.id)));
-                                  } else {
-                                    setSelectedStudents(new Set());
-                                  }
-                                }}
-                                style={{ width: 'auto' }}
-                              />
-                            </th>
-                            <th>Last Name</th>
-                            <th>First Name</th>
-                            <th>Email</th>
-                            {!!currentClass?.show_groups && <th>Group</th>}
-                            <th>Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {students.map(student => {
-                            const studentGroup = groups.find(g =>
-                              g.members?.some(m => m.id === student.id)
-                            );
-                            const fullName = `${student.first_name} ${student.last_name}`;
-                            return (
-                              <tr key={student.id}>
-                                <td>
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedStudents.has(student.id)}
-                                    onChange={(e) => {
-                                      const next = new Set(selectedStudents);
-                                      if (e.target.checked) next.add(student.id);
-                                      else next.delete(student.id);
-                                      setSelectedStudents(next);
-                                    }}
-                                    style={{ width: 'auto' }}
-                                  />
-                                </td>
-                                <td>{student.last_name}</td>
-                                <td>{student.first_name}</td>
-                                <td>{student.email}</td>
-                                {!!currentClass?.show_groups && (
-                                  <td>
-                                    <select
-                                      value={studentGroup?.id || ''}
-                                      onChange={(e) => {
-                                        const newGroupId = e.target.value;
-                                        if (newGroupId) {
-                                          handleAddToGroup(student.id, newGroupId);
-                                        }
-                                      }}
-                                    >
-                                      <option value="">Unassigned</option>
-                                      {groups.map(g => (
-                                        <option key={g.id} value={g.id}>{g.name}</option>
-                                      ))}
-                                    </select>
-                                  </td>
-                                )}
-                                <td>
-                                  <button
-                                    className="btn btn-secondary"
-                                    style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
-                                    onClick={() => handleEditStudent(student)}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    className="btn btn-secondary"
-                                    style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
-                                    onClick={() => handleSendInvite(student.id, fullName)}
-                                    title="Send enrollment notification email"
-                                  >
-                                    Send Invite
-                                  </button>
-                                  <button
-                                    className="btn btn-secondary"
-                                    style={{ fontSize: '0.8rem', padding: '4px 8px', marginRight: '5px' }}
-                                    onClick={() => handleResetPassword(student.id, fullName)}
-                                  >
-                                    Reset Password
-                                  </button>
-                                  <button
-                                    className="btn btn-danger"
-                                    style={{ fontSize: '0.8rem', padding: '4px 8px' }}
-                                    onClick={() => handleRemoveStudent(student.id, fullName)}
-                                  >
-                                    Remove
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-
-                      {/* Mobile card view */}
-                      <div className="mobile-card-list">
-                        {students.map(student => {
-                          const studentGroup = groups.find(g =>
-                            g.members?.some(m => m.id === student.id)
-                          );
-                          const fullName = `${student.first_name} ${student.last_name}`;
-                          return (
-                            <div key={student.id} className="mobile-card">
-                              <div className="mobile-card-header" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedStudents.has(student.id)}
-                                  onChange={(e) => {
-                                    const next = new Set(selectedStudents);
-                                    if (e.target.checked) next.add(student.id);
-                                    else next.delete(student.id);
-                                    setSelectedStudents(next);
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  style={{ width: 'auto' }}
-                                />
-                                {student.last_name}, {student.first_name}
-                              </div>
-                              <div className="mobile-card-row">
-                                <span className="mobile-card-label">Email</span>
-                                <span className="mobile-card-value" style={{ fontSize: '0.85rem', wordBreak: 'break-all' }}>
-                                  {student.email}
-                                </span>
-                              </div>
-                              {!!currentClass?.show_groups && (
-                                <div className="mobile-card-row">
-                                  <span className="mobile-card-label">Group</span>
-                                  <select
-                                    value={studentGroup?.id || ''}
-                                    onChange={(e) => {
-                                      const newGroupId = e.target.value;
-                                      if (newGroupId) {
-                                        handleAddToGroup(student.id, newGroupId);
-                                      }
-                                    }}
-                                    style={{ flex: 1, maxWidth: '150px' }}
-                                  >
-                                    <option value="">Unassigned</option>
-                                    {groups.map(g => (
-                                      <option key={g.id} value={g.id}>{g.name}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                              )}
-                              <div className="mobile-card-actions">
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => handleEditStudent(student)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => handleSendInvite(student.id, fullName)}
-                                  title="Send enrollment notification email"
-                                >
-                                  Send Invite
-                                </button>
-                                <button
-                                  className="btn btn-secondary"
-                                  onClick={() => handleResetPassword(student.id, fullName)}
-                                >
-                                  Reset Password
-                                </button>
-                                <button
-                                  className="btn btn-danger"
-                                  onClick={() => handleRemoveStudent(student.id, fullName)}
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <ClassRoster
+                  darkMode={darkMode}
+                  students={students}
+                  groups={groups}
+                  showGroups={!!currentClass?.show_groups}
+                  splitNameColumns
+                  onEditStudent={handleEditStudent}
+                  onSendInvite={handleSendInvite}
+                  onResetPassword={handleResetPassword}
+                  onRemoveStudent={handleRemoveStudent}
+                  onAddToGroup={handleAddToGroup}
+                  onBulkRemove={handleBulkRemove}
+                  onBulkResetPasswords={handleBulkResetPasswords}
+                  onSendAllInvites={handleSendAllInvites}
+                  resetKey={selectedClass}
+                />
               </div>
             )}
 
@@ -995,6 +809,17 @@ function TeacherDashboard() {
             setEditingClass={setEditingClass}
             onSubmit={handleUpdateClass}
             onClose={() => setEditingClass(null)}
+          />
+        )}
+
+        {csvPreview && (
+          <CsvImportPreviewModal
+            darkMode={darkMode}
+            preview={csvPreview}
+            fileName={pendingCsvFile?.name}
+            uploading={uploading}
+            onConfirm={handleConfirmCsvImport}
+            onCancel={handleCancelCsvImport}
           />
         )}
 

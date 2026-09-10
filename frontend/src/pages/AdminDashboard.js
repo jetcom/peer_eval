@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +23,7 @@ import PendingInstructorsTab from '../components/admin/PendingInstructorsTab';
 import CopyClassModal from '../components/admin/CopyClassModal';
 import CoursesTab from '../components/admin/CoursesTab';
 import EditStudentModal from '../components/admin/EditStudentModal';
+import CsvImportPreviewModal from '../components/admin/CsvImportPreviewModal';
 
 function AdminDashboard() {
   const { user, logout, mustChangePassword } = useAuth();
@@ -74,6 +75,9 @@ function AdminDashboard() {
   const [showCopyClassModal, setShowCopyClassModal] = useState(false);
   const [copyingClass, setCopyingClass] = useState(null);
   const [pendingInstructorCount, setPendingInstructorCount] = useState(0);
+  const [pendingCsvFile, setPendingCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState(null);
+  const fileInputRef = useRef(null);
 
   const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
 
@@ -215,7 +219,31 @@ function AdminDashboard() {
     }
   };
 
-  const handleUploadStudents = async (e) => {
+  const buildUploadMessage = (data) => {
+    const allFailed = data.errors?.length > 0 && data.created === 0 && data.enrolled === 0;
+    let messageText = allFailed
+      ? 'Upload failed — no students were enrolled.'
+      : `Created ${data.created} new users, enrolled ${data.enrolled} total.`;
+    if (data.group_changes > 0) {
+      messageText += ` Updated ${data.group_changes} group assignment${data.group_changes !== 1 ? 's' : ''}.`;
+    }
+    if (data.names_updated > 0) {
+      messageText += ` Updated ${data.names_updated} student name${data.names_updated !== 1 ? 's' : ''}.`;
+    }
+    if (data.emails_sent > 0) {
+      messageText += ` Sent ${data.emails_sent} welcome email${data.emails_sent !== 1 ? 's' : ''}.`;
+    }
+    if (data.errors?.length > 0) {
+      const errorDetails = data.errors.slice(0, 5).map(e =>
+        `${e.email || 'unknown'}: ${e.error}`
+      ).join('; ');
+      const moreErrors = data.errors.length > 5 ? ` (and ${data.errors.length - 5} more)` : '';
+      messageText += ` ${data.errors.length} error${data.errors.length !== 1 ? 's' : ''}: ${errorDetails}${moreErrors}`;
+    }
+    return { type: allFailed ? 'error' : 'success', text: messageText };
+  };
+
+  const handleCsvFileSelected = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -228,61 +256,63 @@ function AdminDashboard() {
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('preview', 'true');
+
+    try {
+      const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setPendingCsvFile(file);
+      setCsvPreview(res.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to read CSV' });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+    setUploading(false);
+  };
+
+  const handleConfirmCsvImport = async () => {
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', pendingCsvFile);
     formData.append('send_emails', sendEmailsOnUpload);
 
     try {
       const res = await axios.post(`/api/classes/${selectedClass}/upload-students`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      const allFailed = res.data.errors?.length > 0 && res.data.created === 0 && res.data.enrolled === 0;
-      let messageText = allFailed
-        ? 'Upload failed — no students were enrolled.'
-        : `Created ${res.data.created} new users, enrolled ${res.data.enrolled} total.`;
-      if (res.data.group_changes > 0) {
-        messageText += ` Updated ${res.data.group_changes} group assignment${res.data.group_changes !== 1 ? 's' : ''}.`;
-      }
-      if (res.data.names_updated > 0) {
-        messageText += ` Updated ${res.data.names_updated} student name${res.data.names_updated !== 1 ? 's' : ''}.`;
-      }
-      if (res.data.emails_sent > 0) {
-        messageText += ` Sent ${res.data.emails_sent} welcome email${res.data.emails_sent !== 1 ? 's' : ''}.`;
-      }
-      if (res.data.errors?.length > 0) {
-        const errorDetails = res.data.errors.slice(0, 5).map(e =>
-          `${e.email || 'unknown'}: ${e.error}`
-        ).join('; ');
-        const moreErrors = res.data.errors.length > 5 ? ` (and ${res.data.errors.length - 5} more)` : '';
-        messageText += ` ${res.data.errors.length} error${res.data.errors.length !== 1 ? 's' : ''}: ${errorDetails}${moreErrors}`;
-      }
-      setMessage({
-        type: allFailed ? 'error' : 'success',
-        text: messageText
-      });
+      setMessage(buildUploadMessage(res.data));
       // Store generated credentials to display (only for new users)
       if (res.data.credentials && res.data.credentials.length > 0) {
         setUploadedCredentials(res.data.credentials);
       } else {
         setUploadedCredentials([]);
       }
-      // Log full errors to console for debugging
       if (res.data.errors.length > 0) {
         console.log('CSV Upload Errors:', res.data.errors);
       }
       fetchData();
       // Refresh class-specific data
-      if (selectedClass) {
-        const [groupsRes, studentsRes] = await Promise.all([
-          axios.get(`/api/classes/${selectedClass}/groups`),
-          axios.get(`/api/classes/${selectedClass}/students`)
-        ]);
-        setClassGroups(groupsRes.data);
-        setClassStudents(studentsRes.data);
-      }
+      const [groupsRes, studentsRes] = await Promise.all([
+        axios.get(`/api/classes/${selectedClass}/groups`),
+        axios.get(`/api/classes/${selectedClass}/students`)
+      ]);
+      setClassGroups(groupsRes.data);
+      setClassStudents(studentsRes.data);
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to upload CSV' });
     }
+
     setUploading(false);
-    e.target.value = '';
+    setPendingCsvFile(null);
+    setCsvPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleCancelCsvImport = () => {
+    setPendingCsvFile(null);
+    setCsvPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDeleteUser = async (id) => {
@@ -773,6 +803,17 @@ function AdminDashboard() {
         />
       )}
 
+      {csvPreview && (
+        <CsvImportPreviewModal
+          darkMode={darkMode}
+          preview={csvPreview}
+          fileName={pendingCsvFile?.name}
+          uploading={uploading}
+          onConfirm={handleConfirmCsvImport}
+          onCancel={handleCancelCsvImport}
+        />
+      )}
+
       {editingStudent && (
         <EditStudentModal
           darkMode={darkMode}
@@ -947,7 +988,8 @@ function AdminDashboard() {
             setUserSearchQuery={setUserSearchQuery}
             userSearchResults={userSearchResults}
             onCreateUser={handleCreateUser}
-            onUploadStudents={handleUploadStudents}
+            onUploadStudents={handleCsvFileSelected}
+            fileInputRef={fileInputRef}
             uploading={uploading}
             onUserSearch={handleUserSearch}
             onAddToClass={handleAddToClass}
