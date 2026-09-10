@@ -1110,31 +1110,33 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
         // Add to group if specified (only meaningful once the user exists)
         if (group_name && group_name.trim() && user) {
           const groupId = groupMap.get(group_name.trim());
-          if (groupId) {
-            // Check if student's current group differs from the new one
-            const currentMembership = await prisma.groupMember.findFirst({
-              where: { userId: user.id, group: { classId } }
+
+          // Check if student's current group differs from the new one. Runs
+          // even when groupId is null (a preview assigning into a group that
+          // doesn't exist yet), so the preview's count matches what the real
+          // run would report once that group actually gets created.
+          const currentMembership = await prisma.groupMember.findFirst({
+            where: { userId: user.id, group: { classId } }
+          });
+          if (currentMembership && currentMembership.groupId !== groupId) {
+            groupChanges++;
+          }
+
+          if (groupId && !dryRun) {
+            // Remove from any existing groups in this class first
+            await prisma.groupMember.deleteMany({
+              where: {
+                userId: user.id,
+                group: { classId }
+              }
             });
-            if (currentMembership && currentMembership.groupId !== groupId) {
-              groupChanges++;
-            }
 
-            if (!dryRun) {
-              // Remove from any existing groups in this class first
-              await prisma.groupMember.deleteMany({
-                where: {
-                  userId: user.id,
-                  group: { classId }
-                }
-              });
-
-              // Add to new group
-              await prisma.groupMember.upsert({
-                where: { groupId_userId: { groupId, userId: user.id } },
-                update: {},
-                create: { groupId, userId: user.id }
-              });
-            }
+            // Add to new group
+            await prisma.groupMember.upsert({
+              where: { groupId_userId: { groupId, userId: user.id } },
+              update: {},
+              create: { groupId, userId: user.id }
+            });
           }
         }
       } catch (err) {
