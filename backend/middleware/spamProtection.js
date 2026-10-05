@@ -11,19 +11,43 @@ const rateLimit = require('express-rate-limit');
  *     malformed emails, and oversized values.
  */
 
-const registrationLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // 1 hour
-  limit: 5,
+/**
+ * Real visitor IP. Traffic path is Cloudflare -> Railway edge -> app, so
+ * req.ip (with trust proxy = 1) is Cloudflare's address, not the visitor's.
+ * Cloudflare sets CF-Connecting-IP to the true client; fall back to req.ip
+ * for requests that bypass Cloudflare (e.g. the raw *.up.railway.app host).
+ * IPv6 is collapsed to its /64 so one visitor can't rotate within a block.
+ */
+function clientIp(req) {
+  const raw = (req.headers['cf-connecting-ip'] || req.ip || '').toString().trim();
+  if (raw.includes(':') && !raw.startsWith('::ffff:')) {
+    // IPv6: keep the first 4 hextets (/64)
+    const full = raw.split('%')[0];
+    const parts = full.split('::');
+    const head = parts[0].split(':').filter(Boolean);
+    while (head.length < 4) head.push('0');
+    return head.slice(0, 4).join(':') + '::/64';
+  }
+  return raw.replace(/^::ffff:/, '');
+}
+
+const limiterDefaults = {
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: clientIp
+};
+
+const registrationLimiter = rateLimit({
+  ...limiterDefaults,
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 5,
   message: { error: 'Too many registration attempts. Please try again later.' }
 });
 
 const forgotPasswordLimiter = rateLimit({
+  ...limiterDefaults,
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 5,
-  standardHeaders: 'draft-7',
-  legacyHeaders: false,
   message: { error: 'Too many password reset requests. Please try again later.' }
 });
 
@@ -100,6 +124,7 @@ module.exports = {
   forgotPasswordLimiter,
   registrationSpamFilter,
   validateRegistrationPayload,
+  clientIp,
   HONEYPOT_FIELD,
   LINK_RE,
   EMOJI_RE
