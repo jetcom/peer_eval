@@ -11,7 +11,8 @@ function InstructorRegistration() {
     university: '',
     department: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    website: '' // honeypot: hidden from humans, filled by bots
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -46,7 +47,8 @@ function InstructorRegistration() {
         email: formData.email,
         university: formData.university,
         department: formData.department,
-        password: formData.password
+        password: formData.password,
+        website: formData.website
       });
       setSuccess(true);
     } catch (err) {
@@ -120,6 +122,19 @@ function InstructorRegistration() {
         </div>
 
         <form onSubmit={handleSubmit}>
+          {/* Honeypot: invisible to people, bots fill it in. Server ignores submissions with a value. */}
+          <div style={{ position: 'absolute', left: '-10000px', top: 'auto', width: '1px', height: '1px', overflow: 'hidden' }} aria-hidden="true">
+            <label htmlFor="website">Website</label>
+            <input
+              type="text"
+              id="website"
+              name="website"
+              value={formData.website}
+              onChange={handleChange}
+              tabIndex={-1}
+              autoComplete="off"
+            />
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
             <div className="form-group" style={{ margin: 0 }}>
               <label>First Name</label>

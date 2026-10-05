@@ -6,6 +6,7 @@ const prisma = require('../lib/prisma');
 const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
 const emailService = require('../services/email');
 const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
+const { registrationLimiter, forgotPasswordLimiter, registrationSpamFilter } = require('../middleware/spamProtection');
 
 const router = express.Router();
 
@@ -102,9 +103,10 @@ router.get('/me', authenticateToken, async (req, res) => {
 });
 
 // Register as instructor (pending approval)
-router.post('/register-instructor', async (req, res) => {
+router.post('/register-instructor', registrationLimiter, registrationSpamFilter, async (req, res) => {
   try {
-    const { email, password, first_name, last_name, university, department } = req.body;
+    const { password, first_name, last_name, university, department } = req.body;
+    const email = req.body.email.trim().toLowerCase();
 
     if (!email || !password || !first_name || !last_name || !university || !department) {
       return res.status(400).json({ error: 'All fields are required' });
@@ -235,7 +237,7 @@ router.post('/change-password', authenticateToken, async (req, res) => {
 });
 
 // Forgot password - request reset link
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   try {
     const { email } = req.body;
 

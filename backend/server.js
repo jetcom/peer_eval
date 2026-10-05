@@ -22,6 +22,10 @@ const { startScheduler } = require('./services/reminderScheduler');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Railway (and most hosts) sit behind a reverse proxy; needed so rate
+// limiting sees the real client IP from X-Forwarded-For.
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
