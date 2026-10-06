@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import RejectInstructorModal from './RejectInstructorModal';
 
 function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
   const [pendingTeachers, setPendingTeachers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [rejecting, setRejecting] = useState(null); // teacher being rejected (modal open)
+  const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [rejectionReasons, setRejectionReasons] = useState([]);
 
   useEffect(() => {
     fetchPendingTeachers();
+    axios.get('/api/users/rejection-reasons')
+      .then(res => setRejectionReasons(res.data))
+      .catch(() => setRejectionReasons([]));
   }, []);
 
   const fetchPendingTeachers = async () => {
@@ -34,18 +41,20 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
     }
   };
 
-  const handleReject = async (userId, userName) => {
-    if (!window.confirm(`Are you sure you want to reject ${userName}'s instructor request? This will delete their account.`)) {
-      return;
-    }
-
+  const handleReject = async ({ reason, spam }) => {
+    if (!rejecting) return;
+    const userId = rejecting.id;
+    setRejectSubmitting(true);
     try {
-      const res = await axios.post(`/api/users/${userId}/reject-teacher`);
+      const res = await axios.post(`/api/users/${userId}/reject-teacher`, { reason, spam });
       setMessage({ type: 'success', text: res.data.message });
       setPendingTeachers(pendingTeachers.filter(t => t.id !== userId));
+      setRejecting(null);
     } catch (err) {
       console.error('Failed to reject teacher:', err);
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to reject' });
+    } finally {
+      setRejectSubmitting(false);
     }
   };
 
@@ -140,7 +149,7 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
                   Approve
                 </button>
                 <button
-                  onClick={() => handleReject(teacher.id, `${teacher.first_name} ${teacher.last_name}`)}
+                  onClick={() => setRejecting(teacher)}
                   style={{
                     padding: '8px 16px',
                     background: 'transparent',
@@ -157,6 +166,17 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
             </div>
           ))}
         </div>
+      )}
+
+      {rejecting && (
+        <RejectInstructorModal
+          darkMode={darkMode}
+          teacher={rejecting}
+          reasons={rejectionReasons}
+          submitting={rejectSubmitting}
+          onConfirm={handleReject}
+          onClose={() => !rejectSubmitting && setRejecting(null)}
+        />
       )}
 
       <div style={{

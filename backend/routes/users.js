@@ -381,6 +381,9 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
   try {
     const id = parseInt(req.params.id);
     const { reason } = req.body;
+    // spam: delete silently. Rejection emails echo the applicant's "name", so
+    // emailing a spam sign-up relays the spammer's message to their target.
+    const spam = req.body.spam === true || req.body.spam === 'true' || req.body.spam === 1;
 
     const user = await prisma.user.findUnique({
       where: { id },
@@ -395,17 +398,21 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
       return res.status(400).json({ error: 'User is not a pending teacher' });
     }
 
-    // Send rejection email before deleting
-    try {
-      await emailService.notifyInstructorRejected({
-        instructor: {
-          firstName: user.firstName,
-          email: user.email
-        },
-        reason
-      });
-    } catch (emailErr) {
-      console.error('Failed to send rejection email:', emailErr);
+    // Send rejection email before deleting (never for spam)
+    if (!spam) {
+      try {
+        await emailService.notifyInstructorRejected({
+          instructor: {
+            firstName: user.firstName,
+            email: user.email
+          },
+          reason
+        });
+      } catch (emailErr) {
+        console.error('Failed to send rejection email:', emailErr);
+      }
+    } else {
+      console.warn(`Pending instructor #${id} (${user.email}) deleted as spam by admin #${req.user.id}`);
     }
 
     // Delete the user
@@ -414,7 +421,9 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
     });
 
     res.json({
-      message: `${user.firstName} ${user.lastName}'s instructor request has been rejected`
+      message: spam
+        ? `Spam request from ${user.email} deleted. No email was sent.`
+        : `${user.firstName} ${user.lastName}'s instructor request has been rejected`
     });
   } catch (err) {
     console.error('Reject teacher error:', err);
@@ -425,6 +434,20 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
 // ============================================
 // Token-based approve/reject from email links
 // ============================================
+
+// Admin UI pulls the same list so the dashboard and email-link flows match
+router.get('/rejection-reasons', authenticateToken, requireAdmin, (req, res) => {
+  res.json(REJECTION_REASONS);
+});
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 const REJECTION_REASONS = [
   'Student account — registered as instructor by mistake',
@@ -533,12 +556,18 @@ router.get('/:id/reject-teacher-email', async (req, res) => {
     const formHtml = `
       <p>You are about to reject the instructor request from:</p>
       <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
-        <p style="margin: 4px 0;"><strong>Name:</strong> ${user.firstName} ${user.lastName}</p>
-        <p style="margin: 4px 0;"><strong>Email:</strong> ${user.email}</p>
-        <p style="margin: 4px 0;"><strong>University:</strong> ${user.university || 'Not specified'}</p>
-        <p style="margin: 4px 0;"><strong>Department:</strong> ${user.department || 'Not specified'}</p>
+        <p style="margin: 4px 0;"><strong>Name:</strong> ${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}</p>
+        <p style="margin: 4px 0;"><strong>Email:</strong> ${escapeHtml(user.email)}</p>
+        <p style="margin: 4px 0;"><strong>University:</strong> ${escapeHtml(user.university || 'Not specified')}</p>
+        <p style="margin: 4px 0;"><strong>Department:</strong> ${escapeHtml(user.department || 'Not specified')}</p>
       </div>
       <form method="POST" action="/api/users/${decoded.userId}/reject-teacher-email?token=${encodeURIComponent(token)}">
+        <label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; margin-bottom: 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
+          <input type="checkbox" name="spam" value="1" style="margin-top: 3px;">
+          <span><strong>This is spam.</strong> Delete the request without sending any email.
+            <span style="display: block; color: #6b7280; font-size: 13px; margin-top: 2px;">Rejection emails include the applicant's name, so emailing a spam sign-up forwards the spammer's message.</span>
+          </span>
+        </label>
         <label style="display: block; font-weight: 600; margin-bottom: 6px;">Reason for rejection:</label>
         <select name="reason" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; margin-bottom: 12px;">
           <option value="">— Select a reason —</option>
@@ -582,23 +611,32 @@ router.post('/:id/reject-teacher-email', express.urlencoded({ extended: false })
         'This instructor request has already been processed.', 'info'));
     }
 
+    const spam = req.body.spam === '1' || req.body.spam === 'on';
     const reason = (req.body.reason === '__other__' || !req.body.reason)
       ? (req.body.customReason || '').trim()
       : req.body.reason;
 
-    try {
-      await emailService.notifyInstructorRejected({
-        instructor: { firstName: user.firstName, email: user.email },
-        reason: reason || undefined
-      });
-    } catch (emailErr) {
-      console.error('Failed to send rejection email:', emailErr);
+    if (!spam) {
+      try {
+        await emailService.notifyInstructorRejected({
+          instructor: { firstName: user.firstName, email: user.email },
+          reason: reason || undefined
+        });
+      } catch (emailErr) {
+        console.error('Failed to send rejection email:', emailErr);
+      }
+    } else {
+      console.warn(`Pending instructor #${decoded.userId} (${user.email}) deleted as spam via email link`);
     }
 
     await prisma.user.delete({ where: { id: decoded.userId } });
 
+    if (spam) {
+      return res.send(renderActionPage('Spam Request Deleted',
+        `The request from <strong>${escapeHtml(user.email)}</strong> has been deleted. No email was sent.`, 'success'));
+    }
     res.send(renderActionPage('Instructor Rejected',
-      `<strong>${user.firstName} ${user.lastName}</strong>'s instructor request has been rejected.${reason ? ` Reason: "${reason}"` : ''} They have been notified by email.`, 'success'));
+      `<strong>${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}</strong>'s instructor request has been rejected.${reason ? ` Reason: "${escapeHtml(reason)}"` : ''} They have been notified by email.`, 'success'));
   } catch (err) {
     console.error('Email reject teacher error:', err);
     res.status(500).send(renderActionPage('Error', 'Something went wrong. Please try again from the admin dashboard.', 'error'));
