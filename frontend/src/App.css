@@ -2142,40 +2142,6 @@ body.dark-mode .student-class-item .student-class-semester {
   }
 }
 
-.landing-hero-stats {
-  display: flex;
-  gap: 40px;
-  margin-top: 48px;
-  padding-top: 32px;
-  border-top: 1px solid #e0e0e0;
-}
-
-.landing-page.dark .landing-hero-stats {
-  border-top-color: #333;
-}
-
-@media (max-width: 900px) {
-  .landing-hero-stats {
-    justify-content: center;
-  }
-}
-
-.landing-stat {
-  display: flex;
-  flex-direction: column;
-}
-
-.landing-stat-number {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #3498db;
-}
-
-.landing-stat-label {
-  font-size: 0.85rem;
-  color: #7f8c8d;
-}
-
 /* Hero Screenshot Mock */
 .landing-hero-image {
   display: flex;
@@ -2879,14 +2845,6 @@ body.dark-mode .student-class-item .student-class-semester {
 @media (max-width: 480px) {
   .landing-nav-actions .landing-btn-secondary {
     display: none;
-  }
-
-  .landing-hero-stats {
-    gap: 20px;
-  }
-
-  .landing-stat-number {
-    font-size: 1.4rem;
   }
 
   .landing-hero-title {

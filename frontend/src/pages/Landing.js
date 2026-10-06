@@ -106,27 +106,13 @@ function Landing() {
             <a href="/register-instructor" className="landing-btn landing-btn-primary landing-btn-lg">
               Request Instructor Access
             </a>
-            <a href="#features" className="landing-btn landing-btn-outline landing-btn-lg">
-              Learn More
+            <a href="/login" className="landing-btn landing-btn-outline landing-btn-lg">
+              Student Login
             </a>
           </div>
           <p style={{ marginTop: '15px', fontSize: '0.9rem', opacity: 0.8 }}>
-            Student? Your instructor sets up your account. <a href="/login" style={{ color: 'inherit' }}>Log in here</a>.
+            Students don't need to sign up: your instructor sets up your account.
           </p>
-          <div className="landing-hero-stats">
-            <div className="landing-stat">
-              <span className="landing-stat-number">Custom</span>
-              <span className="landing-stat-label">Rubric Templates</span>
-            </div>
-            <div className="landing-stat">
-              <span className="landing-stat-number">100%</span>
-              <span className="landing-stat-label">Auto-Save</span>
-            </div>
-            <div className="landing-stat">
-              <span className="landing-stat-number">CSV</span>
-              <span className="landing-stat-label">Roster Import</span>
-            </div>
-          </div>
         </div>
         <div className="landing-hero-image">
           <div className="landing-screenshot-container">
