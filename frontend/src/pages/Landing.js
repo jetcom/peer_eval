@@ -1,5 +1,13 @@
 import React from 'react';
 import { useTheme } from '../contexts/ThemeContext';
+import heroLight from '../assets/landing/hero-light.webp';
+import heroDark from '../assets/landing/hero-dark.webp';
+import instructorLight from '../assets/landing/instructor-light.webp';
+import instructorDark from '../assets/landing/instructor-dark.webp';
+import studentLight from '../assets/landing/student-light.webp';
+import studentDark from '../assets/landing/student-dark.webp';
+import reportsLight from '../assets/landing/reports-light.webp';
+import reportsDark from '../assets/landing/reports-dark.webp';
 
 function Landing() {
   const { darkMode, toggleDarkMode } = useTheme();
@@ -121,39 +129,11 @@ function Landing() {
               <span className="landing-screenshot-dot yellow"></span>
               <span className="landing-screenshot-dot green"></span>
             </div>
-            <div className="landing-screenshot-content">
-              <div className="landing-screenshot-sidebar">
-                <div className="landing-screenshot-menu-item active"></div>
-                <div className="landing-screenshot-menu-item"></div>
-                <div className="landing-screenshot-menu-item"></div>
-                <div className="landing-screenshot-menu-item"></div>
-              </div>
-              <div className="landing-screenshot-main">
-                <div className="landing-screenshot-card">
-                  <div className="landing-screenshot-card-header"></div>
-                  <div className="landing-screenshot-progress">
-                    <div className="landing-screenshot-progress-bar" style={{width: '75%'}}></div>
-                  </div>
-                  <div className="landing-screenshot-rows">
-                    <div className="landing-screenshot-row">
-                      <div className="landing-screenshot-avatar"></div>
-                      <div className="landing-screenshot-text"></div>
-                      <div className="landing-screenshot-badge complete"></div>
-                    </div>
-                    <div className="landing-screenshot-row">
-                      <div className="landing-screenshot-avatar"></div>
-                      <div className="landing-screenshot-text"></div>
-                      <div className="landing-screenshot-badge complete"></div>
-                    </div>
-                    <div className="landing-screenshot-row">
-                      <div className="landing-screenshot-avatar"></div>
-                      <div className="landing-screenshot-text"></div>
-                      <div className="landing-screenshot-badge pending"></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <img
+              className="landing-screenshot-img"
+              src={darkMode ? heroDark : heroLight}
+              alt="Instructor progress view showing completion by phase and an evaluation heat map"
+            />
           </div>
         </div>
       </section>
@@ -229,68 +209,37 @@ function Landing() {
           </p>
           <div className="landing-screenshot-gallery">
             <div className="landing-gallery-item">
-              <div className="landing-gallery-preview admin">
-                <div className="landing-gallery-mock-header">Instructor Dashboard</div>
-                <div className="landing-gallery-mock-stats">
-                  <div className="landing-gallery-mock-stat"></div>
-                  <div className="landing-gallery-mock-stat"></div>
-                  <div className="landing-gallery-mock-stat"></div>
-                  <div className="landing-gallery-mock-stat"></div>
-                </div>
-                <div className="landing-gallery-mock-tabs">
-                  <div className="landing-gallery-mock-tab active"></div>
-                  <div className="landing-gallery-mock-tab"></div>
-                  <div className="landing-gallery-mock-tab"></div>
-                </div>
-                <div className="landing-gallery-mock-table">
-                  <div className="landing-gallery-mock-row"></div>
-                  <div className="landing-gallery-mock-row"></div>
-                  <div className="landing-gallery-mock-row"></div>
-                </div>
+              <div className="landing-gallery-preview">
+                <img
+                  src={darkMode ? instructorDark : instructorLight}
+                  alt="List of students who have not finished a phase, ready to be sent a reminder"
+                  loading="lazy"
+                />
               </div>
               <h3>Instructor Dashboard</h3>
-              <p>Track progress, manage groups, and generate reports for your classes from one dashboard.</p>
+              <p>See who has finished, who is in progress, and who needs a nudge, then remind exactly those students.</p>
             </div>
             <div className="landing-gallery-item">
-              <div className="landing-gallery-preview student">
-                <div className="landing-gallery-mock-header">Student View</div>
-                <div className="landing-gallery-mock-phases">
-                  <div className="landing-gallery-mock-phase complete"></div>
-                  <div className="landing-gallery-mock-phase complete"></div>
-                  <div className="landing-gallery-mock-phase active"></div>
-                  <div className="landing-gallery-mock-phase"></div>
-                </div>
-                <div className="landing-gallery-mock-eval">
-                  <div className="landing-gallery-mock-member"></div>
-                  <div className="landing-gallery-mock-likert">
-                    <div className="landing-gallery-mock-dot"></div>
-                    <div className="landing-gallery-mock-dot"></div>
-                    <div className="landing-gallery-mock-dot selected"></div>
-                    <div className="landing-gallery-mock-dot"></div>
-                    <div className="landing-gallery-mock-dot"></div>
-                  </div>
-                </div>
+              <div className="landing-gallery-preview">
+                <img
+                  src={darkMode ? studentDark : studentLight}
+                  alt="Student form rating a teammate from 1 to 5 on each criterion"
+                  loading="lazy"
+                />
               </div>
               <h3>Student Evaluation</h3>
               <p>Clean, intuitive interface for students to rate teammates, presentations, and papers.</p>
             </div>
             <div className="landing-gallery-item">
-              <div className="landing-gallery-preview reports">
-                <div className="landing-gallery-mock-header">Reports</div>
-                <div className="landing-gallery-mock-chart">
-                  <div className="landing-gallery-mock-bar" style={{height: '60%'}}></div>
-                  <div className="landing-gallery-mock-bar" style={{height: '80%'}}></div>
-                  <div className="landing-gallery-mock-bar" style={{height: '45%'}}></div>
-                  <div className="landing-gallery-mock-bar" style={{height: '90%'}}></div>
-                  <div className="landing-gallery-mock-bar" style={{height: '70%'}}></div>
-                </div>
-                <div className="landing-gallery-mock-legend">
-                  <div className="landing-gallery-mock-legend-item"></div>
-                  <div className="landing-gallery-mock-legend-item"></div>
-                </div>
+              <div className="landing-gallery-preview">
+                <img
+                  src={darkMode ? reportsDark : reportsLight}
+                  alt="Report comparing each student's average ratings across phases"
+                  loading="lazy"
+                />
               </div>
               <h3>Detailed Reports</h3>
-              <p>Visualize team dynamics and individual contributions with comprehensive analytics.</p>
+              <p>Compare each student's ratings across phases, and export scores and comments for grading.</p>
             </div>
           </div>
         </div>
