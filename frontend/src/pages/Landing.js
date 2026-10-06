@@ -115,8 +115,8 @@ function Landing() {
           </p>
           <div className="landing-hero-stats">
             <div className="landing-stat">
-              <span className="landing-stat-number">3</span>
-              <span className="landing-stat-label">Evaluation Types</span>
+              <span className="landing-stat-number">Custom</span>
+              <span className="landing-stat-label">Rubric Templates</span>
             </div>
             <div className="landing-stat">
               <span className="landing-stat-number">100%</span>
