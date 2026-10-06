@@ -975,16 +975,22 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     }).join('\n');
 
     const normalize = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-    const getField = (record, ...names) => {
+    const findKey = (record, ...names) => {
       for (const name of names) {
-        if (record[name] !== undefined) return record[name];
+        if (record[name] !== undefined) return name;
         const normalName = normalize(name);
-        for (const key of Object.keys(record)) {
-          if (normalize(key) === normalName) return record[key];
-        }
+        const key = Object.keys(record).find(k => normalize(k) === normalName);
+        if (key !== undefined) return key;
       }
       return undefined;
     };
+    const getField = (record, ...names) => record[findKey(record, ...names)];
+
+    const ID_COLUMNS = ['university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id'];
+    const LAST_NAME_COLUMNS = ['last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name'];
+    const FIRST_NAME_COLUMNS = ['first_name', 'firstname', 'First', 'first', 'given_name', 'First Name'];
+    const EMAIL_COLUMNS = ['email', 'Email', 'e-mail', 'EMAIL'];
+    const GROUP_COLUMNS = ['group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group'];
 
     const records = await new Promise((resolve, reject) => {
       parse(csvContent, { columns: true, skip_empty_lines: true, trim: true }, (err, records) => {
@@ -997,10 +1003,25 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       return res.json({ preview: dryRun, created: 0, enrolled: 0, group_changes: 0, names_updated: 0, new_groups: 0, errors: [], credentials: [] });
     }
 
+    // Pick the group column once for the whole file: a known name, else a
+    // group/team-ish header (LMS exports name it after the group category,
+    // e.g. D2L's "Group Work"), else any otherwise-unused column whose
+    // values repeat. Grade items are never candidates.
+    const usedKeys = new Set([ID_COLUMNS, LAST_NAME_COLUMNS, FIRST_NAME_COLUMNS, EMAIL_COLUMNS].map(names => findKey(records[0], ...names)));
+    const hasRepeats = (key) => {
+      const values = records.map(r => (r[key] || '').trim()).filter(Boolean);
+      return new Set(values).size < values.length;
+    };
+    const candidates = Object.keys(records[0]).filter(k => !usedKeys.has(k) && !/grade|<|end-of-line/i.test(k));
+    const groupKey = findKey(records[0], ...GROUP_COLUMNS)
+      ?? candidates.find(k => /\b(groups?|teams?)\b/i.test(k))
+      ?? candidates.find(hasRepeats);
+    const getGroupName = (record) => groupKey ? record[groupKey] : undefined;
+
     // Collect unique group names
     const uniqueGroupNames = new Set();
     records.forEach(record => {
-      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
+      const group_name = getGroupName(record);
       if (group_name && group_name.trim()) {
         uniqueGroupNames.add(group_name.trim());
       }
@@ -1036,11 +1057,11 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
     // Process students. Every read (findUnique/findFirst) below always runs
     // so a preview reflects real data; every write is skipped when dryRun.
     for (const record of records) {
-      const university_id = getField(record, 'university_id', 'universityID', 'universityid', 'id', 'ID', 'student_id', 'OrgDefinedId', 'Org Defined Id');
-      const last_name = getField(record, 'last_name', 'lastname', 'Last', 'last', 'surname', 'family_name', 'Last Name');
-      const first_name = getField(record, 'first_name', 'firstname', 'First', 'first', 'given_name', 'First Name');
-      const email = getField(record, 'email', 'Email', 'e-mail', 'EMAIL');
-      const group_name = getField(record, 'group_name', 'group', 'Group', 'team', 'Team', 'Project', 'project', 'Project Groups', 'Project Group');
+      const university_id = getField(record, ...ID_COLUMNS);
+      const last_name = getField(record, ...LAST_NAME_COLUMNS);
+      const first_name = getField(record, ...FIRST_NAME_COLUMNS);
+      const email = getField(record, ...EMAIL_COLUMNS);
+      const group_name = getGroupName(record);
 
       if (!email || !first_name || !last_name) {
         errors.push({ email: email || 'unknown', error: 'Missing required fields (email, first_name, last_name)' });
@@ -1186,6 +1207,7 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
       group_changes: groupChanges,
       names_updated: results.filter(r => r.nameUpdated).length,
       new_groups: newGroupsCount,
+      group_column: uniqueGroupNames.size > 0 ? groupKey : null,
       errors,
       credentials,
       emails_sent: emailsSent

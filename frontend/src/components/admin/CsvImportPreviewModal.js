@@ -52,6 +52,9 @@ function CsvImportPreviewModal({ darkMode, preview, fileName, uploading, onConfi
             {preview.new_groups > 0 && (
               <li>{preview.new_groups} new group{preview.new_groups !== 1 ? 's' : ''} will be created</li>
             )}
+            {preview.group_column && (
+              <li>Groups are taken from the "{preview.group_column}" column</li>
+            )}
           </ul>
         )}
 
