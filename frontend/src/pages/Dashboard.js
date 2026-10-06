@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import confetti from 'canvas-confetti';
 import { useAuth } from '../contexts/AuthContext';
@@ -57,9 +57,13 @@ function Dashboard() {
   const { darkMode, toggleDarkMode } = useTheme();
   const navigate = useNavigate();
   const [classes, setClasses] = useState([]);
+  // A deep link (/dashboard?class_id=..&assignment=..) picks the class and
+  // the assignment to open; otherwise fall back to the last class viewed
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [linkedAssignment] = useState(() => parseInt(searchParams.get('assignment')) || null);
   const [selectedClass, setSelectedClass] = useState(() => {
-    const stored = localStorage.getItem('studentSelectedClass');
-    return stored ? parseInt(stored) : null;
+    const stored = searchParams.get('class_id') || localStorage.getItem('studentSelectedClass');
+    return stored ? parseInt(stored) || null : null;
   });
   const [group, setGroup] = useState(null);
   const [evaluations, setEvaluations] = useState([]);
@@ -75,6 +79,11 @@ function Dashboard() {
 
   useEffect(() => {
     fetchClasses();
+    // The deep-link params are consumed once; drop them so a reload follows
+    // whatever class the student has since switched to
+    if (searchParams.has('class_id') || searchParams.has('assignment')) {
+      setSearchParams({}, { replace: true });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -412,6 +421,7 @@ function Dashboard() {
                 currentClass={currentClass}
                 masqueradeUser={masqueradeUser}
                 darkMode={darkMode}
+                linkedAssignmentId={linkedAssignment}
               />
             ) : group && (
               /* Phase-based evaluation mode */

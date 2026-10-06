@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
-function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }) {
+function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, linkedAssignmentId }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [assignmentData, setAssignmentData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedAssignment, setExpandedAssignment] = useState(null);
+  const scrolledToLinked = useRef(false);
 
   useEffect(() => {
     if (classId) {
@@ -24,8 +25,10 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
       const userIdParam = masqueradeUser ? `?user_id=${masqueradeUser}` : '';
       const res = await axios.get(`/api/assignments/evaluations/my/${classId}${userIdParam}`);
       setAssignmentData(res.data);
-      // Auto-expand first assignment
-      if (res.data.assignments?.length > 0 && !expandedAssignment) {
+      // Open the assignment a deep link points at, else auto-expand the first
+      if (res.data.assignments?.some(a => a.id === linkedAssignmentId)) {
+        setExpandedAssignment(linkedAssignmentId);
+      } else if (res.data.assignments?.length > 0 && !expandedAssignment) {
         setExpandedAssignment(res.data.assignments[0].id);
       }
     } catch (err) {
@@ -38,6 +41,13 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
       setLoading(false);
     }
   };
+
+  // Bring a deep-linked assignment into view once it has rendered
+  useEffect(() => {
+    if (scrolledToLinked.current || !assignmentData?.assignments?.some(a => a.id === linkedAssignmentId)) return;
+    scrolledToLinked.current = true;
+    document.getElementById(`assignment-${linkedAssignmentId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [assignmentData, linkedAssignmentId]);
 
   // Get status label and color for an eval type
   const getEvalTypeStatus = (assignment, evalType) => {
@@ -143,6 +153,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode }
             return (
               <div
                 key={assignment.id}
+                id={`assignment-${assignment.id}`}
                 style={{
                   border: `1px solid ${darkMode ? '#444' : '#ddd'}`,
                   borderRadius: '8px',

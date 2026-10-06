@@ -69,6 +69,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
   const [savingAssignment, setSavingAssignment] = useState(false);
   const [applyingTemplate, setApplyingTemplate] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [copiedLinkFor, setCopiedLinkFor] = useState(null);
   const assignmentListRef = useRef(null);
   const [reminderSchedules, setReminderSchedules] = useState([]);
   const [nudgeTemplates, setNudgeTemplates] = useState([]);
@@ -537,6 +538,18 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
     }
   };
 
+  // Link students can follow (e.g. from the LMS) straight to this assignment
+  const handleCopyAssignmentLink = async (assignmentId) => {
+    const url = `${window.location.origin}/dashboard?class_id=${editingClass.id}&assignment=${assignmentId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedLinkFor(assignmentId);
+      setTimeout(() => setCopiedLinkFor(null), 2000);
+    } catch (err) {
+      window.prompt('Copy this link:', url);
+    }
+  };
+
   const handleDeleteAssignment = async (assignmentId) => {
     if (!window.confirm('Delete this assignment? This cannot be undone.')) return;
 
@@ -841,8 +854,17 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
                 }}
               >
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, marginBottom: '8px' }}>
-                    {index + 1}. {assignment.name}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: 600 }}>{index + 1}. {assignment.name}</span>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={() => handleCopyAssignmentLink(assignment.id)}
+                      style={{ padding: '2px 10px', fontSize: '0.8rem' }}
+                      title="Copy a link that takes students straight to this assignment"
+                    >
+                      {copiedLinkFor === assignment.id ? 'Link copied' : 'Copy student link'}
+                    </button>
                   </div>
                   <div style={{
                     fontSize: '0.85rem',

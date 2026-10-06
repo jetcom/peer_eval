@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { postLoginPath } from '../utils/postLogin';
 
 function Login() {
   const [email, setEmail] = useState('');
@@ -11,19 +12,14 @@ function Login() {
   const { login, user } = useAuth();
   const { darkMode, toggleDarkMode } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Redirect if already logged in
   useEffect(() => {
     if (user) {
-      if (user.role === 'admin') {
-        navigate('/admin');
-      } else if (user.role === 'teacher') {
-        navigate('/teacher');
-      } else {
-        navigate('/dashboard');
-      }
+      navigate(postLoginPath(user, location.search), { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, location.search]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,13 +28,7 @@ function Login() {
 
     try {
       const user = await login(email, password);
-      if (user.role === 'admin') {
-        navigate('/admin');
-      } else if (user.role === 'teacher') {
-        navigate('/teacher');
-      } else {
-        navigate('/dashboard');
-      }
+      navigate(postLoginPath(user, location.search), { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {

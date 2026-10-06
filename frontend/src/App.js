@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import Landing from './pages/Landing';
@@ -17,17 +17,19 @@ import PaperSubmission from './pages/PaperSubmission';
 import PaperReview from './pages/PaperReview';
 import TeacherPaperReview from './pages/TeacherPaperReview';
 import PaperFeedback from './pages/PaperFeedback';
+import { loginPathFor } from './utils/postLogin';
 import './App.css';
 
 function PrivateRoute({ children, adminOnly = false, teacherOnly = false }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
 
   if (!user) {
-    return <Navigate to="/login" />;
+    return <Navigate to={loginPathFor(location)} replace />;
   }
 
   if (adminOnly && user.role !== 'admin') {
