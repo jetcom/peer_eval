@@ -231,23 +231,47 @@ async function notifyInstructorApproved({ instructor }) {
 /**
  * Notify instructor when their account is rejected
  */
-async function notifyInstructorRejected({ instructor, reason }) {
+function renderStudentMatches(studentMatches, rejectedEmail) {
+  if (!studentMatches || !studentMatches.length) return '';
+  const accounts = studentMatches.map(m => {
+    const classes = m.classes.filter(k => !k.archived);
+    const classList = classes.length
+      ? `<ul style="margin: 8px 0 0; padding-left: 20px;">${classes.map(k => `<li style="margin: 3px 0;">${escapeHtml(k.name)}${k.section ? ` (${escapeHtml(k.section)})` : ''}${k.semester ? `, ${escapeHtml(k.semester)}` : ''} &mdash; ${escapeHtml(k.instructor.name)}${k.instructor.email ? ` &lt;${escapeHtml(k.instructor.email)}&gt;` : ''}</li>`).join('')}</ul>`
+      : '<p style="margin: 8px 0 0; color: #6b7280;">This account is not enrolled in any active class yet. Your instructor can add you.</p>';
+    return `
+      <div style="background: #f0fdf4; padding: 16px 20px; border-radius: 8px; margin: 16px 0; border-left: 4px solid #16a34a;">
+        <p style="margin: 0 0 4px;">Sign in with: <strong style="font-size: 17px;">${escapeHtml(m.email)}</strong></p>
+        ${rejectedEmail && rejectedEmail.toLowerCase() !== m.email.toLowerCase() ? `<p style="margin: 0; color: #6b7280; font-size: 14px;">(not ${escapeHtml(rejectedEmail)}, which you used to register)</p>` : ''}
+        <p style="margin: 10px 0 0; font-weight: 600;">Your classes:</p>
+        ${classList}
+      </div>`;
+  }).join('');
+  return `
+      <p>We found your student account${studentMatches.length > 1 ? 's' : ''}:</p>
+      ${accounts}`;
+}
+
+async function notifyInstructorRejected({ instructor, reason, studentMatches }) {
   const { firstName, email } = instructor;
   const isStudentMistake = reason && reason.toLowerCase().includes('student');
+  const hasMatches = isStudentMistake && studentMatches && studentMatches.length > 0;
 
   const html = isStudentMistake ? `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #1a1a1a;">Welcome to PeerEvals, ${firstName}!</h2>
       <p>It looks like you registered for an instructor account, but you're actually a student. No worries — your instructor has already created an account for you!</p>
+      ${renderStudentMatches(studentMatches, email)}
 
       <div style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2563eb;">
         <p style="margin: 0 0 10px; font-weight: 600;">How to sign in:</p>
         <ol style="margin: 0; padding-left: 20px;">
           <li>Go to the <a href="${APP_URL}/login" style="color: #2563eb;">PeerEvals login page</a></li>
-          <li>Sign in with the email address your instructor has on file for you</li>
-          <li>If you don't know your password, use the <a href="${APP_URL}/forgot-password" style="color: #2563eb;">Forgot Password</a> link to reset it</li>
+          <li>${hasMatches ? 'Sign in with the address shown above, exactly as written' : 'Sign in with the email address your instructor has on file for you'}</li>
+          <li>If you don't know your password, use the <a href="${APP_URL}/forgot-password" style="color: #2563eb;">Forgot Password</a> link with that same address</li>
         </ol>
       </div>
+
+      <p style="color: #6b7280; font-size: 14px;">Tip: many schools have more than one email domain (for example <code>g.rit.edu</code> and <code>rit.edu</code>). PeerEvals only knows the one your instructor entered, so use that exact address even if you normally use the other.</p>
 
       <p>If you're still having trouble signing in, please contact your instructor for help — they can verify your account and reset your password if needed.</p>
 

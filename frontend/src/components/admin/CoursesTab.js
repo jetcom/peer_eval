@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import { distinctTerms, NO_TERM } from '../../utils/terms';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
@@ -54,6 +55,7 @@ function CoursesTab({ darkMode }) {
   const [expandedId, setExpandedId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [termFilter, setTermFilter] = useState('all');
   const [sortField, setSortField] = useState('name');
   const [sortDirection, setSortDirection] = useState('asc');
   const [showCharts, setShowCharts] = useState(true);
@@ -91,8 +93,11 @@ function CoursesTab({ darkMode }) {
     }
   };
 
+  const terms = useMemo(() => distinctTerms(courses), [courses]);
+
   const filtered = useMemo(() => courses
     .filter(c => showArchived || !c.archived)
+    .filter(c => termFilter === 'all' || ((c.semester || '').trim() || NO_TERM) === termFilter)
     .filter(c => {
       if (!searchTerm) return true;
       const term = searchTerm.toLowerCase();
@@ -115,7 +120,7 @@ function CoursesTab({ darkMode }) {
         case 'completion': return dir * (a.completion_rate - b.completion_rate);
         default: return 0;
       }
-    }), [courses, showArchived, searchTerm, sortField, sortDirection]);
+    }), [courses, showArchived, termFilter, searchTerm, sortField, sortDirection]);
 
   // Chart data computations
   const chartData = useMemo(() => {
@@ -512,6 +517,20 @@ function CoursesTab({ darkMode }) {
             color: darkMode ? 'var(--text-primary)' : 'inherit'
           }}
         />
+        <select
+          value={termFilter}
+          onChange={(e) => setTermFilter(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '6px',
+            border: `1px solid ${darkMode ? 'var(--border-color)' : '#ddd'}`,
+            backgroundColor: darkMode ? 'var(--bg-input)' : 'white',
+            color: darkMode ? 'var(--text-primary)' : 'inherit'
+          }}
+        >
+          <option value="all">All terms</option>
+          {terms.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.9rem', cursor: 'pointer' }}>
           <input
             type="checkbox"

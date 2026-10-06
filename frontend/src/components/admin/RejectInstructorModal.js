@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 
-function RejectInstructorModal({ darkMode, teacher, reasons = [], onConfirm, onClose, submitting }) {
+function RejectInstructorModal({ darkMode, teacher, reasons = [], studentMatches = [], studentMatchesLoading = false, onConfirm, onClose, submitting }) {
   const [reason, setReason] = useState('');
   const [customReason, setCustomReason] = useState('');
   const [spam, setSpam] = useState(false);
 
   const finalReason = reason === '__other__' ? customReason.trim() : reason;
   const muted = darkMode ? '#a0a0a0' : '#666';
+  const studentReason = reasons.find(r => r.toLowerCase().includes('student'));
+  const usingStudentReason = !!finalReason && finalReason.toLowerCase().includes('student');
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -84,6 +86,49 @@ function RejectInstructorModal({ darkMode, teacher, reasons = [], onConfirm, onC
               </span>
             </span>
           </label>
+
+          {!spam && studentMatchesLoading && (
+            <p style={{ color: muted, fontSize: '0.85rem', margin: '0 0 12px' }}>Checking for an existing student account...</p>
+          )}
+          {!spam && !studentMatchesLoading && studentMatches.length > 0 && (
+            <div style={{
+              background: darkMode ? 'rgba(38, 139, 210, 0.12)' : '#eff6ff',
+              border: `1px solid ${darkMode ? '#268bd2' : '#bfdbfe'}`,
+              borderRadius: '6px',
+              padding: '12px',
+              marginBottom: '15px',
+              fontSize: '0.85rem'
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: '6px' }}>Looks like an existing student</div>
+              {studentMatches.map(m => (
+                <div key={m.id} style={{ marginBottom: '8px' }}>
+                  <div><strong>{m.email}</strong> <span style={{ color: muted }}>({m.name}, matched by {m.matchedBy})</span></div>
+                  <div style={{ color: muted }}>
+                    {m.classes.filter(k => !k.archived).length === 0
+                      ? 'No active classes'
+                      : m.classes.filter(k => !k.archived).map(k => (
+                        <div key={k.id}>{k.name}{k.section ? ` (${k.section})` : ''}{k.semester ? `, ${k.semester}` : ''} — {k.instructor.name}</div>
+                      ))}
+                  </div>
+                </div>
+              ))}
+              {studentReason && !usingStudentReason && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setReason(studentReason)}
+                  style={{ marginTop: '4px', fontSize: '0.85rem', padding: '6px 10px' }}
+                >
+                  Reject as a student and send them these sign-in details
+                </button>
+              )}
+              {usingStudentReason && (
+                <div style={{ marginTop: '4px', color: darkMode ? '#93a1a1' : '#1d4ed8' }}>
+                  The email will tell them to sign in as <strong>{studentMatches[0].email}</strong> and list the classes above.
+                </div>
+              )}
+            </div>
+          )}
 
           <fieldset disabled={spam} style={{ border: 'none', padding: 0, margin: 0, opacity: spam ? 0.45 : 1 }}>
             <div className="form-group" style={{ marginBottom: '12px' }}>

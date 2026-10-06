@@ -7,6 +7,7 @@ const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin, JWT_SECRET } = require('../middleware/auth');
 const emailService = require('../services/email');
 const { vetInstructor, LEVEL_LABEL, LEVEL_COLOR } = require('../services/instructorVetting');
+const { findStudentMatches, isStudentMistakeReason } = require('../services/studentMatch');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -402,12 +403,16 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
     // Send rejection email before deleting (never for spam)
     if (!spam) {
       try {
+        const studentMatches = isStudentMistakeReason(reason)
+          ? await findStudentMatches(user).catch(() => [])
+          : [];
         await emailService.notifyInstructorRejected({
           instructor: {
             firstName: user.firstName,
             email: user.email
           },
-          reason
+          reason,
+          studentMatches
         });
       } catch (emailErr) {
         console.error('Failed to send rejection email:', emailErr);
@@ -437,6 +442,18 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
 // ============================================
 
 const PENDING_SELECT = { id: true, role: true, email: true, firstName: true, lastName: true, university: true, department: true, createdAt: true };
+
+// Possible existing student accounts for a pending instructor (admin dashboard)
+router.get('/:id/student-matches', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: parseInt(req.params.id) }, select: PENDING_SELECT });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(await findStudentMatches(user));
+  } catch (err) {
+    console.error('Student match error:', err);
+    res.status(500).json({ error: 'Lookup failed' });
+  }
+});
 
 // Vet a pending instructor (admin dashboard)
 router.get('/:id/vet', authenticateToken, requireAdmin, async (req, res) => {
@@ -615,6 +632,15 @@ router.get('/:id/reject-teacher-email', async (req, res) => {
       `<option value="${r}">${r}</option>`
     ).join('\n');
 
+    const studentMatches = await findStudentMatches(user).catch(() => []);
+    const matchesHtml = studentMatches.length ? `
+      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px 15px; margin: 0 0 16px; font-size: 14px;">
+        <p style="margin: 0 0 6px;"><strong>Looks like an existing student.</strong> Matching student account${studentMatches.length > 1 ? 's' : ''} at this school:</p>
+        ${studentMatches.map(m => `<p style="margin: 6px 0 0;"><strong>${escapeHtml(m.email)}</strong> (${escapeHtml(m.name)}, matched by ${m.matchedBy})<br>
+          <span style="color:#6b7280;">${m.classes.filter(k => !k.archived).map(k => `${escapeHtml(k.name)}${k.section ? ` (${escapeHtml(k.section)})` : ''} &mdash; ${escapeHtml(k.instructor.name)}`).join('; ') || 'No active classes'}</span></p>`).join('')}
+        <p style="margin: 8px 0 0; color: #374151;">Choose the <em>Student account</em> reason below and the email will tell them which address to sign in with and list these classes.</p>
+      </div>` : '';
+
     const formHtml = `
       <p>You are about to reject the instructor request from:</p>
       <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 15px 0;">
@@ -623,6 +649,7 @@ router.get('/:id/reject-teacher-email', async (req, res) => {
         <p style="margin: 4px 0;"><strong>University:</strong> ${escapeHtml(user.university || 'Not specified')}</p>
         <p style="margin: 4px 0;"><strong>Department:</strong> ${escapeHtml(user.department || 'Not specified')}</p>
       </div>
+      ${matchesHtml}
       <form method="POST" action="/api/users/${decoded.userId}/reject-teacher-email?token=${encodeURIComponent(token)}">
         <label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; margin-bottom: 16px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; cursor: pointer;">
           <input type="checkbox" name="spam" value="1" style="margin-top: 3px;">
@@ -680,9 +707,13 @@ router.post('/:id/reject-teacher-email', express.urlencoded({ extended: false })
 
     if (!spam) {
       try {
+        const studentMatches = isStudentMistakeReason(reason)
+          ? await findStudentMatches(user).catch(() => [])
+          : [];
         await emailService.notifyInstructorRejected({
           instructor: { firstName: user.firstName, email: user.email },
-          reason: reason || undefined
+          reason: reason || undefined,
+          studentMatches
         });
       } catch (emailErr) {
         console.error('Failed to send rejection email:', emailErr);

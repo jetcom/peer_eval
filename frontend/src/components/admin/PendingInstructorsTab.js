@@ -9,6 +9,7 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
   const [message, setMessage] = useState({ type: '', text: '' });
   const [rejecting, setRejecting] = useState(null); // teacher being rejected (modal open)
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
+  const [studentMatches, setStudentMatches] = useState({ loading: false, items: [] });
   const [rejectionReasons, setRejectionReasons] = useState([]);
   const [vetting, setVetting] = useState(null); // { teacher, result, loading, error }
 
@@ -28,6 +29,18 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
       setMessage({ type: 'error', text: 'Failed to load pending instructor requests' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openReject = async (teacher) => {
+    setRejecting(teacher);
+    setStudentMatches({ loading: true, items: [] });
+    try {
+      const res = await axios.get(`/api/users/${teacher.id}/student-matches`);
+      setStudentMatches({ loading: false, items: res.data });
+    } catch (err) {
+      console.error('Failed to look up student matches:', err);
+      setStudentMatches({ loading: false, items: [] });
     }
   };
 
@@ -177,7 +190,7 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
                   Approve
                 </button>
                 <button
-                  onClick={() => setRejecting(teacher)}
+                  onClick={() => openReject(teacher)}
                   style={{
                     padding: '8px 16px',
                     background: 'transparent',
@@ -204,7 +217,7 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
           loading={vetting.loading}
           error={vetting.error}
           onApprove={() => handleApprove(vetting.teacher.id)}
-          onReject={() => { setRejecting(vetting.teacher); setVetting(null); }}
+          onReject={() => { openReject(vetting.teacher); setVetting(null); }}
           onClose={() => setVetting(null)}
         />
       )}
@@ -214,6 +227,8 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
           darkMode={darkMode}
           teacher={rejecting}
           reasons={rejectionReasons}
+          studentMatches={studentMatches.items}
+          studentMatchesLoading={studentMatches.loading}
           submitting={rejectSubmitting}
           onConfirm={handleReject}
           onClose={() => !rejectSubmitting && setRejecting(null)}

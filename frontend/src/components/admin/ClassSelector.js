@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { groupClassesByTerm } from '../../utils/terms';
 
 function ClassSelector({
   darkMode,
@@ -12,7 +13,8 @@ function ClassSelector({
   onRestoreClass,
   onEditClass,
   onCreateClass,
-  onCopyClass
+  onCopyClass,
+  showInstructor = false
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef(null);
@@ -57,20 +59,27 @@ function ClassSelector({
                   No classes yet. Click "+ New Class" to create one!
                 </div>
               ) : (
-                classes.map(c => (
-                  <div
-                    key={c.id}
-                    className={`class-selector-item ${selectedClass === c.id.toString() ? 'selected' : ''}`}
-                    onClick={() => {
-                      setSelectedClass(c.id.toString());
-                      setIsOpen(false);
-                    }}
-                  >
-                    <span className="class-selector-item-name">
-                      {c.name}
-                      {c.section && <span className="class-selector-item-section">({c.section})</span>}
-                      {c.semester && <span className="class-selector-item-semester">{c.semester}</span>}
-                    </span>
+                groupClassesByTerm(classes).map(group => (
+                  <div key={group.term} className="class-selector-group">
+                    <div className="class-selector-group-header">{group.term}</div>
+                    {group.classes.map(c => (
+                      <div
+                        key={c.id}
+                        className={`class-selector-item ${selectedClass === c.id.toString() ? 'selected' : ''}`}
+                        onClick={() => {
+                          setSelectedClass(c.id.toString());
+                          setIsOpen(false);
+                        }}
+                      >
+                        <span className="class-selector-item-name">
+                          {c.name}
+                          {c.section && <span className="class-selector-item-section">({c.section})</span>}
+                          {showInstructor && c.teacher_name && (
+                            <span className="class-selector-item-instructor">{c.teacher_name}</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ))
               )}
@@ -97,10 +106,16 @@ function ClassSelector({
                       No archived classes
                     </div>
                   ) : (
-                    archivedClasses.map(c => (
+                    groupClassesByTerm(archivedClasses).map(group => (
+                      <React.Fragment key={group.term}>
+                        <div className="class-selector-group-header">{group.term}</div>
+                        {group.classes.map(c => (
                       <div key={c.id} className="class-selector-archived-item">
                         <span>
-                          {c.name} {c.section ? `(${c.section})` : ''} {c.semester ? `- ${c.semester}` : ''}
+                          {c.name} {c.section ? `(${c.section})` : ''}
+                          {showInstructor && c.teacher_name && (
+                            <span className="class-selector-item-instructor">{c.teacher_name}</span>
+                          )}
                         </span>
                         <button
                           onClick={(e) => {
@@ -111,6 +126,8 @@ function ClassSelector({
                           Restore
                         </button>
                       </div>
+                        ))}
+                      </React.Fragment>
                     ))
                   )}
                 </div>

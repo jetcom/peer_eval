@@ -1433,6 +1433,30 @@ body.dark-mode .progress-mini.incomplete {
   margin-left: 8px;
 }
 
+.class-selector-item-instructor {
+  color: #95a5a6;
+  font-size: 0.8rem;
+  font-weight: 400;
+  margin-left: 8px;
+}
+
+.class-selector-group-header {
+  padding: 8px 16px 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7f8c8d;
+  background: #fafbfc;
+  border-top: 1px solid #eee;
+  position: sticky;
+  top: 0;
+}
+
+.class-selector-group:first-child .class-selector-group-header {
+  border-top: none;
+}
+
 .class-selector-item-edit {
   padding: 4px 10px;
   background: transparent;
@@ -1614,6 +1638,16 @@ body.dark-mode .class-selector-item-section {
 
 body.dark-mode .class-selector-item-semester {
   color: var(--text-muted);
+}
+
+body.dark-mode .class-selector-item-instructor {
+  color: var(--text-muted);
+}
+
+body.dark-mode .class-selector-group-header {
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border-top-color: var(--border-color);
 }
 
 body.dark-mode .class-selector-item-edit {

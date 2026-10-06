@@ -883,6 +883,7 @@ function AdminDashboard() {
           onEditClass={openEditClassModal}
           onCreateClass={() => setShowClassWizard(true)}
           onCopyClass={openCopyClassModal}
+          showInstructor={user?.role === 'admin'}
         />
 
         {/* Quick Stats Overview */}
