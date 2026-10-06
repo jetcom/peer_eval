@@ -8,6 +8,12 @@ import studentLight from '../assets/landing/student-light.webp';
 import studentDark from '../assets/landing/student-dark.webp';
 import reportsLight from '../assets/landing/reports-light.webp';
 import reportsDark from '../assets/landing/reports-dark.webp';
+import audienceLight from '../assets/landing/audience-light.webp';
+import audienceDark from '../assets/landing/audience-dark.webp';
+import assignmentsLight from '../assets/landing/assignments-light.webp';
+import assignmentsDark from '../assets/landing/assignments-dark.webp';
+import settingsLight from '../assets/landing/settings-light.webp';
+import settingsDark from '../assets/landing/settings-dark.webp';
 
 function Landing() {
   const { darkMode, toggleDarkMode } = useTheme();
@@ -229,6 +235,39 @@ function Landing() {
               </div>
               <h3>Student Evaluation</h3>
               <p>Clean, intuitive interface for students to rate teammates, presentations, and papers.</p>
+            </div>
+            <div className="landing-gallery-item">
+              <div className="landing-gallery-preview">
+                <img
+                  src={darkMode ? audienceDark : audienceLight}
+                  alt="Audience evaluation form rating a presenting team on clarity and research depth"
+                  loading="lazy"
+                />
+              </div>
+              <h3>In-Class Audience Evaluation</h3>
+              <p>While a team presents, everyone else rates it on the rubric you chose.</p>
+            </div>
+            <div className="landing-gallery-item">
+              <div className="landing-gallery-preview">
+                <img
+                  src={darkMode ? assignmentsDark : assignmentsLight}
+                  alt="Student's list of assignments with their evaluations, due dates and completion status"
+                  loading="lazy"
+                />
+              </div>
+              <h3>Assignment View</h3>
+              <p>Students see each assignment's evaluations, due dates, and what is still pending.</p>
+            </div>
+            <div className="landing-gallery-item">
+              <div className="landing-gallery-preview">
+                <img
+                  src={darkMode ? settingsDark : settingsLight}
+                  alt="Class settings listing assignments with their evaluation types, rubric templates and a copy student link button"
+                  loading="lazy"
+                />
+              </div>
+              <h3>Class Setup</h3>
+              <p>Choose evaluation types and rubric templates per assignment, and copy a student link for your LMS.</p>
             </div>
             <div className="landing-gallery-item">
               <div className="landing-gallery-preview">
