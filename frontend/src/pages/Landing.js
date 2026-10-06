@@ -1,7 +1,13 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
-import heroLight from '../assets/landing/hero-light.webp';
-import heroDark from '../assets/landing/hero-dark.webp';
+import heroProgressLight from '../assets/landing/hero-progress-light.webp';
+import heroProgressDark from '../assets/landing/hero-progress-dark.webp';
+import heroStudentLight from '../assets/landing/hero-student-light.webp';
+import heroStudentDark from '../assets/landing/hero-student-dark.webp';
+import heroAudienceLight from '../assets/landing/hero-audience-light.webp';
+import heroAudienceDark from '../assets/landing/hero-audience-dark.webp';
+import heroReportsLight from '../assets/landing/hero-reports-light.webp';
+import heroReportsDark from '../assets/landing/hero-reports-dark.webp';
 import instructorLight from '../assets/landing/instructor-light.webp';
 import instructorDark from '../assets/landing/instructor-dark.webp';
 import studentLight from '../assets/landing/student-light.webp';
@@ -15,8 +21,27 @@ import assignmentsDark from '../assets/landing/assignments-dark.webp';
 import settingsLight from '../assets/landing/settings-light.webp';
 import settingsDark from '../assets/landing/settings-dark.webp';
 
+// Screens the hero cycles through; all captured at the same aspect ratio
+const HERO_SLIDES = [
+  { label: 'Progress', light: heroProgressLight, dark: heroProgressDark, alt: 'Instructor progress view showing completion by phase and an evaluation heat map' },
+  { label: 'Evaluate', light: heroStudentLight, dark: heroStudentDark, alt: 'Student form rating a teammate from 1 to 5 on each criterion' },
+  { label: 'Audience', light: heroAudienceLight, dark: heroAudienceDark, alt: 'Audience evaluation form rating a presenting team' },
+  { label: 'Reports', light: heroReportsLight, dark: heroReportsDark, alt: "Report comparing each student's average ratings across phases" }
+];
+const HERO_INTERVAL_MS = 5000;
+
 function Landing() {
   const { darkMode, toggleDarkMode } = useTheme();
+  const [heroSlide, setHeroSlide] = useState(0);
+  const [heroPaused, setHeroPaused] = useState(false);
+
+  // Advance the hero slowly; hold still while hovered or when the visitor
+  // has asked the OS for reduced motion
+  useEffect(() => {
+    if (heroPaused || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const timer = setInterval(() => setHeroSlide(s => (s + 1) % HERO_SLIDES.length), HERO_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [heroPaused]);
 
   const features = [
     {
@@ -129,17 +154,40 @@ function Landing() {
           </p>
         </div>
         <div className="landing-hero-image">
-          <div className="landing-screenshot-container">
+          <div
+            className="landing-screenshot-container"
+            onMouseEnter={() => setHeroPaused(true)}
+            onMouseLeave={() => setHeroPaused(false)}
+          >
             <div className="landing-screenshot-header">
               <span className="landing-screenshot-dot red"></span>
               <span className="landing-screenshot-dot yellow"></span>
               <span className="landing-screenshot-dot green"></span>
             </div>
-            <img
-              className="landing-screenshot-img"
-              src={darkMode ? heroDark : heroLight}
-              alt="Instructor progress view showing completion by phase and an evaluation heat map"
-            />
+            <div className="landing-screenshot-slides">
+              {HERO_SLIDES.map((slide, i) => (
+                <img
+                  key={slide.label}
+                  className={`landing-screenshot-img${i === heroSlide ? ' active' : ''}`}
+                  src={darkMode ? slide.dark : slide.light}
+                  alt={slide.alt}
+                  aria-hidden={i !== heroSlide}
+                />
+              ))}
+            </div>
+            <div className="landing-screenshot-tabs">
+              {HERO_SLIDES.map((slide, i) => (
+                <button
+                  key={slide.label}
+                  type="button"
+                  className={i === heroSlide ? 'active' : ''}
+                  aria-pressed={i === heroSlide}
+                  onClick={() => setHeroSlide(i)}
+                >
+                  {slide.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </section>

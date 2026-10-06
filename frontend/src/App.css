@@ -2180,11 +2180,59 @@ body.dark-mode .student-class-item .student-class-semester {
 .landing-screenshot-dot.yellow { background: #ffbd2e; }
 .landing-screenshot-dot.green { background: #27c93f; }
 
+.landing-screenshot-slides {
+  position: relative;
+  aspect-ratio: 1720 / 1652;
+}
+
 .landing-screenshot-img {
+  position: absolute;
+  inset: 0;
   display: block;
   width: 100%;
-  height: auto;
-  aspect-ratio: 1720 / 1650;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+.landing-screenshot-img.active {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-screenshot-img {
+    transition: none;
+  }
+}
+
+.landing-screenshot-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  background: #2c2c2c;
+}
+
+.landing-screenshot-tabs button {
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #9a9a9a;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease;
+}
+
+.landing-screenshot-tabs button:hover {
+  color: #fff;
+}
+
+.landing-screenshot-tabs button.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.15);
 }
 
 /* Features Section */

@@ -17,12 +17,12 @@ const textTop = (page, text) => page.evaluate((text) => {
 }, text);
 // The teacher dashboard opens on the newest class; pick the named one. The
 // class list is a table on wide screens and a stack of cards on narrow ones.
+const findClass = (name) => [...document.querySelectorAll('.mobile-card')].find(c => c.offsetParent !== null && c.textContent.includes(name))
+  || [...document.querySelectorAll('button')].find(b => b.offsetParent !== null && b.textContent.trim() === name);
 const manageClass = async (s, name) => {
-  await s.page.evaluate((name) => {
-    const card = [...document.querySelectorAll('.mobile-card')].find(c => c.offsetParent !== null && c.textContent.includes(name));
-    const btn = [...document.querySelectorAll('button')].find(b => b.offsetParent !== null && b.textContent.trim() === name);
-    (card || btn).click();
-  }, name);
+  // The first page load after the dev server starts can be slow to show data
+  await s.page.waitForFunction(findClass, { timeout: 60000 }, name);
+  await s.page.evaluate((name, src) => eval(src)(name).click(), name, findClass.toString());
   await wait(900);
 };
 const setSelect = (page, optionText, value) => page.evaluate((optionText, value) => {
@@ -30,6 +30,10 @@ const setSelect = (page, optionText, value) => page.evaluate((optionText, value)
   Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(sel, value);
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }, optionText, value);
+
+// The hero rotates through four screens, so they all share one aspect ratio
+// (860x826 at the instructor width, 720x691 at the student width)
+const HERO = 826 / 860;
 
 (async () => {
   for (const dark of [false, true]) {
@@ -41,8 +45,11 @@ const setSelect = (page, optionText, value) => page.evaluate((optionText, value)
     await manageClass(s, 'Software Engineering');
     await setSelect(s.page, 'Phase 3', '3'); await wait(500);
     const byPhase = await cardTop(s.page, 'Progress by Phase');
-    const heat = await cardTop(s.page, 'Evaluation Heat Map');
-    await s.page.screenshot({ path: out(`hero-${tag}.png`), clip: { x: 0, y: byPhase.y - 12, width: 860, height: (heat.y - byPhase.y) + 12 + 438 } });
+    await s.page.screenshot({ path: out(`hero-progress-${tag}.png`), clip: { x: 0, y: byPhase.y - 12, width: 860, height: Math.round(860 * HERO) } });
+    // Hero: reports
+    await s.clickText('Reports', 'button');
+    const heroVisual = await cardTop(s.page, 'Visual Comparison');
+    await s.page.screenshot({ path: out(`hero-reports-${tag}.png`), clip: { x: 0, y: heroVisual.y - 12, width: 860, height: Math.round(860 * HERO) } });
     await s.browser.close();
 
     // Instructor: nudge list and reports
@@ -77,6 +84,7 @@ const setSelect = (page, optionText, value) => page.evaluate((optionText, value)
     await s.go(`/evaluate/3?class_id=${s.tokens.classId}`);
     const y = await textTop(s.page, 'Rahman, Aisha');
     await s.page.screenshot({ path: out(`student-${tag}.png`), clip: { x: 0, y: y - 26, width: 720, height: 480 } });
+    await s.page.screenshot({ path: out(`hero-student-${tag}.png`), clip: { x: 0, y: y - 26, width: 720, height: Math.round(720 * HERO) } });
     await s.browser.close();
 
     // Student: assignment list and a partly filled audience evaluation
@@ -96,6 +104,7 @@ const setSelect = (page, optionText, value) => page.evaluate((optionText, value)
     await ta.click(); await ta.type('Clear structure and a confident delivery. The live demo made the idea click.');
     await s.page.evaluate(() => window.scrollTo(0, 0)); await wait(300);
     await s.page.screenshot({ path: out(`audience-${tag}.png`), clip: { x: 0, y: top - 12, width: 720, height: 480 } });
+    await s.page.screenshot({ path: out(`hero-audience-${tag}.png`), clip: { x: 0, y: top - 12, width: 720, height: Math.round(720 * HERO) } });
     await s.browser.close();
   }
 })().catch(e => { console.error(e); process.exit(1); });
