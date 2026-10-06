@@ -538,12 +538,13 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
     }
   };
 
-  // Link students can follow (e.g. from the LMS) straight to this assignment
-  const handleCopyAssignmentLink = async (assignmentId) => {
-    const url = `${window.location.origin}/dashboard?class_id=${editingClass.id}&assignment=${assignmentId}`;
+  // Link students can follow (e.g. from the LMS) to this class, or straight
+  // to one of its assignments
+  const handleCopyStudentLink = async (assignmentId) => {
+    const url = `${window.location.origin}/dashboard?class_id=${editingClass.id}${assignmentId ? `&assignment=${assignmentId}` : ''}`;
     try {
       await navigator.clipboard.writeText(url);
-      setCopiedLinkFor(assignmentId);
+      setCopiedLinkFor(assignmentId || 'class');
       setTimeout(() => setCopiedLinkFor(null), 2000);
     } catch (err) {
       window.prompt('Copy this link:', url);
@@ -859,7 +860,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
                     <button
                       type="button"
                       className="btn btn-secondary"
-                      onClick={() => handleCopyAssignmentLink(assignment.id)}
+                      onClick={() => handleCopyStudentLink(assignment.id)}
                       style={{ padding: '2px 10px', fontSize: '0.8rem' }}
                       title="Copy a link that takes students straight to this assignment"
                     >
@@ -1577,11 +1578,25 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
         <div style={{
           padding: '20px 25px',
           borderBottom: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`,
-          background: darkMode ? '#141414' : '#f8f9fa'
+          background: darkMode ? '#141414' : '#f8f9fa',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '15px',
+          flexWrap: 'wrap'
         }}>
           <h2 style={{ margin: 0 }}>
             Class Settings: {editingClass.name}
           </h2>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => handleCopyStudentLink()}
+            style={{ padding: '4px 12px', fontSize: '0.85rem' }}
+            title="Copy a link that takes students straight to this class"
+          >
+            {copiedLinkFor === 'class' ? 'Link copied' : 'Copy student link'}
+          </button>
         </div>
 
         {/* Tabs */}
