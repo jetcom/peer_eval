@@ -29,6 +29,8 @@ model User {
   resetToken         String?   @map("reset_token")
   resetTokenExpires  DateTime? @map("reset_token_expires")
   createdAt          DateTime  @default(now()) @map("created_at")
+  // Follow-up emails sent to admins while this instructor request is pending (0, 1, 2)
+  approvalRemindersSent Int    @default(0) @map("approval_reminders_sent")
 
   // Relations
   enrollments                ClassEnrollment[]

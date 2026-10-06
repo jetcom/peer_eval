@@ -6,6 +6,7 @@ const { parse } = require('csv-parse');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin, JWT_SECRET } = require('../middleware/auth');
 const emailService = require('../services/email');
+const { vetInstructor, LEVEL_LABEL, LEVEL_COLOR } = require('../services/instructorVetting');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -434,6 +435,67 @@ router.post('/:id/reject-teacher', authenticateToken, requireAdmin, async (req, 
 // ============================================
 // Token-based approve/reject from email links
 // ============================================
+
+const PENDING_SELECT = { id: true, role: true, email: true, firstName: true, lastName: true, university: true, department: true, createdAt: true };
+
+// Vet a pending instructor (admin dashboard)
+router.get('/:id/vet', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: parseInt(req.params.id) }, select: PENDING_SELECT });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const vet = await vetInstructor(user);
+    res.json(vet);
+  } catch (err) {
+    console.error('Vet instructor error:', err);
+    res.status(500).json({ error: 'Vetting failed' });
+  }
+});
+
+// Vet a pending instructor from an email link (HTML report with approve/reject buttons)
+router.get('/:id/vet-email', async (req, res) => {
+  const token = req.query.token;
+  const decoded = verifyInstructorActionToken(token);
+  if (!decoded || decoded.userId !== parseInt(req.params.id)) {
+    return res.status(400).send(renderActionPage('Invalid or Expired Link',
+      'This link is invalid or has expired. Please log in to the admin dashboard to review pending instructors.', 'error'));
+  }
+  try {
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId }, select: PENDING_SELECT });
+    if (!user) return res.send(renderActionPage('User Not Found', 'This user no longer exists in the system.', 'error'));
+    if (user.role !== 'pending_teacher') {
+      return res.send(renderActionPage('Already Processed',
+        `${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)} is no longer pending (current role: ${escapeHtml(user.role)}).`, 'info'));
+    }
+    const vet = await vetInstructor(user);
+    const color = LEVEL_COLOR[vet.level];
+    const icons = { pass: '&#10003;', warn: '!', fail: '&#10007;' };
+    const iconColor = { pass: '#16a34a', warn: '#d97706', fail: '#dc2626' };
+    const t = encodeURIComponent(token);
+    const body = `
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin: 0 0 16px;">
+        <p style="margin: 4px 0;"><strong>Name:</strong> ${escapeHtml(user.firstName)} ${escapeHtml(user.lastName)}</p>
+        <p style="margin: 4px 0;"><strong>Email:</strong> ${escapeHtml(user.email)}</p>
+        <p style="margin: 4px 0;"><strong>University:</strong> ${escapeHtml(user.university || 'Not specified')}</p>
+        <p style="margin: 4px 0;"><strong>Department:</strong> ${escapeHtml(user.department || 'Not specified')}</p>
+      </div>
+      <p style="font-size: 18px; margin: 0 0 12px;"><strong style="color: ${color};">${LEVEL_LABEL[vet.level]}</strong> <span style="color:#6b7280;">(${vet.score}/100)</span></p>
+      <ul style="list-style: none; padding: 0; margin: 0 0 20px;">
+        ${vet.signals.map(s => `<li style="padding: 8px 0; border-top: 1px solid #f3f4f6;">
+          <span style="display:inline-block;width:20px;font-weight:700;color:${iconColor[s.status]};">${icons[s.status]}</span>
+          <strong>${escapeHtml(s.label)}</strong>
+          <div style="margin-left: 20px; color: #6b7280; font-size: 14px;">${escapeHtml(s.detail)}</div></li>`).join('')}
+      </ul>
+      <p style="color:#6b7280;font-size:13px;">These are automated signals, not proof. Use your judgement.</p>
+      <p style="margin-top: 16px;">
+        <a href="/api/users/${user.id}/approve-teacher-email?token=${t}" style="display:inline-block;background:#16a34a;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;margin-right:8px;">Approve</a>
+        <a href="/api/users/${user.id}/reject-teacher-email?token=${t}" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;text-decoration:none;border-radius:6px;">Reject</a>
+      </p>`;
+    res.send(renderActionPage('Vetting Report', body, 'form'));
+  } catch (err) {
+    console.error('Vet email page error:', err);
+    res.status(500).send(renderActionPage('Error', 'Something went wrong. Please try again from the admin dashboard.', 'error'));
+  }
+});
 
 // Admin UI pulls the same list so the dashboard and email-link flows match
 router.get('/rejection-reasons', authenticateToken, requireAdmin, (req, res) => {

@@ -74,7 +74,37 @@ function stripHtml(html) {
 /**
  * Notify admins when a new instructor registers
  */
-async function notifyAdminNewInstructor({ adminEmails, instructor, approveUrl, rejectUrl }) {
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+const VET_COLORS = { high: '#16a34a', medium: '#d97706', low: '#dc2626' };
+const VET_LABELS = { high: 'High confidence', medium: 'Medium confidence', low: 'Low confidence' };
+const VET_ICONS = { pass: '&#10003;', warn: '!', fail: '&#10007;' };
+
+/**
+ * Compact vetting summary block for admin emails. `vet` is the result of
+ * instructorVetting.vetInstructor(); omitted when vetting was skipped.
+ */
+function renderVetBlock(vet, vetUrl) {
+  if (!vet) return '';
+  const color = VET_COLORS[vet.level] || '#6b7280';
+  const rows = vet.signals.map(s => `
+        <li style="margin: 3px 0;"><span style="display:inline-block;width:16px;color:${VET_COLORS[s.status === 'pass' ? 'high' : s.status === 'warn' ? 'medium' : 'low']};font-weight:700;">${VET_ICONS[s.status]}</span> ${escapeHtml(s.label)}</li>`).join('');
+  return `
+      <div style="border-left: 4px solid ${color}; padding: 10px 16px; margin: 16px 0; background: #fafafa; border-radius: 0 8px 8px 0;">
+        <p style="margin: 0 0 6px;"><strong style="color: ${color};">${VET_LABELS[vet.level]}</strong> <span style="color:#6b7280;">(${vet.score}/100) that this is a real instructor at the named school</span></p>
+        <ul style="margin: 0; padding-left: 4px; list-style: none; font-size: 14px; color: #374151;">${rows}</ul>
+        ${vetUrl ? `<p style="margin: 8px 0 0; font-size: 14px;"><a href="${vetUrl}" style="color:#2563eb;">Full vetting report</a></p>` : ''}
+      </div>`;
+}
+
+async function notifyAdminNewInstructor({ adminEmails, instructor, approveUrl, rejectUrl, vetUrl, vet }) {
   const { firstName, lastName, email, university, department } = instructor;
 
   const html = `
@@ -83,11 +113,12 @@ async function notifyAdminNewInstructor({ adminEmails, instructor, approveUrl, r
       <p>A new instructor has registered and is awaiting approval:</p>
 
       <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 5px 0;"><strong>Name:</strong> ${firstName} ${lastName}</p>
-        <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
-        <p style="margin: 5px 0;"><strong>University:</strong> ${university || 'Not specified'}</p>
-        <p style="margin: 5px 0;"><strong>Department:</strong> ${department || 'Not specified'}</p>
+        <p style="margin: 5px 0;"><strong>Name:</strong> ${escapeHtml(firstName)} ${escapeHtml(lastName)}</p>
+        <p style="margin: 5px 0;"><strong>Email:</strong> ${escapeHtml(email)}</p>
+        <p style="margin: 5px 0;"><strong>University:</strong> ${escapeHtml(university || 'Not specified')}</p>
+        <p style="margin: 5px 0;"><strong>Department:</strong> ${escapeHtml(department || 'Not specified')}</p>
       </div>
+      ${renderVetBlock(vet, vetUrl)}
 
       ${approveUrl ? `
       <p>
@@ -119,6 +150,49 @@ async function notifyAdminNewInstructor({ adminEmails, instructor, approveUrl, r
     to: adminEmails,
     subject: `New Instructor Registration: ${firstName} ${lastName}`,
     html,
+  });
+}
+
+/**
+ * Follow-up to admins about instructor requests that have sat unanswered.
+ * `requests` = [{ instructor, waitingDays, approveUrl, rejectUrl, vetUrl, vet }]
+ */
+async function sendPendingInstructorDigest({ adminEmails, requests }) {
+  if (!requests.length) return { success: true, skipped: true };
+
+  const items = requests.map(r => {
+    const i = r.instructor;
+    return `
+      <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 16px 0;">
+        <p style="margin: 0 0 4px; font-size: 16px;"><strong>${escapeHtml(i.firstName)} ${escapeHtml(i.lastName)}</strong>
+          <span style="color: #6b7280; font-size: 14px;">&nbsp;waiting ${r.waitingDays} day${r.waitingDays === 1 ? '' : 's'}</span></p>
+        <p style="margin: 0; color: #374151; font-size: 14px;">${escapeHtml(i.email)}<br>
+          ${escapeHtml([i.department, i.university].filter(Boolean).join(' — ') || 'No school details given')}</p>
+        ${renderVetBlock(r.vet, r.vetUrl)}
+        <p style="margin: 12px 0 0;">
+          <a href="${r.approveUrl}" style="display:inline-block;background:#16a34a;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;margin-right:8px;font-size:14px;">Approve</a>
+          <a href="${r.rejectUrl}" style="display:inline-block;background:#dc2626;color:#fff;padding:8px 16px;text-decoration:none;border-radius:6px;font-size:14px;">Reject</a>
+        </p>
+      </div>`;
+  }).join('');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Instructor request${requests.length === 1 ? '' : 's'} still waiting</h2>
+      <p>${requests.length === 1 ? 'An instructor request has' : `${requests.length} instructor requests have`} been pending for several days without a decision. Each one is still blocked from using PeerEvals.</p>
+      ${items}
+      <p style="margin-top: 20px;">
+        <a href="${APP_URL}/admin?tab=instructors" style="color: #2563eb; text-decoration: underline;">Review all pending requests on the website</a>
+      </p>
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">— PeerEvals System</p>
+    </div>`;
+
+  return sendEmail({
+    to: adminEmails,
+    subject: requests.length === 1
+      ? `Reminder: instructor request from ${requests[0].instructor.firstName} ${requests[0].instructor.lastName} is still waiting`
+      : `Reminder: ${requests.length} instructor requests are still waiting`,
+    html
   });
 }
 
@@ -778,6 +852,7 @@ async function sendForgotPasswordEmail({ user, resetToken }) {
 }
 
 module.exports = {
+  sendPendingInstructorDigest,
   sendEmail,
   notifyAdminNewInstructor,
   notifyInstructorApproved,

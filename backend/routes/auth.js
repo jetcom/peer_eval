@@ -7,6 +7,8 @@ const { JWT_SECRET, authenticateToken } = require('../middleware/auth');
 const emailService = require('../services/email');
 const { logActivityAsync, ACTIONS } = require('../services/activityLogger');
 const { registrationLimiter, forgotPasswordLimiter, registrationSpamFilter } = require('../middleware/spamProtection');
+const { buildInstructorActionLinks } = require('../utils/instructorActionLinks');
+const { vetInstructor } = require('../services/instructorVetting');
 
 const router = express.Router();
 
@@ -145,14 +147,15 @@ router.post('/register-instructor', registrationLimiter, registrationSpamFilter,
       console.log('Found admins for new instructor notification:', adminEmails);
 
       if (adminEmails.length > 0) {
-        const actionToken = jwt.sign(
-          { userId: user.id, purpose: 'instructor-review' },
-          JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-        const appUrl = process.env.FRONTEND_URL || 'http://localhost:3002';
-        const approveUrl = `${appUrl}/api/users/${user.id}/approve-teacher-email?token=${encodeURIComponent(actionToken)}`;
-        const rejectUrl = `${appUrl}/api/users/${user.id}/reject-teacher-email?token=${encodeURIComponent(actionToken)}`;
+        const { approveUrl, rejectUrl, vetUrl } = buildInstructorActionLinks(user.id);
+
+        // Automated plausibility check so admins can decide from the email
+        let vet = null;
+        try {
+          vet = await vetInstructor(user);
+        } catch (vetErr) {
+          console.error('Vetting failed for new instructor:', vetErr);
+        }
 
         const result = await emailService.notifyAdminNewInstructor({
           adminEmails,
@@ -164,7 +167,9 @@ router.post('/register-instructor', registrationLimiter, registrationSpamFilter,
             department
           },
           approveUrl,
-          rejectUrl
+          rejectUrl,
+          vetUrl,
+          vet
         });
         console.log('Admin notification email result:', result);
       } else {

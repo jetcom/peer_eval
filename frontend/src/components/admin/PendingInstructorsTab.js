@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import RejectInstructorModal from './RejectInstructorModal';
+import VetInstructorModal from './VetInstructorModal';
 
 function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
   const [pendingTeachers, setPendingTeachers] = useState([]);
@@ -9,6 +10,7 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
   const [rejecting, setRejecting] = useState(null); // teacher being rejected (modal open)
   const [rejectSubmitting, setRejectSubmitting] = useState(false);
   const [rejectionReasons, setRejectionReasons] = useState([]);
+  const [vetting, setVetting] = useState(null); // { teacher, result, loading, error }
 
   useEffect(() => {
     fetchPendingTeachers();
@@ -29,7 +31,19 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
     }
   };
 
+  const handleVet = async (teacher) => {
+    setVetting({ teacher, result: null, loading: true, error: '' });
+    try {
+      const res = await axios.get(`/api/users/${teacher.id}/vet`);
+      setVetting({ teacher, result: res.data, loading: false, error: '' });
+    } catch (err) {
+      console.error('Failed to vet teacher:', err);
+      setVetting({ teacher, result: null, loading: false, error: err.response?.data?.error || 'Vetting failed' });
+    }
+  };
+
   const handleApprove = async (userId) => {
+    setVetting(null);
     try {
       const res = await axios.post(`/api/users/${userId}/approve-teacher`);
       setMessage({ type: 'success', text: res.data.message });
@@ -135,6 +149,20 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
 
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button
+                  onClick={() => handleVet(teacher)}
+                  style={{
+                    padding: '8px 16px',
+                    background: 'transparent',
+                    color: darkMode ? '#93a1a1' : '#555',
+                    border: `1px solid ${darkMode ? '#586e75' : '#bbb'}`,
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: 500
+                  }}
+                >
+                  Vet
+                </button>
+                <button
                   onClick={() => handleApprove(teacher.id)}
                   style={{
                     padding: '8px 16px',
@@ -166,6 +194,19 @@ function PendingInstructorsTab({ darkMode, onRefreshUsers }) {
             </div>
           ))}
         </div>
+      )}
+
+      {vetting && (
+        <VetInstructorModal
+          darkMode={darkMode}
+          teacher={vetting.teacher}
+          result={vetting.result}
+          loading={vetting.loading}
+          error={vetting.error}
+          onApprove={() => handleApprove(vetting.teacher.id)}
+          onReject={() => { setRejecting(vetting.teacher); setVetting(null); }}
+          onClose={() => setVetting(null)}
+        />
       )}
 
       {rejecting && (

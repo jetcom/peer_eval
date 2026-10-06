@@ -3,6 +3,8 @@ const prisma = require('../lib/prisma');
 const emailService = require('./email');
 const { isPastDueDate, getNowInTimezone } = require('../utils/dateUtils');
 const { startReviewPeriod } = require('./paperReviewService');
+const { vetInstructor } = require('./instructorVetting');
+const { buildInstructorActionLinks } = require('../utils/instructorActionLinks');
 
 /**
  * Reminder Scheduler Service
@@ -548,6 +550,63 @@ async function processSchedule(schedule, now) {
  * Start the reminder scheduler
  * Runs every 15 minutes
  */
+// Days a request may sit before the 1st and 2nd admin follow-up
+const PENDING_INSTRUCTOR_FOLLOWUP_DAYS = [3, 7];
+
+/**
+ * Email admins about instructor requests nobody has acted on. Runs daily.
+ * Each request triggers at most one email per stage (day 3, day 7).
+ */
+async function processPendingInstructorReminders() {
+  try {
+    const now = Date.now();
+    const pending = await prisma.user.findMany({
+      where: { role: 'pending_teacher', approvalRemindersSent: { lt: PENDING_INSTRUCTOR_FOLLOWUP_DAYS.length } },
+      select: { id: true, email: true, firstName: true, lastName: true, university: true, department: true, createdAt: true, approvalRemindersSent: true }
+    });
+
+    const due = pending.filter(u => {
+      const ageDays = (now - u.createdAt.getTime()) / 86400000;
+      return ageDays >= PENDING_INSTRUCTOR_FOLLOWUP_DAYS[u.approvalRemindersSent];
+    });
+    if (!due.length) return;
+
+    const admins = await prisma.user.findMany({ where: { role: 'admin' }, select: { email: true } });
+    const adminEmails = admins.map(a => a.email);
+    if (!adminEmails.length) {
+      console.warn('[ReminderScheduler] Pending instructor follow-up skipped: no admin users');
+      return;
+    }
+
+    const requests = [];
+    for (const u of due) {
+      let vet = null;
+      try { vet = await vetInstructor(u); } catch (e) { console.error('[ReminderScheduler] vetting failed for', u.email, e.message); }
+      requests.push({
+        instructor: u,
+        waitingDays: Math.floor((now - u.createdAt.getTime()) / 86400000),
+        vet,
+        ...buildInstructorActionLinks(u.id)
+      });
+    }
+
+    const result = await emailService.sendPendingInstructorDigest({ adminEmails, requests });
+    if (result.success) {
+      await prisma.user.updateMany({
+        where: { id: { in: due.map(u => u.id) } },
+        data: { approvalRemindersSent: { increment: 1 } }
+      });
+      console.log(`[ReminderScheduler] Sent pending-instructor follow-up for ${due.length} request(s)`);
+    } else {
+      console.error('[ReminderScheduler] Pending instructor follow-up email failed:', result.error);
+    }
+  } catch (err) {
+    console.error('[ReminderScheduler] processPendingInstructorReminders error:', err);
+  }
+}
+
+let pendingInstructorTask = null;
+
 function startScheduler() {
   if (schedulerTask) {
     console.log('[ReminderScheduler] Scheduler already running');
@@ -556,6 +615,9 @@ function startScheduler() {
 
   // Run every 15 minutes
   schedulerTask = cron.schedule('*/15 * * * *', processReminders);
+
+  // Daily 9am Eastern: nudge admins about instructor requests waiting 3+ / 7+ days
+  pendingInstructorTask = cron.schedule('0 9 * * *', processPendingInstructorReminders, { timezone: 'America/New_York' });
 
   console.log('[ReminderScheduler] Scheduler started (runs every 15 minutes)');
 
@@ -575,10 +637,15 @@ function stopScheduler() {
     schedulerTask = null;
     console.log('[ReminderScheduler] Scheduler stopped');
   }
+  if (pendingInstructorTask) {
+    pendingInstructorTask.stop();
+    pendingInstructorTask = null;
+  }
 }
 
 module.exports = {
   startScheduler,
   stopScheduler,
-  processReminders
+  processReminders,
+  processPendingInstructorReminders
 };
