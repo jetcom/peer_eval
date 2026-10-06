@@ -77,14 +77,14 @@ function Landing() {
             <span className="landing-logo-text">PeerEval</span>
           </div>
           <div className="landing-nav-actions">
-            <a href="/login" className="landing-login-link">
-              Login
+            <a href="/register-instructor" className="landing-login-link">
+              New Instructor?
             </a>
             <button className="theme-toggle" onClick={toggleDarkMode}>
               {darkMode ? '☀️ Light' : '🌙 Dark'}
             </button>
-            <a href="/register-instructor" className="landing-btn landing-btn-primary">
-              Request Access
+            <a href="/login" className="landing-btn landing-btn-primary">
+              Log In
             </a>
           </div>
         </div>
@@ -103,15 +103,15 @@ function Landing() {
             and run anonymous peer review of papers, all in one place.
           </p>
           <div className="landing-hero-actions">
-            <a href="/register-instructor" className="landing-btn landing-btn-primary landing-btn-lg">
-              Request Instructor Access
+            <a href="/login" className="landing-btn landing-btn-primary landing-btn-lg">
+              Log In
             </a>
-            <a href="/login" className="landing-btn landing-btn-outline landing-btn-lg">
-              Student Login
+            <a href="/register-instructor" className="landing-btn landing-btn-outline landing-btn-lg">
+              New Instructor? Request Access
             </a>
           </div>
           <p style={{ marginTop: '15px', fontSize: '0.9rem', opacity: 0.8 }}>
-            Students don't need to sign up: your instructor sets up your account.
+            Students: just log in. Your instructor has already set up your account, so there is nothing to request.
           </p>
         </div>
         <div className="landing-hero-image">
@@ -326,7 +326,7 @@ function Landing() {
           <h2>Ready to Transform Your Peer Evaluations?</h2>
           <p>Join educators who are making team assessments more meaningful and manageable. It's completely free for approved instructors.</p>
           <a href="/register-instructor" className="landing-btn landing-btn-white landing-btn-lg">
-            Request Instructor Access
+            New Instructor? Request Access
           </a>
         </div>
       </section>
@@ -339,7 +339,7 @@ function Landing() {
             <span className="landing-logo-text">PeerEval</span>
           </div>
           <div className="landing-footer-links">
-            <a href="/login">Sign In</a>
+            <a href="/login">Log In</a>
             <a href="/register-instructor">Instructor Registration</a>
             <a href="mailto:support@peerevals.app">Contact</a>
           </div>
