@@ -159,11 +159,6 @@ function Landing() {
             onMouseEnter={() => setHeroPaused(true)}
             onMouseLeave={() => setHeroPaused(false)}
           >
-            <div className="landing-screenshot-header">
-              <span className="landing-screenshot-dot red"></span>
-              <span className="landing-screenshot-dot yellow"></span>
-              <span className="landing-screenshot-dot green"></span>
-            </div>
             <div className="landing-screenshot-slides">
               {HERO_SLIDES.map((slide, i) => (
                 <img
