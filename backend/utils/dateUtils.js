@@ -28,4 +28,31 @@ function isPastDueDate(dueDate, timezone) {
   return nowInTz > dueDate;
 }
 
-module.exports = { getNowInTimezone, isPastDueDate };
+/**
+ * Convert a due date (stored as YYYY-MM-DDTHH:mm wall-clock time in the
+ * given timezone) to an absolute Date.
+ */
+function dueDateToUtc(dueDate, timezone) {
+  const tz = timezone || 'America/New_York';
+  const [datePart, timePart = '00:00'] = dueDate.split('T');
+  const [y, mo, d] = datePart.split('-').map(Number);
+  const [h, mi] = timePart.split(':').map(Number);
+  const wallClockAsUtc = Date.UTC(y, mo - 1, d, h, mi);
+
+  // Offset of the timezone from UTC at a given instant, in ms
+  const offsetAt = (ms) => {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hourCycle: 'h23',
+      year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric'
+    }).formatToParts(new Date(ms));
+    const get = (type) => Number(parts.find(p => p.type === type).value);
+    return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute')) - Math.floor(ms / 60000) * 60000;
+  };
+
+  // Two passes settles the offset across DST transitions
+  let utc = wallClockAsUtc - offsetAt(wallClockAsUtc);
+  utc = wallClockAsUtc - offsetAt(utc);
+  return new Date(utc);
+}
+
+module.exports = { getNowInTimezone, isPastDueDate, dueDateToUtc };

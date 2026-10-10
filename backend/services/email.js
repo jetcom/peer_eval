@@ -792,6 +792,50 @@ ${studentList}
 }
 
 /**
+ * Daily digest of the automatic reminders sent to a teacher's students
+ * over the past 24 hours, grouped by class
+ */
+async function sendTeacherReminderDigest({ teacherEmail, teacherName, classes }) {
+  const totalStudents = classes.reduce((n, c) => n + c.students.length, 0);
+  const formatTime = (date, timeZone) => date.toLocaleString('en-US', {
+    timeZone, weekday: 'short', hour: 'numeric', minute: '2-digit'
+  });
+
+  const classSections = classes.map(c => `
+      <h3 style="color: #1a1a1a; margin: 24px 0 8px;">${escapeHtml(c.className)}</h3>
+      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        ${c.students.map(s => `
+        <tr style="border-bottom: 1px solid #eee;">
+          <td style="padding: 6px 8px 6px 0; vertical-align: top;">
+            ${escapeHtml(s.firstName)} ${escapeHtml(s.lastName)}<br>
+            <span style="color: #888;">${escapeHtml(s.email)}</span>
+          </td>
+          <td style="padding: 6px 8px; vertical-align: top;">${s.items.map(escapeHtml).join(', ')}</td>
+          <td style="padding: 6px 0; vertical-align: top; color: #666;">${s.sentTimes.map(t => formatTime(t, c.timezone)).join('<br>')}</td>
+        </tr>`).join('')}
+      </table>`).join('');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #1a1a1a;">Daily Reminder Summary</h2>
+      <p>Hi ${escapeHtml(teacherName)},</p>
+      <p>In the past 24 hours, automatic reminders went to ${totalStudents} student${totalStudents === 1 ? '' : 's'} with evaluations still incomplete:</p>
+      ${classSections}
+      <p style="color: #666; font-size: 14px; margin-top: 30px;">
+        — PeerEvals System
+      </p>
+    </div>
+  `;
+
+  const classLabel = classes.length === 1 ? classes[0].className : `${classes.length} classes`;
+  return sendEmail({
+    to: teacherEmail,
+    subject: `Daily Reminder Summary: ${totalStudents} student${totalStudents === 1 ? '' : 's'} in ${classLabel}`,
+    html,
+  });
+}
+
+/**
  * Notify a teacher that a paper review round failed to auto-start its
  * review period (e.g. not enough papers were submitted by the deadline)
  */
@@ -891,5 +935,6 @@ module.exports = {
   sendClassEnrollmentEmail,
   sendEvaluationConfirmation,
   notifyTeacherOfNudges,
+  sendTeacherReminderDigest,
   notifyTeacherOfAutoStartFailure,
 };

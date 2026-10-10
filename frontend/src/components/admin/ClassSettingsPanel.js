@@ -1384,7 +1384,9 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
         <div>
           <h3 style={{ margin: 0, marginBottom: '8px' }}>Automatic Email Reminders</h3>
           <p style={{ margin: 0, color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.9rem' }}>
-            Automatically notify students before evaluation deadlines.
+            Automatically notify students before evaluation deadlines. Students who haven't finished are
+            reminded at the time you choose, then again 24, 12, 6, 3, 2, and 1 hours before the deadline.
+            You'll get one summary email each morning listing who was reminded.
           </p>
         </div>
         {!addingReminder && (

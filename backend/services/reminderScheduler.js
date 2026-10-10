@@ -1,7 +1,7 @@
 const cron = require('node-cron');
 const prisma = require('../lib/prisma');
 const emailService = require('./email');
-const { isPastDueDate, getNowInTimezone } = require('../utils/dateUtils');
+const { isPastDueDate, getNowInTimezone, dueDateToUtc } = require('../utils/dateUtils');
 const { startReviewPeriod } = require('./paperReviewService');
 const { vetInstructor } = require('./instructorVetting');
 const { buildInstructorActionLinks } = require('../utils/instructorActionLinks');
@@ -198,14 +198,39 @@ async function processReminders() {
   }
 }
 
+// Hours before a due date at which students with incomplete work are reminded.
+// A schedule's hoursBeforeDue is its first reminder; it then follows this
+// ladder, so reminders cluster near the deadline instead of repeating overnight.
+const REMINDER_MILESTONES_HOURS = [72, 48, 24, 12, 6, 3, 2, 1];
+
+function milestonesFor(hoursBeforeDue) {
+  return [hoursBeforeDue, ...REMINDER_MILESTONES_HOURS.filter(h => h < hoursBeforeDue)];
+}
+
+/**
+ * Start of the reminder window we're currently in for a due date, e.g. with
+ * 5h left the window is the 6h milestone and starts 6h before due. A student
+ * is reminded at most once per window. Returns null if the due date has passed
+ * or is beyond the first milestone.
+ */
+function currentWindowStart(dueDate, timezone, now, milestones) {
+  const dueMs = dueDateToUtc(dueDate, timezone).getTime();
+  const hoursLeft = (dueMs - now.getTime()) / 3600000;
+  if (hoursLeft <= 0) return null;
+
+  const reached = milestones.filter(h => h >= hoursLeft);
+  if (reached.length === 0) return null;
+
+  return new Date(dueMs - Math.min(...reached) * 3600000);
+}
+
 /**
  * Process a single reminder schedule.
  *
- * Strategy: find due dates that are in the future but within `hoursBeforeDue`
- * hours from now.  If such a due date exists AND we haven't already sent a
- * reminder for it, send one.  This is self-healing — if a cron cycle is missed
- * the next cycle will still catch it, rather than requiring an exact 30-minute
- * window hit.
+ * Finds due dates within `hoursBeforeDue` hours from now, and reminds each
+ * student with incomplete work once per milestone window (see
+ * REMINDER_MILESTONES_HOURS). This is self-healing — if a cron cycle is missed
+ * the next cycle in the same window still sends it.
  */
 async function processSchedule(schedule, now) {
   const { id, classId, hoursBeforeDue, nudgeTemplateId } = schedule;
@@ -227,6 +252,7 @@ async function processSchedule(schedule, now) {
     }
 
     const classTimezone = classInfo.dueDateTimezone || 'America/New_York';
+    const milestones = milestonesFor(hoursBeforeDue);
 
     // Build the "now" and "horizon" strings in the class's local timezone.
     // We want due dates where:  now < dueDate <= now + hoursBeforeDue
@@ -239,11 +265,32 @@ async function processSchedule(schedule, now) {
 
     const isAssignmentMode = classInfo.evaluationMode === 'assignments';
 
-    let studentsToRemind = [];
-    let assignmentName = null;
-    let dueDate = null;
-    let phase = null;
-    let firstAssignmentId = null;
+    const enrollments = await prisma.classEnrollment.findMany({
+      where: { classId },
+      include: {
+        user: { select: { id: true, email: true, firstName: true, lastName: true, role: true } }
+      }
+    });
+
+    const students = enrollments
+      .filter(e => e.user.role === 'student')
+      .map(e => e.user);
+    const studentIds = students.map(s => s.id);
+
+    // studentId → { student, items: [{ phase, assignmentId }] } still needing a
+    // reminder in the current window (incomplete + not yet reminded this window)
+    const toRemind = new Map();
+    const remindedAssignmentNames = new Set();
+
+    const addItem = (student, item) => {
+      if (!toRemind.has(student.id)) toRemind.set(student.id, { student, items: [] });
+      toRemind.get(student.id).items.push(item);
+    };
+
+    const alreadyRemindedThisWindow = (student, windowStart, item) =>
+      prisma.reminderLog.findFirst({
+        where: { classId, userId: student.id, ...item, sentAt: { gte: windowStart } }
+      });
 
     if (isAssignmentMode) {
       // Find assignments with eval types due between now and the horizon
@@ -267,24 +314,12 @@ async function processSchedule(schedule, now) {
 
       if (assignments.length === 0) return;
 
-      firstAssignmentId = assignments[0]?.id || null;
       console.log(`[ReminderScheduler] Class ${classId}: found ${assignments.length} assignment(s) due within ${hoursBeforeDue}h`);
 
-      const enrollments = await prisma.classEnrollment.findMany({
-        where: { classId },
-        include: {
-          user: { select: { id: true, email: true, firstName: true, lastName: true, role: true } }
-        }
-      });
-
-      const students = enrollments
-        .filter(e => e.user.role === 'student')
-        .map(e => e.user);
-      const studentIds = students.map(s => s.id);
-
       for (const assignment of assignments) {
-        dueDate = assignment.evalTypes[0]?.dueDate;
-        assignmentName = assignment.name;
+        const dueDate = assignment.evalTypes.map(et => et.dueDate).sort()[0];
+        const windowStart = currentWindowStart(dueDate, classTimezone, now, milestones);
+        if (!windowStart) continue;
 
         const evalTypeIds = assignment.evalTypes.map(et => et.id);
         const submittedEvals = await prisma.assignmentEvaluation.findMany({
@@ -296,23 +331,14 @@ async function processSchedule(schedule, now) {
         });
 
         const completedIds = new Set(submittedEvals.map(e => e.evaluatorId));
-        const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+        const item = { phase: null, assignmentId: assignment.id };
 
         for (const student of students) {
           if (completedIds.has(student.id)) continue;
+          if (await alreadyRemindedThisWindow(student, windowStart, item)) continue;
 
-          const recentReminder = await prisma.reminderLog.findFirst({
-            where: {
-              classId,
-              userId: student.id,
-              assignmentId: assignment.id,
-              sentAt: { gte: fourHoursAgo }
-            }
-          });
-
-          if (!recentReminder) {
-            studentsToRemind.push(student);
-          }
+          addItem(student, item);
+          remindedAssignmentNames.add(assignment.name);
         }
       }
     } else {
@@ -325,18 +351,6 @@ async function processSchedule(schedule, now) {
       });
 
       if (phaseDueDates.length === 0) return;
-
-      const enrollments = await prisma.classEnrollment.findMany({
-        where: { classId },
-        include: {
-          user: { select: { id: true, email: true, firstName: true, lastName: true, role: true } }
-        }
-      });
-
-      const students = enrollments
-        .filter(e => e.user.role === 'student')
-        .map(e => e.user);
-      const studentIds = students.map(s => s.id);
 
       const groupMembers = await prisma.groupMember.findMany({
         where: {
@@ -354,15 +368,14 @@ async function processSchedule(schedule, now) {
         }
       });
 
-      const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
-
-      // studentId → Set of phases still needing a reminder (incomplete + not recently reminded)
-      const studentPhasesMap = new Map();
-
       for (const pdd of phaseDueDates) {
         const phaseNum = pdd.phase;
+        const windowStart = currentWindowStart(pdd.dueDate, classTimezone, now, milestones);
+        if (!windowStart) continue;
 
         console.log(`[ReminderScheduler] Class ${classId}: found phase ${phaseNum} due ${pdd.dueDate} (within ${hoursBeforeDue}h)`);
+
+        const item = { phase: phaseNum, assignmentId: null };
 
         for (const student of students) {
           const membership = groupMembers.find(gm => gm.userId === student.id);
@@ -403,88 +416,18 @@ async function processSchedule(schedule, now) {
           const hasIncomplete = teammateIds.some(tid => !evaluatedIds.has(tid));
 
           if (!hasIncomplete) continue;
+          if (await alreadyRemindedThisWindow(student, windowStart, item)) continue;
 
-          const recentReminder = await prisma.reminderLog.findFirst({
-            where: {
-              classId,
-              userId: student.id,
-              phase: phaseNum,
-              sentAt: { gte: fourHoursAgo }
-            }
-          });
-
-          if (!recentReminder) {
-            if (!studentPhasesMap.has(student.id)) studentPhasesMap.set(student.id, { student, phases: [] });
-            studentPhasesMap.get(student.id).phases.push(phaseNum);
-          }
+          addItem(student, item);
         }
       }
-
-      if (studentPhasesMap.size === 0) return;
-
-      const phaseStudents = [...studentPhasesMap.values()].map(e => e.student);
-
-      console.log(`[ReminderScheduler] Sending ${phaseStudents.length} reminders for class ${classInfo.name}`);
-
-      let templateSubject = null;
-      let templateMessage = null;
-      if (nudgeTemplateId) {
-        const template = await prisma.nudgeTemplate.findUnique({
-          where: { id: nudgeTemplateId }
-        });
-        if (template) {
-          templateSubject = template.subject;
-          templateMessage = template.message;
-        }
-      }
-
-      // Log one entry per (student, phase) for per-phase dedup tracking
-      const logsToCreate = [];
-      for (const { student, phases } of studentPhasesMap.values()) {
-        for (const phaseNum of phases) {
-          logsToCreate.push({ classId, userId: student.id, phase: phaseNum, assignmentId: null, sentAt: now });
-        }
-      }
-      await prisma.reminderLog.createMany({ data: logsToCreate });
-
-      await prisma.reminderSchedule.update({
-        where: { id },
-        data: { lastSentAt: now }
-      });
-
-      const result = await emailService.sendBulkNudge({
-        students: phaseStudents,
-        className: classInfo.name,
-        assignmentName: null,
-        message: templateMessage,
-        instructorName: `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`,
-        subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
-      });
-
-      if (result.successful > 0 && classInfo.teacher) {
-        await emailService.notifyTeacherOfNudges({
-          teacherEmail: classInfo.teacher.email,
-          teacherName: classInfo.teacher.firstName,
-          className: classInfo.name,
-          students: phaseStudents.map(s => ({
-            firstName: s.firstName,
-            lastName: s.lastName,
-            email: s.email
-          })),
-          isReminder: true
-        });
-      }
-
-      console.log(`[ReminderScheduler] Sent ${result.successful} reminders, ${result.failed} failed for class ${classInfo.name}`);
-
-      return;
     }
 
-    if (studentsToRemind.length === 0) {
-      return;
-    }
+    if (toRemind.size === 0) return;
 
-    console.log(`[ReminderScheduler] Sending ${studentsToRemind.length} reminders for class ${classInfo.name} (due ${dueDate})`);
+    const studentsToRemind = [...toRemind.values()].map(e => e.student);
+
+    console.log(`[ReminderScheduler] Sending ${studentsToRemind.length} reminders for class ${classInfo.name}`);
 
     // Get template if specified
     let templateSubject = null;
@@ -499,18 +442,16 @@ async function processSchedule(schedule, now) {
       }
     }
 
-    // Log the reminders BEFORE sending to prevent duplicates during deployments
-    const logsToCreate = studentsToRemind.map(student => ({
-      classId,
-      userId: student.id,
-      phase: isAssignmentMode ? null : phase,
-      assignmentId: isAssignmentMode ? firstAssignmentId : null,
-      sentAt: now
-    }));
-
-    await prisma.reminderLog.createMany({
-      data: logsToCreate
-    });
+    // Log the reminders BEFORE sending to prevent duplicates during deployments.
+    // One entry per (student, phase/assignment) for per-item window tracking;
+    // these logs also feed the teacher's daily digest.
+    const logsToCreate = [];
+    for (const { student, items } of toRemind.values()) {
+      for (const item of items) {
+        logsToCreate.push({ classId, userId: student.id, ...item, sentAt: now });
+      }
+    }
+    await prisma.reminderLog.createMany({ data: logsToCreate });
 
     await prisma.reminderSchedule.update({
       where: { id },
@@ -520,29 +461,101 @@ async function processSchedule(schedule, now) {
     const result = await emailService.sendBulkNudge({
       students: studentsToRemind,
       className: classInfo.name,
-      assignmentName,
+      assignmentName: remindedAssignmentNames.size === 1 ? [...remindedAssignmentNames][0] : null,
       message: templateMessage,
       instructorName: `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`,
       subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
     });
 
-    if (result.successful > 0 && classInfo.teacher) {
-      await emailService.notifyTeacherOfNudges({
-        teacherEmail: classInfo.teacher.email,
-        teacherName: classInfo.teacher.firstName,
-        className: classInfo.name,
-        students: studentsToRemind.map(s => ({
-          firstName: s.firstName,
-          lastName: s.lastName,
-          email: s.email
-        })),
-        isReminder: true
-      });
-    }
-
     console.log(`[ReminderScheduler] Sent ${result.successful} reminders, ${result.failed} failed for class ${classInfo.name}`);
   } catch (err) {
     console.error(`[ReminderScheduler] Error processing schedule ${id}:`, err);
+  }
+}
+
+/**
+ * Email each teacher one digest of the automatic reminders sent to their
+ * students over the past 24 hours. Runs daily; replaces the per-batch
+ * notification so a night of reminders doesn't mean a pile of teacher emails.
+ */
+async function processReminderDigests() {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const logs = await prisma.reminderLog.findMany({
+      where: { sentAt: { gte: since } },
+      orderBy: { sentAt: 'asc' }
+    });
+    if (logs.length === 0) return;
+
+    const classIds = [...new Set(logs.map(l => l.classId))];
+    const userIds = [...new Set(logs.map(l => l.userId))];
+    const assignmentIds = [...new Set(logs.map(l => l.assignmentId).filter(Boolean))];
+
+    const [classes, users, assignments] = await Promise.all([
+      prisma.class.findMany({
+        where: { id: { in: classIds } },
+        select: { id: true, name: true, dueDateTimezone: true, teacher: { select: { id: true, email: true, firstName: true } } }
+      }),
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, firstName: true, lastName: true, email: true }
+      }),
+      prisma.assignment.findMany({
+        where: { id: { in: assignmentIds } },
+        select: { id: true, name: true }
+      })
+    ]);
+
+    const userById = new Map(users.map(u => [u.id, u]));
+    const assignmentById = new Map(assignments.map(a => [a.id, a]));
+    const itemLabel = (log) => log.assignmentId
+      ? (assignmentById.get(log.assignmentId)?.name || 'Assignment')
+      : (log.phase === 0 ? 'Final evaluation' : `Phase ${log.phase}`);
+
+    // teacherId → { teacher, classes: [{ className, timezone, students: [...] }] }
+    const byTeacher = new Map();
+    for (const cls of classes) {
+      if (!cls.teacher) continue;
+
+      // studentId → { name, email, items: Set, sends: [Date] }
+      const studentMap = new Map();
+      for (const log of logs.filter(l => l.classId === cls.id)) {
+        const user = userById.get(log.userId);
+        if (!user) continue;
+        if (!studentMap.has(user.id)) {
+          studentMap.set(user.id, { firstName: user.firstName, lastName: user.lastName, email: user.email, items: new Set(), sentTimes: new Set() });
+        }
+        const entry = studentMap.get(user.id);
+        entry.items.add(itemLabel(log));
+        entry.sentTimes.add(log.sentAt.getTime());
+      }
+      if (studentMap.size === 0) continue;
+
+      if (!byTeacher.has(cls.teacher.id)) byTeacher.set(cls.teacher.id, { teacher: cls.teacher, classes: [] });
+      byTeacher.get(cls.teacher.id).classes.push({
+        className: cls.name,
+        timezone: cls.dueDateTimezone || 'America/New_York',
+        students: [...studentMap.values()]
+          .map(s => ({ ...s, items: [...s.items], sentTimes: [...s.sentTimes].sort().map(t => new Date(t)) }))
+          .sort((a, b) => a.lastName.localeCompare(b.lastName))
+      });
+    }
+
+    for (const { teacher, classes: teacherClasses } of byTeacher.values()) {
+      try {
+        await emailService.sendTeacherReminderDigest({
+          teacherEmail: teacher.email,
+          teacherName: teacher.firstName,
+          classes: teacherClasses
+        });
+      } catch (emailErr) {
+        console.error(`[ReminderScheduler] Failed to send reminder digest to teacher ${teacher.id}:`, emailErr.message);
+      }
+    }
+
+    console.log(`[ReminderScheduler] Sent reminder digests to ${byTeacher.size} teacher(s)`);
+  } catch (err) {
+    console.error('[ReminderScheduler] processReminderDigests error:', err);
   }
 }
 
@@ -606,6 +619,7 @@ async function processPendingInstructorReminders() {
 }
 
 let pendingInstructorTask = null;
+let reminderDigestTask = null;
 
 function startScheduler() {
   if (schedulerTask) {
@@ -618,6 +632,9 @@ function startScheduler() {
 
   // Daily 9am Eastern: nudge admins about instructor requests waiting 3+ / 7+ days
   pendingInstructorTask = cron.schedule('0 9 * * *', processPendingInstructorReminders, { timezone: 'America/New_York' });
+
+  // Daily 8am Eastern: one digest per teacher of yesterday's automatic reminders
+  reminderDigestTask = cron.schedule('0 8 * * *', processReminderDigests, { timezone: 'America/New_York' });
 
   console.log('[ReminderScheduler] Scheduler started (runs every 15 minutes)');
 
@@ -641,11 +658,16 @@ function stopScheduler() {
     pendingInstructorTask.stop();
     pendingInstructorTask = null;
   }
+  if (reminderDigestTask) {
+    reminderDigestTask.stop();
+    reminderDigestTask = null;
+  }
 }
 
 module.exports = {
   startScheduler,
   stopScheduler,
   processReminders,
-  processPendingInstructorReminders
+  processPendingInstructorReminders,
+  processReminderDigests
 };
