@@ -416,17 +416,20 @@ function describeDue(due, now = new Date()) {
       ? `in about ${Math.round(hoursLeft / 24)} days`
       : `in about ${Math.round(hoursLeft)} hours`;
 
+  // Early reminders (the 24h milestone and beyond) read as a heads-up and
+  // name the weekday, since "today"/"tomorrow" is ambiguous around midnight
+  const weekday = dueAt.toLocaleDateString('en-US', { timeZone: timezone, weekday: 'long' });
   let subjectPrefix;
   if (hoursLeft <= 1) {
     subjectPrefix = 'Due in less than an hour';
   } else if (hoursLeft < 6) {
     subjectPrefix = `Due in ${Math.round(hoursLeft)} hours`;
+  } else if (hoursLeft > 13) {
+    subjectPrefix = `Coming up ${weekday} at ${time}`;
   } else if (dayOf(dueAt) === dayOf(now)) {
     subjectPrefix = `Due today at ${time}`;
-  } else if (dayOf(dueAt) === dayOf(new Date(now.getTime() + 24 * 3600000))) {
-    subjectPrefix = `Due tomorrow at ${time}`;
   } else {
-    subjectPrefix = `Due ${dueAt.toLocaleDateString('en-US', { timeZone: timezone, weekday: 'long' })} at ${time}`;
+    subjectPrefix = `Due tomorrow at ${time}`;
   }
 
   const fullDate = dueAt.toLocaleString('en-US', {
