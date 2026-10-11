@@ -401,10 +401,58 @@ async function sendNudgeEmail({ student, className, assignmentName, message, ins
 }
 
 /**
- * Build nudge email HTML for a student
+ * Describe how soon a deadline is, for automatic reminder emails.
+ * `due` is { dueAt: Date, timezone } in the class's timezone.
+ */
+function describeDue(due, now = new Date()) {
+  const { dueAt, timezone } = due;
+  const hoursLeft = (dueAt.getTime() - now.getTime()) / 3600000;
+  const dayOf = (date) => date.toLocaleDateString('en-CA', { timeZone: timezone });
+  const time = dueAt.toLocaleTimeString('en-US', { timeZone: timezone, hour: 'numeric', minute: '2-digit' });
+
+  const relative = hoursLeft <= 1
+    ? 'in less than an hour'
+    : hoursLeft >= 36
+      ? `in about ${Math.round(hoursLeft / 24)} days`
+      : `in about ${Math.round(hoursLeft)} hours`;
+
+  let subjectPrefix;
+  if (hoursLeft <= 1) {
+    subjectPrefix = 'Due in less than an hour';
+  } else if (hoursLeft < 6) {
+    subjectPrefix = `Due in ${Math.round(hoursLeft)} hours`;
+  } else if (dayOf(dueAt) === dayOf(now)) {
+    subjectPrefix = `Due today at ${time}`;
+  } else if (dayOf(dueAt) === dayOf(new Date(now.getTime() + 24 * 3600000))) {
+    subjectPrefix = `Due tomorrow at ${time}`;
+  } else {
+    subjectPrefix = `Due ${dueAt.toLocaleDateString('en-US', { timeZone: timezone, weekday: 'long' })} at ${time}`;
+  }
+
+  const fullDate = dueAt.toLocaleString('en-US', {
+    timeZone: timezone, weekday: 'long', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+  }).replace(/, (\d{1,2}:\d{2})/, ' at $1');
+
+  return {
+    subjectPrefix,
+    dueLine: `${fullDate} (${relative})`,
+    urgent: hoursLeft <= 3,
+    relative
+  };
+}
+
+/**
+ * Build nudge email HTML for a student. If the student carries a `due`
+ * (automatic reminders), the email states the deadline and time left.
  */
 function buildNudgeEmailHtml({ student, className, assignmentName, message, instructorName }) {
   const { firstName } = student;
+  const due = student.due ? describeDue(student.due) : null;
+
+  const defaultMessage = due?.urgent
+    ? `Your peer evaluations are due <strong>${due.relative}</strong> and are not complete yet. Please log in and finish them now.`
+    : 'You have incomplete peer evaluations that need your attention. Please log in and complete them as soon as possible.';
 
   return `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -414,6 +462,7 @@ function buildNudgeEmailHtml({ student, className, assignmentName, message, inst
       <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
         <p style="margin: 5px 0;"><strong>Class:</strong> ${className}</p>
         ${assignmentName ? `<p style="margin: 5px 0;"><strong>Assignment:</strong> ${assignmentName}</p>` : ''}
+        ${due ? `<p style="margin: 5px 0;${due.urgent ? ' color: #b91c1c;' : ''}"><strong>Due:</strong> ${due.dueLine}</p>` : ''}
       </div>
 
       ${message ? `
@@ -421,7 +470,7 @@ function buildNudgeEmailHtml({ student, className, assignmentName, message, inst
           <p style="margin: 0; white-space: pre-wrap;">${message}</p>
         </div>
       ` : `
-        <p>You have incomplete peer evaluations that need your attention. Please log in and complete them as soon as possible.</p>
+        <p>${defaultMessage}</p>
       `}
 
       <p>
@@ -456,10 +505,14 @@ async function sendBulkNudge({ students, className, assignmentName, message, ins
   const emailSubject = subject || `Action Required: Incomplete Evaluations for ${className}`;
   const emails = students.map(student => {
     const html = buildNudgeEmailHtml({ student, className, assignmentName, message, instructorName });
+    // Automatic reminders lead the subject with the deadline, e.g. "Due in 2 hours: ..."
+    const studentSubject = student.due
+      ? `${describeDue(student.due).subjectPrefix}: ${subject || `Peer evaluations for ${className}`}`
+      : emailSubject;
     return {
       from: DEFAULT_FROM,
       to: [student.email],
-      subject: emailSubject,
+      subject: studentSubject,
       html,
       text: stripHtml(html),
     };

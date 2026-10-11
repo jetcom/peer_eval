@@ -277,14 +277,17 @@ async function processSchedule(schedule, now) {
       .map(e => e.user);
     const studentIds = students.map(s => s.id);
 
-    // studentId → { student, items: [{ phase, assignmentId }] } still needing a
-    // reminder in the current window (incomplete + not yet reminded this window)
+    // studentId → { student, items: [{ phase, assignmentId }], dueDate } still
+    // needing a reminder in the current window (incomplete + not yet reminded
+    // this window). dueDate is the earliest of those items, shown in the email.
     const toRemind = new Map();
     const remindedAssignmentNames = new Set();
 
-    const addItem = (student, item) => {
-      if (!toRemind.has(student.id)) toRemind.set(student.id, { student, items: [] });
-      toRemind.get(student.id).items.push(item);
+    const addItem = (student, item, dueDate) => {
+      if (!toRemind.has(student.id)) toRemind.set(student.id, { student, items: [], dueDate });
+      const entry = toRemind.get(student.id);
+      entry.items.push(item);
+      if (dueDate < entry.dueDate) entry.dueDate = dueDate;
     };
 
     const alreadyRemindedThisWindow = (student, windowStart, item) =>
@@ -337,7 +340,7 @@ async function processSchedule(schedule, now) {
           if (completedIds.has(student.id)) continue;
           if (await alreadyRemindedThisWindow(student, windowStart, item)) continue;
 
-          addItem(student, item);
+          addItem(student, item, dueDate);
           remindedAssignmentNames.add(assignment.name);
         }
       }
@@ -418,14 +421,17 @@ async function processSchedule(schedule, now) {
           if (!hasIncomplete) continue;
           if (await alreadyRemindedThisWindow(student, windowStart, item)) continue;
 
-          addItem(student, item);
+          addItem(student, item, pdd.dueDate);
         }
       }
     }
 
     if (toRemind.size === 0) return;
 
-    const studentsToRemind = [...toRemind.values()].map(e => e.student);
+    const studentsToRemind = [...toRemind.values()].map(e => ({
+      ...e.student,
+      due: { dueAt: dueDateToUtc(e.dueDate, classTimezone), timezone: classTimezone }
+    }));
 
     console.log(`[ReminderScheduler] Sending ${studentsToRemind.length} reminders for class ${classInfo.name}`);
 
@@ -464,7 +470,8 @@ async function processSchedule(schedule, now) {
       assignmentName: remindedAssignmentNames.size === 1 ? [...remindedAssignmentNames][0] : null,
       message: templateMessage,
       instructorName: `${classInfo.teacher.firstName} ${classInfo.teacher.lastName}`,
-      subject: templateSubject || `Reminder: Evaluations Due Soon for ${classInfo.name}`
+      // Each email's subject is prefixed with its deadline, e.g. "Due in 2 hours: ..."
+      subject: templateSubject
     });
 
     console.log(`[ReminderScheduler] Sent ${result.successful} reminders, ${result.failed} failed for class ${classInfo.name}`);
