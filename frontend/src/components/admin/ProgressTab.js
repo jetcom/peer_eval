@@ -10,7 +10,8 @@ function ProgressTab({
   classGroups,
   evaluations,
   finalCommentsData,
-  assignmentEvaluations
+  assignmentEvaluations,
+  onGoToAssignments
 }) {
   const [filterGroup, setFilterGroup] = useState('all');
   const [heatmapPhase, setHeatmapPhase] = useState(1);
@@ -427,6 +428,11 @@ function ProgressTab({
         <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ margin: 0 }}>Progress Overview (Assignment Mode)</h2>
+            {onGoToAssignments && assignments.some(a => (a.eval_types || []).some(et => et.eval_type === 'audience')) && (
+              <button type="button" className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={onGoToAssignments}>
+                Presentation schedule & absences
+              </button>
+            )}
             {showGroups && (
               <select
                 value={filterGroup}

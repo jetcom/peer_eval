@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
+import AssignmentsTab from '../components/admin/AssignmentsTab';
 import EvaluationsTab from '../components/admin/EvaluationsTab';
 import ReportsTab from '../components/admin/ReportsTab';
 import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
@@ -645,6 +646,14 @@ function TeacherDashboard() {
                 >
                   Progress
                 </button>
+                {currentClass?.evaluation_mode === 'assignments' && (
+                  <button
+                    className={`tab ${activeTab === 'assignments' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('assignments')}
+                  >
+                    Assignments
+                  </button>
+                )}
                 <button
                   className={`tab ${activeTab === 'students' ? 'active' : ''}`}
                   onClick={() => setActiveTab('students')}
@@ -684,6 +693,16 @@ function TeacherDashboard() {
                 evaluations={evaluations}
                 finalCommentsData={finalCommentsData}
                 assignmentEvaluations={assignmentEvaluations}
+                onGoToAssignments={() => setActiveTab('assignments')}
+              />
+            )}
+
+            {activeTab === 'assignments' && currentClass?.evaluation_mode === 'assignments' && (
+              <AssignmentsTab
+                darkMode={darkMode}
+                classId={selectedClass}
+                classStudents={students}
+                classGroups={groups}
               />
             )}
 

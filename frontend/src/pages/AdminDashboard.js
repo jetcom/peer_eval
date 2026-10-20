@@ -14,6 +14,7 @@ import GroupsTab from '../components/admin/GroupsTab';
 import EvaluationsTab from '../components/admin/EvaluationsTab';
 import ReportsTab from '../components/admin/ReportsTab';
 import ProgressTab from '../components/admin/ProgressTab';
+import AssignmentsTab from '../components/admin/AssignmentsTab';
 import TemplatesTab from '../components/admin/TemplatesTab';
 import NudgeTemplatesTab from '../components/admin/NudgeTemplatesTab';
 import ActivityLogsTab from '../components/admin/ActivityLogsTab';
@@ -80,6 +81,7 @@ function AdminDashboard() {
   const fileInputRef = useRef(null);
 
   const showGroups = !!classes?.find(c => c.id === parseInt(selectedClass))?.show_groups;
+  const isAssignmentClass = classes?.find(c => c.id === parseInt(selectedClass))?.evaluation_mode === 'assignments';
 
   useEffect(() => {
     fetchData();
@@ -906,6 +908,14 @@ function AdminDashboard() {
           >
             Progress
           </button>
+          {isAssignmentClass && (
+            <button
+              className={`admin-tab ${activeTab === 'assignments' ? 'active' : ''}`}
+              onClick={() => setActiveTab('assignments')}
+            >
+              Assignments
+            </button>
+          )}
           <button
             className={`admin-tab ${activeTab === 'reports' ? 'active' : ''}`}
             onClick={() => setActiveTab('reports')}
@@ -1043,6 +1053,16 @@ function AdminDashboard() {
             evaluations={evaluations}
             finalCommentsData={finalCommentsData}
             assignmentEvaluations={assignmentEvaluations}
+            onGoToAssignments={() => setActiveTab('assignments')}
+          />
+        )}
+
+        {activeTab === 'assignments' && isAssignmentClass && (
+          <AssignmentsTab
+            darkMode={darkMode}
+            classId={parseInt(selectedClass)}
+            classStudents={classStudents}
+            classGroups={classGroups}
           />
         )}
 
