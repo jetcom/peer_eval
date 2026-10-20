@@ -345,6 +345,8 @@ function ProgressTab({
     const assignments = assignmentEvaluations?.assignments || [];
     const individualEvals = assignmentEvaluations?.individual_evaluations || [];
     const groupEvals = assignmentEvaluations?.group_evaluations || [];
+    // Per-student audience counts from the server (eligible / required / completed)
+    const audienceProgress = assignmentEvaluations?.audience_progress || {};
 
     // Calculate student progress per assignment
     const getStudentProgress = () => {
@@ -360,7 +362,13 @@ function ProgressTab({
           let totalCompleted = 0;
 
           evalTypes.forEach(evalType => {
-            if (evalType.target_type === 'individual') {
+            const audienceCounts = audienceProgress[evalType.id]?.[student.id];
+            if (evalType.eval_type === 'audience' && audienceCounts) {
+              // Audience evaluations: required follows the round's minimum
+              // completion; self and own group are already excluded
+              totalExpected += audienceCounts.required;
+              totalCompleted += Math.min(audienceCounts.completed, audienceCounts.required);
+            } else if (evalType.target_type === 'individual') {
               // Individual evaluations - count teammates
               const teammates = studentGroup?.members?.filter(m => m.role === 'student') || [];
               const includeSelf = evalType.include_self;

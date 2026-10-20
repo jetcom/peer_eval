@@ -4,6 +4,7 @@ const { parse } = require('csv-parse');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 const { naturalCompare } = require('../utils/naturalSort');
+const { estimateExpectedSubmissions } = require('../services/audienceService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const emailService = require('../services/email');
 
@@ -166,11 +167,14 @@ router.get('/analytics', authenticateToken, requireAdmin, async (req, res) => {
         // Assignment-based: per eval type
         for (const a of c.assignments) {
           for (const et of a.evalTypes) {
-            if (et.targetType === 'individual') {
+            if (et.evalType === 'audience') {
+              // Each student owes evaluations of the other presenters,
+              // scaled by the round's minimum-completion percentage
+              expectedSubmissions += estimateExpectedSubmissions(et, studentCount, c._count.groups);
+            } else if (et.targetType === 'individual') {
               const targets = et.includeSelf ? studentCount : (studentCount - 1);
               expectedSubmissions += studentCount * targets;
             } else {
-              // Group evals: each student evaluates each group (rough estimate)
               expectedSubmissions += studentCount;
             }
           }
@@ -1788,6 +1792,7 @@ router.post('/:id/copy', authenticateToken, requireTeacherOrAdmin, async (req, r
                 includeSelf: evalType.includeSelf,
                 isRequired: evalType.isRequired,
                 minCompletion: evalType.minCompletion,
+                evalWindowHours: evalType.evalWindowHours,
                 requireComments: evalType.requireComments,
                 minCommentWords: evalType.minCommentWords,
                 allowLate: evalType.allowLate,

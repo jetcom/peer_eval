@@ -49,6 +49,7 @@ model User {
   papersAuthored             Paper[]                @relation("PaperAuthor")
   paperReviewsAssigned       PaperReviewAssignment[] @relation("PaperReviewer")
   teacherPaperReviews        PaperReview[]          @relation("TeacherPaperReviews")
+  presentationSlots          PresentationSlot[]
 
   @@map("users")
 }
@@ -125,8 +126,9 @@ model Group {
   createdAt DateTime @default(now()) @map("created_at")
 
   class            Class?            @relation(fields: [classId], references: [id], onDelete: Cascade)
-  members          GroupMember[]
-  groupEvaluations GroupEvaluation[]
+  members           GroupMember[]
+  groupEvaluations  GroupEvaluation[]
+  presentationSlots PresentationSlot[]
 
   @@map("groups")
 }
@@ -311,13 +313,17 @@ model AssignmentEvalType {
   minCommentWords Int?    @map("min_comment_words")
   allowLate       Int     @default(1) @map("allow_late")
   dueDate         String? @map("due_date")
+  // Audience rounds with staggered presentations: each presenter's evaluations
+  // are due this many hours after their presentation (null = use dueDate)
+  evalWindowHours Int?    @map("eval_window_hours")
 
-  assignment       Assignment               @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  criteria         EvalTypeCriterion[]
-  evaluations      AssignmentEvaluation[]
-  groupEvaluations GroupEvaluation[]
-  extensions       AssignmentExtension[]
-  paperReviewRound PaperReviewRound?
+  assignment        Assignment               @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  criteria          EvalTypeCriterion[]
+  evaluations       AssignmentEvaluation[]
+  groupEvaluations  GroupEvaluation[]
+  extensions        AssignmentExtension[]
+  paperReviewRound  PaperReviewRound?
+  presentationSlots PresentationSlot[]
 
   @@unique([assignmentId, evalType])
   @@map("assignment_eval_types")
@@ -422,6 +428,27 @@ model AssignmentExtension {
 
   @@unique([userId, evalTypeId])
   @@map("assignment_extensions")
+}
+
+// When each presenter (a group, or a student for individual presentations)
+// presents for an audience eval type. Drives per-presenter due dates and
+// keeps evaluation forms locked until the presentation has happened.
+model PresentationSlot {
+  id               Int      @id @default(autoincrement())
+  evalTypeId       Int      @map("eval_type_id")
+  groupId          Int?     @map("group_id")
+  userId           Int?     @map("user_id")
+  presentationDate String   @map("presentation_date") // YYYY-MM-DDTHH:mm in the class timezone
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @map("updated_at")
+
+  evalType AssignmentEvalType @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  group    Group?             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user     User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([evalTypeId, groupId])
+  @@unique([evalTypeId, userId])
+  @@map("presentation_slots")
 }
 
 // ==========================================

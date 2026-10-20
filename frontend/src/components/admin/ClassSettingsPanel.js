@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import PresentationScheduleModal from './PresentationScheduleModal';
 
 // Helper function to normalize datetime input - defaults to 11:59 PM if only date is provided
 function normalizeDateTime(value) {
@@ -70,6 +71,8 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
   const [applyingTemplate, setApplyingTemplate] = useState(null);
   const [successMessage, setSuccessMessage] = useState('');
   const [copiedLinkFor, setCopiedLinkFor] = useState(null);
+  const [assignmentError, setAssignmentError] = useState('');
+  const [scheduleEvalType, setScheduleEvalType] = useState(null); // { evalType, assignment } being scheduled
   const assignmentListRef = useRef(null);
   const [reminderSchedules, setReminderSchedules] = useState([]);
   const [nudgeTemplates, setNudgeTemplates] = useState([]);
@@ -538,6 +541,119 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
     }
   };
 
+  // Replace one assignment in local state with the server's version
+  const replaceAssignment = (updated) => {
+    const assignments = editingClass.assignments || [];
+    setEditingClass({
+      ...editingClass,
+      assignments: assignments.map(a => a.id === updated.id ? updated : a)
+    });
+  };
+
+  const handleUpdateEvalType = async (evalTypeId, patch) => {
+    setAssignmentError('');
+    try {
+      const res = await axios.put(`/api/assignments/eval-type/${evalTypeId}`, patch);
+      replaceAssignment(res.data);
+    } catch (err) {
+      console.error('Failed to update evaluation settings:', err);
+      setAssignmentError(err.response?.data?.error || 'Failed to update evaluation settings');
+    }
+  };
+
+  // Controls for an audience (in-class presentation) round: who presents,
+  // how long after each presentation its evaluations are due, and how many
+  // presenters each student must evaluate
+  const renderAudienceSettings = (assignment, et) => {
+    const scheduled = (et.presentation_slots || []).length;
+    const smallInput = {
+      width: '60px',
+      fontSize: '0.8rem',
+      padding: '2px 6px',
+      borderRadius: '3px',
+      border: `1px solid ${darkMode ? '#444' : '#ccc'}`,
+      background: darkMode ? '#2a2a2a' : '#fff',
+      color: darkMode ? '#ccc' : '#333'
+    };
+    const saveNumberOnBlur = (field, current, { min, max }) => (e) => {
+      const raw = e.target.value.trim();
+      let val = raw === '' ? null : parseInt(raw);
+      if (val !== null && (Number.isNaN(val) || val < min || (max != null && val > max))) {
+        e.target.value = current ?? '';
+        return;
+      }
+      if (val === (current ?? null)) return;
+      handleUpdateEvalType(et.id, { [field]: val });
+    };
+    // The panel is a form, so Enter must not submit it
+    const blurOnEnter = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        e.target.blur();
+      }
+    };
+
+    return (
+      <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '8px 16px', alignItems: 'center' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+          Presenters:
+          <select
+            value={et.target_type}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (next === et.target_type) return;
+              if (scheduled > 0 && !window.confirm('Switching presenters clears the presentation schedule for this round. Continue?')) return;
+              handleUpdateEvalType(et.id, { target_type: next });
+            }}
+            style={{ ...smallInput, width: 'auto', cursor: 'pointer' }}
+          >
+            <option value="group">Groups</option>
+            <option value="individual">Individual students</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+          Evaluations due
+          <input
+            type="number"
+            min="0"
+            key={`win-${et.id}-${et.eval_window_hours ?? ''}`}
+            defaultValue={et.eval_window_hours ?? ''}
+            placeholder="—"
+            onBlur={saveNumberOnBlur('eval_window_hours', et.eval_window_hours, { min: 0 })}
+            onKeyDown={blurOnEnter}
+            style={smallInput}
+            title="Leave blank to use the assignment's due date for every presenter"
+          />
+          hours after each presentation
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+          Must evaluate at least
+          <input
+            type="number"
+            min="1"
+            max="100"
+            key={`min-${et.id}-${et.min_completion ?? ''}`}
+            defaultValue={et.min_completion ?? ''}
+            placeholder="100"
+            onBlur={saveNumberOnBlur('min_completion', et.min_completion, { min: 1, max: 100 })}
+            onKeyDown={blurOnEnter}
+            style={smallInput}
+            title="Percentage of the other presenters each student must evaluate (self and own group never count)"
+          />
+          % of presenters
+        </label>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setScheduleEvalType({ evalType: et, assignment })}
+          style={{ padding: '2px 10px', fontSize: '0.8rem' }}
+        >
+          Presentation schedule{scheduled > 0 ? ` (${scheduled} scheduled)` : ''}
+        </button>
+      </div>
+    );
+  };
+
   // Link students can follow (e.g. from the LMS) to this class, or straight
   // to one of its assignments
   const handleCopyStudentLink = async (assignmentId) => {
@@ -590,6 +706,20 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
             fontWeight: 500
           }}>
             {successMessage}
+          </div>
+        )}
+
+        {assignmentError && (
+          <div style={{
+            padding: '12px 16px',
+            marginBottom: '20px',
+            borderRadius: '6px',
+            background: darkMode ? 'rgba(231, 76, 60, 0.15)' : 'rgba(231, 76, 60, 0.1)',
+            border: '1px solid #e74c3c',
+            color: '#e74c3c',
+            fontWeight: 500
+          }}>
+            {assignmentError}
           </div>
         )}
 
@@ -931,6 +1061,7 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
                             Criteria: {et.criteria.map(c => c.name).join(', ')}
                           </div>
                         )}
+                        {et.eval_type === 'audience' && renderAudienceSettings(assignment, et)}
                       </div>
                     );
                   })}
@@ -1671,6 +1802,36 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
             </button>
           </div>
         </form>
+
+        {scheduleEvalType && (
+          <PresentationScheduleModal
+            darkMode={darkMode}
+            evalType={scheduleEvalType.evalType}
+            assignmentName={scheduleEvalType.assignment.name}
+            onClose={() => setScheduleEvalType(null)}
+            onSaved={(schedule) => {
+              const slots = schedule.presenters
+                .filter(p => p.presentation_date)
+                .map(p => ({
+                  group_id: p.kind === 'group' ? p.id : null,
+                  user_id: p.kind === 'individual' ? p.id : null,
+                  presentation_date: p.presentation_date
+                }));
+              const assignment = scheduleEvalType.assignment;
+              replaceAssignment({
+                ...assignment,
+                eval_types: (assignment.eval_types || []).map(x =>
+                  x.id === scheduleEvalType.evalType.id ? { ...x, presentation_slots: slots } : x
+                )
+              });
+              setScheduleEvalType({
+                ...scheduleEvalType,
+                assignment: { ...assignment, eval_types: (assignment.eval_types || []).map(x =>
+                  x.id === scheduleEvalType.evalType.id ? { ...x, presentation_slots: slots } : x) }
+              });
+            }}
+          />
+        )}
       </div>
     </div>
   );

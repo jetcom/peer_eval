@@ -184,15 +184,19 @@ router.get('/needs-nudge/:classId', authenticateToken, requireTeacher, async (re
       }
 
       // Get submitted evaluations for this assignment
-      const submittedEvals = await prisma.assignmentEvaluation.findMany({
-        where: {
-          assignmentId: parseInt(assignmentId),
-          evaluatorId: { in: studentIds }
-        },
-        select: { evaluatorId: true }
-      });
+      const evalTypeIds = assignment.evalTypes.map(et => et.id);
+      const [submittedEvals, submittedGroupEvals] = await Promise.all([
+        prisma.assignmentEvaluation.findMany({
+          where: { evalTypeId: { in: evalTypeIds }, evaluatorId: { in: studentIds } },
+          select: { evaluatorId: true }
+        }),
+        prisma.groupEvaluation.findMany({
+          where: { evalTypeId: { in: evalTypeIds }, evaluatorId: { in: studentIds } },
+          select: { evaluatorId: true }
+        })
+      ]);
 
-      const evaluatorsWhoSubmitted = new Set(submittedEvals.map(e => e.evaluatorId));
+      const evaluatorsWhoSubmitted = new Set([...submittedEvals, ...submittedGroupEvals].map(e => e.evaluatorId));
 
       const studentsNeedingNudge = students.filter(s => !evaluatorsWhoSubmitted.has(s.id));
 
@@ -373,15 +377,19 @@ router.post('/send-reminders', authenticateToken, requireTeacher, async (req, re
 
       // Get students who haven't completed
       const studentIds = assignment.class.enrollments.map(e => e.user.id);
-      const submittedEvals = await prisma.assignmentEvaluation.findMany({
-        where: {
-          assignmentId: assignment.id,
-          evaluatorId: { in: studentIds }
-        },
-        select: { evaluatorId: true }
-      });
+      const evalTypeIds = assignment.evalTypes.map(et => et.id);
+      const [submittedEvals, submittedGroupEvals] = await Promise.all([
+        prisma.assignmentEvaluation.findMany({
+          where: { evalTypeId: { in: evalTypeIds }, evaluatorId: { in: studentIds } },
+          select: { evaluatorId: true }
+        }),
+        prisma.groupEvaluation.findMany({
+          where: { evalTypeId: { in: evalTypeIds }, evaluatorId: { in: studentIds } },
+          select: { evaluatorId: true }
+        })
+      ]);
 
-      const completedIds = new Set(submittedEvals.map(e => e.evaluatorId));
+      const completedIds = new Set([...submittedEvals, ...submittedGroupEvals].map(e => e.evaluatorId));
       const incompleteStudents = assignment.class.enrollments
         .filter(e => !completedIds.has(e.user.id))
         .map(e => e.user);

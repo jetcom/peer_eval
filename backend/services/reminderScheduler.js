@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const prisma = require('../lib/prisma');
 const emailService = require('./email');
 const { isPastDueDate, getNowInTimezone, dueDateToUtc } = require('../utils/dateUtils');
+const { audienceRemindersDue } = require('../services/audienceService');
 const { startReviewPeriod } = require('./paperReviewService');
 const { vetInstructor } = require('./instructorVetting');
 const { buildInstructorActionLinks } = require('../utils/instructorActionLinks');
@@ -315,9 +316,13 @@ async function processSchedule(schedule, now) {
         }
       });
 
-      if (assignments.length === 0) return;
+      // Audience rounds with a presentation schedule: each presenter's
+      // evaluation window closes at its own time
+      const audienceDue = await audienceRemindersDue(classId, nowStr, horizonStr);
 
-      console.log(`[ReminderScheduler] Class ${classId}: found ${assignments.length} assignment(s) due within ${hoursBeforeDue}h`);
+      if (assignments.length === 0 && audienceDue.length === 0) return;
+
+      console.log(`[ReminderScheduler] Class ${classId}: found ${assignments.length} assignment(s) and ${audienceDue.length} presentation(s) due within ${hoursBeforeDue}h`);
 
       for (const assignment of assignments) {
         const dueDate = assignment.evalTypes.map(et => et.dueDate).sort()[0];
@@ -325,15 +330,24 @@ async function processSchedule(schedule, now) {
         if (!windowStart) continue;
 
         const evalTypeIds = assignment.evalTypes.map(et => et.id);
-        const submittedEvals = await prisma.assignmentEvaluation.findMany({
-          where: {
-            evalTypeId: { in: evalTypeIds },
-            evaluatorId: { in: studentIds }
-          },
-          select: { evaluatorId: true }
-        });
+        const [submittedEvals, submittedGroupEvals] = await Promise.all([
+          prisma.assignmentEvaluation.findMany({
+            where: {
+              evalTypeId: { in: evalTypeIds },
+              evaluatorId: { in: studentIds }
+            },
+            select: { evaluatorId: true }
+          }),
+          prisma.groupEvaluation.findMany({
+            where: {
+              evalTypeId: { in: evalTypeIds },
+              evaluatorId: { in: studentIds }
+            },
+            select: { evaluatorId: true }
+          })
+        ]);
 
-        const completedIds = new Set(submittedEvals.map(e => e.evaluatorId));
+        const completedIds = new Set([...submittedEvals, ...submittedGroupEvals].map(e => e.evaluatorId));
         const item = { phase: null, assignmentId: assignment.id };
 
         for (const student of students) {
@@ -342,6 +356,20 @@ async function processSchedule(schedule, now) {
 
           addItem(student, item, dueDate);
           remindedAssignmentNames.add(assignment.name);
+        }
+      }
+
+      for (const due of audienceDue) {
+        const windowStart = currentWindowStart(due.dueDate, classTimezone, now, milestones);
+        if (!windowStart) continue;
+
+        const item = { phase: null, assignmentId: due.assignment.id };
+        for (const student of due.students) {
+          if (!studentIds.includes(student.id)) continue;
+          if (await alreadyRemindedThisWindow(student, windowStart, item)) continue;
+
+          addItem(student, item, due.dueDate);
+          remindedAssignmentNames.add(due.assignment.name);
         }
       }
     } else {

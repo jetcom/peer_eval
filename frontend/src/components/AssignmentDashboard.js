@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
+import { formatWallClockShort } from '../utils/wallClock';
 function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, linkedAssignmentId }) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -54,12 +55,17 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, 
     const evals = assignment.evaluations;
     const group = assignmentData?.group;
 
-    if (!group) return { label: 'Not Ready', color: '#95a5a6' };
-
     let totalRequired = 0;
     let completed = 0;
 
-    if (evalType.target_type === 'individual') {
+    if (evalType.audience) {
+      // Audience evaluations: the server knows who this student may evaluate
+      // (everyone but themselves and their group) and how many are required
+      totalRequired = evalType.audience.required;
+      completed = evalType.audience.completed;
+    } else if (!group) {
+      return { label: 'Not Ready', color: '#95a5a6' };
+    } else if (evalType.target_type === 'individual') {
       // Peer evaluations: evaluate group members
       totalRequired = evalType.include_self
         ? group.members.length
@@ -68,9 +74,8 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, 
       // Count completed individual evals
       completed = evals.individual.filter(e => e.eval_type_id === evalType.id).length;
     } else {
-      // Group/audience evaluations: evaluate other groups
-      // For now, simplified - we'd need to fetch all groups
-      totalRequired = 1; // Placeholder
+      // Other group-targeted evaluations
+      totalRequired = 1;
       completed = evals.group.filter(e => e.eval_type_id === evalType.id).length;
     }
 
@@ -124,6 +129,14 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, 
 
   return (
     <>
+      {!assignmentData.group && assignmentData.assignments.some(a => (a.eval_types || []).some(et => et.eval_type !== 'audience')) && (
+        <div className="card" style={{ background: darkMode ? '#2a4a6a' : '#fff3cd', borderLeft: '4px solid #f39c12' }}>
+          <p style={{ margin: 0, color: darkMode ? '#e0e0e0' : '#856404' }}>
+            You have not been assigned to a group in this class yet. Peer evaluations become available once you are.
+          </p>
+        </div>
+      )}
+
       {/* Group Info */}
       {!!currentClass?.show_groups && assignmentData.group && (
         <div className="card">
@@ -322,7 +335,7 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, 
                                   marginTop: '2px'
                                 }}>
                                   {evalType.eval_type === 'peer' && 'Evaluate your group members'}
-                                  {evalType.eval_type === 'audience' && 'Evaluate other groups'}
+                                  {evalType.eval_type === 'audience' && (evalType.target_type === 'group' ? 'Evaluate the other groups' : 'Evaluate the other presenters')}
                                   {evalType.eval_type === 'self' && 'Self evaluation'}
                                   {evalType.target_type === 'group' && ' (group-based)'}
                                 </div>
@@ -333,17 +346,25 @@ function AssignmentDashboard({ classId, currentClass, masqueradeUser, darkMode, 
                                 gap: '8px',
                                 flexWrap: 'wrap'
                               }}>
-                                {evalType.due_date && (
-                                  <span style={{
-                                    fontSize: '0.8rem',
-                                    color: darkMode ? '#a0a0a0' : '#888'
-                                  }}>
-                                    Due {new Date(evalType.due_date).toLocaleDateString('en-US', {
-                                      month: 'short',
-                                      day: 'numeric'
-                                    })}
-                                  </span>
-                                )}
+                                {(() => {
+                                  const a = evalType.audience;
+                                  let dueLabel = null;
+                                  if (a && !a.is_complete && a.next_due) {
+                                    dueLabel = `Next due ${formatWallClockShort(a.next_due)}`;
+                                  } else if (a && !a.is_complete && a.next_presentation) {
+                                    dueLabel = `Next presentation ${formatWallClockShort(a.next_presentation)}`;
+                                  } else if (evalType.due_date) {
+                                    dueLabel = `Due ${formatWallClockShort(evalType.due_date)}`;
+                                  }
+                                  return dueLabel ? (
+                                    <span style={{
+                                      fontSize: '0.8rem',
+                                      color: darkMode ? '#a0a0a0' : '#888'
+                                    }}>
+                                      {dueLabel}
+                                    </span>
+                                  ) : null;
+                                })()}
                                 <span style={{
                                   padding: '4px 10px',
                                   borderRadius: '12px',
