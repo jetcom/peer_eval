@@ -124,7 +124,7 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
   // Random assignment of presenters to students ('assigned' mode)
   const runAssignment = async (scope) => {
     if (scope === 'all' && presenters.some(p => p.assigned_student_ids?.length > 0) &&
-        !window.confirm('Reassign presenters for every student? Presenters a student has already evaluated are kept.')) {
+        !window.confirm('Redraw presenters for every student? Presenters a student has already evaluated are kept.')) {
       return;
     }
     setAssigning(true);
@@ -402,7 +402,7 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
   );
 
   const renderAssignmentsTab = () => {
-    const unassigned = students.filter(s => s.assigned.length === 0 && s.eligible_count > 0);
+    const unassigned = students.filter(s => s.short && s.eligible_count > 0);
     const totalAssigned = students.reduce((n, s) => n + s.assigned.length, 0);
     const labelFor = (ref) => {
       const p = presenterByKey.get(`${ref.kind}:${ref.id}`);
@@ -432,8 +432,9 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
             {assigning ? 'Working...' : totalAssigned > 0 ? 'Reassign all' : 'Assign randomly'}
           </button>
           {totalAssigned > 0 && unassigned.length > 0 && (
-            <button type="button" className="btn btn-secondary" onClick={() => runAssignment('unassigned')} disabled={assigning}>
-              Assign {unassigned.length} unassigned student{unassigned.length === 1 ? '' : 's'}
+            <button type="button" className="btn btn-secondary" onClick={() => runAssignment('fill')} disabled={assigning}
+              title="Top up students who have fewer presenters than required, keeping what they already have">
+              Fill in {unassigned.length} student{unassigned.length === 1 ? '' : 's'}
             </button>
           )}
           {totalAssigned > 0 && (
@@ -445,10 +446,11 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
         </div>
         <div style={{ fontSize: '0.85rem', color: mutedColor, marginBottom: '12px' }}>
           Each student is assigned {schedule?.min_completion ? `${schedule.min_completion}% of` : 'all'} the presenters they are eligible to evaluate
-          (never themselves, their group, or sessions they were excused from). Presenters are balanced so each receives a similar
-          number of evaluators. Change the percentage in the round's settings.
+          (never themselves, their group, sessions they were excused from, or presenters whose evaluation window has already closed).
+          Presenters are balanced so each receives a similar number of evaluators. Students who join or change groups after the
+          draw are topped up automatically. Change the percentage in the round's settings.
           {unassigned.length > 0 && totalAssigned > 0 && (
-            <span style={{ color: '#f39c12' }}> {unassigned.length} student{unassigned.length === 1 ? ' has' : 's have'} no assignments yet.</span>
+            <span style={{ color: '#f39c12' }}> {unassigned.length} student{unassigned.length === 1 ? ' is' : 's are'} short of presenters.</span>
           )}
         </div>
 
@@ -474,7 +476,7 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
                               {s.eligible_count > 0 ? 'none yet' : 'nothing to evaluate'}
                             </span>
                           : s.assigned.map(labelFor).sort().join(', ')}
-                        <span style={{ color: mutedColor, fontSize: '0.8rem' }}> ({s.assigned.length}/{s.required_count})</span>
+                        <span style={{ color: s.short && s.eligible_count > 0 ? '#f39c12' : mutedColor, fontSize: '0.8rem' }}> ({s.assigned.length}/{s.required_count})</span>
                       </td>
                     </tr>
                   ))}

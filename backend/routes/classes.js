@@ -4,7 +4,7 @@ const { parse } = require('csv-parse');
 const bcrypt = require('bcryptjs');
 const prisma = require('../lib/prisma');
 const { naturalCompare } = require('../utils/naturalSort');
-const { estimateExpectedSubmissions } = require('../services/audienceService');
+const { estimateExpectedSubmissions, autoAssignForClass } = require('../services/audienceService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const emailService = require('../services/email');
 
@@ -845,6 +845,9 @@ router.post('/:id/students', authenticateToken, requireTeacherOrAdmin, async (re
       create: { classId: id, userId: user_id }
     });
 
+    // Audience rounds in 'assigned' mode: give the newcomer their presenters
+    autoAssignForClass(id).catch(err => console.error('Auto-assign after enrollment failed:', err.message));
+
     res.json({ message: 'Student added to class' });
   } catch (err) {
     console.error('Add student error:', err);
@@ -1202,6 +1205,11 @@ router.post('/:id/upload-students', authenticateToken, requireTeacherOrAdmin, up
           console.error(`Failed to send enrollment email to ${user.email}:`, emailErr.message);
         }
       }
+    }
+
+    if (!dryRun) {
+      // Audience rounds in 'assigned' mode: top up new or regrouped students
+      autoAssignForClass(classId).catch(err => console.error('Auto-assign after roster import failed:', err.message));
     }
 
     res.json({

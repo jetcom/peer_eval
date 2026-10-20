@@ -4,6 +4,7 @@ const { parse } = require('csv-parse');
 const prisma = require('../lib/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { naturalCompare } = require('../utils/naturalSort');
+const { autoAssignForClass } = require('../services/audienceService');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -311,6 +312,11 @@ router.post('/:id/members', authenticateToken, async (req, res) => {
       }
     });
 
+    // Group changes alter who a student may evaluate; top up assigned audience rounds
+    if (group.classId) {
+      autoAssignForClass(group.classId).catch(err => console.error('Auto-assign after group change failed:', err.message));
+    }
+
     res.json({ message: 'Member added' });
   } catch (err) {
     console.error('Add member error:', err);
@@ -348,6 +354,10 @@ router.delete('/:id/members/:userId', authenticateToken, async (req, res) => {
         userId: userId
       }
     });
+
+    if (group.classId) {
+      autoAssignForClass(group.classId).catch(err => console.error('Auto-assign after group change failed:', err.message));
+    }
 
     res.json({ message: 'Member removed' });
   } catch (err) {

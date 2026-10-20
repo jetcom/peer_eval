@@ -381,13 +381,22 @@ function listStudents(ctx) {
   return ctx.students.map(s => {
     const assigned = [...(ctx.assignedByStudent.get(s.id) || [])];
     const eligible = buildTargets(ctx, s.id, { ignoreAssignments: true });
+    const eligibleKeys = new Set(eligible.map(presenterKey));
+    const validAssigned = assigned.filter(k => eligibleKeys.has(k));
+    // Required is judged against presenters that can still be evaluated, so a
+    // student is not "short" because of windows that have already closed
+    const open = eligible.filter(t => !t.is_past_due);
+    const required = requiredCount(ctx.evalType, open.length);
     return {
       id: s.id,
       first_name: s.firstName,
       last_name: s.lastName,
       group_id: findOwnGroup(ctx, s.id)?.id || null,
       eligible_count: eligible.length,
-      required_count: requiredCount(ctx.evalType, eligible.length),
+      required_count: required,
+      // Fewer usable assignments than required (joined after the draw, or
+      // group changes made some assignments invalid)
+      short: validAssigned.length < required,
       assigned: assigned.map(key => ({ kind: key[0] === 'g' ? 'group' : 'individual', id: parseInt(key.slice(1)) }))
     };
   });
@@ -408,9 +417,14 @@ function shuffle(arr) {
  * from their eligible set (no self, own group, or excused presenters).
  * Presenters a student has already evaluated are always kept.
  *
- * scope: 'all' reassigns everyone; 'unassigned' only fills in students who
- * currently have no assignments (e.g. late enrollments), balancing against
- * the existing load.
+ * Presenters whose evaluation window has already closed are not handed out
+ * (students could no longer complete them), and the percentage is applied to
+ * the presenters that are still open.
+ *
+ * scope: 'all' reassigns everyone; 'fill' only tops up students who have
+ * fewer usable assignments than required (late enrollments, or group changes
+ * that invalidated some assignments), keeping what they already have and
+ * balancing against the existing load.
  */
 async function assignPresentersRandomly(evalTypeId, scope = 'all') {
   const ctx = await loadAudienceContext(evalTypeId);
@@ -428,8 +442,9 @@ async function assignPresentersRandomly(evalTypeId, scope = 'all') {
   groupEvals.forEach(e => noteDone(e.evaluatorId, `g${e.groupId}`));
   individualEvals.forEach(e => noteDone(e.evaluatorId, `u${e.evaluateeId}`));
 
-  const studentsToAssign = scope === 'unassigned'
-    ? ctx.students.filter(s => !(ctx.assignedByStudent.get(s.id)?.size > 0))
+  const fillOnly = scope === 'fill' || scope === 'unassigned';
+  const studentsToAssign = fillOnly
+    ? listStudents(ctx).filter(s => s.short).map(s => ctx.students.find(x => x.id === s.id))
     : ctx.students;
   const assignIds = new Set(studentsToAssign.map(s => s.id));
 
@@ -442,16 +457,25 @@ async function assignPresentersRandomly(evalTypeId, scope = 'all') {
 
   const plan = new Map(); // studentId -> Set of keys
   for (const student of shuffle(studentsToAssign)) {
-    const eligible = buildTargets(ctx, student.id, { ignoreAssignments: true }).map(presenterKey);
-    const want = requiredCount(ctx.evalType, eligible.length);
+    const eligibleTargets = buildTargets(ctx, student.id, { ignoreAssignments: true });
+    const eligible = eligibleTargets.map(presenterKey);
+    // Only presenters the student can still evaluate are handed out
+    const open = eligibleTargets.filter(t => !t.is_past_due).map(presenterKey);
+    const want = requiredCount(ctx.evalType, open.length);
     const chosen = new Set();
 
     // Keep anything already evaluated
     for (const key of evaluatedByStudent.get(student.id) || []) {
       if (eligible.includes(key)) chosen.add(key);
     }
+    // When topping up, keep the student's existing valid assignments
+    if (fillOnly) {
+      for (const key of ctx.assignedByStudent.get(student.id) || []) {
+        if (eligible.includes(key)) chosen.add(key);
+      }
+    }
     // Fill from the least-loaded presenters, random tie-break
-    const candidates = shuffle(eligible.filter(k => !chosen.has(k)))
+    const candidates = shuffle(open.filter(k => !chosen.has(k)))
       .sort((a, b) => (load.get(a) || 0) - (load.get(b) || 0));
     for (const key of candidates) {
       if (chosen.size >= want) break;
@@ -479,6 +503,33 @@ async function assignPresentersRandomly(evalTypeId, scope = 'all') {
   ]);
 
   return { assignedStudents: plan.size, assignments: rows.length };
+}
+
+/**
+ * After a roster or group change: top up any student who is short in every
+ * audience round of the class that is in 'assigned' mode and has already been
+ * drawn. Safe to call fire-and-forget.
+ */
+async function autoAssignForClass(classId) {
+  const evalTypes = await prisma.assignmentEvalType.findMany({
+    where: {
+      evalType: 'audience',
+      audienceAssignmentMode: 'assigned',
+      assignment: { classId },
+      presentationAssignments: { some: {} }
+    },
+    select: { id: true }
+  });
+  for (const { id } of evalTypes) {
+    try {
+      const result = await assignPresentersRandomly(id, 'fill');
+      if (result?.assignedStudents > 0) {
+        console.log(`[Audience] Auto-assigned presenters to ${result.assignedStudents} student(s) for eval type ${id}`);
+      }
+    } catch (err) {
+      console.error(`[Audience] Auto-assign failed for eval type ${id}:`, err.message);
+    }
+  }
 }
 
 async function clearAssignments(evalTypeId) {
@@ -618,6 +669,7 @@ module.exports = {
   saveExcusals,
   assignPresentersRandomly,
   clearAssignments,
+  autoAssignForClass,
   audienceRemindersDue,
   estimateExpectedSubmissions
 };

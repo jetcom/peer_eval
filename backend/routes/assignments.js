@@ -440,14 +440,14 @@ router.put('/eval-type/:evalTypeId/excusals', authenticateToken, async (req, res
 });
 
 // Randomly assign presenters to students ('assigned' mode).
-// Body: { scope: 'all' | 'unassigned' }  — 'unassigned' only fills in students with no assignments.
+// Body: { scope: 'all' | 'fill' }  — 'fill' only tops up students with fewer usable assignments than required.
 router.post('/eval-type/:evalTypeId/assignments', authenticateToken, async (req, res) => {
   try {
     if (!isTeacherOrAdmin(req)) {
       return res.status(403).json({ error: 'Permission denied' });
     }
     const evalTypeId = parseInt(req.params.evalTypeId);
-    const scope = req.body?.scope === 'unassigned' ? 'unassigned' : 'all';
+    const scope = ['fill', 'unassigned'].includes(req.body?.scope) ? 'fill' : 'all';
     const result = await audience.assignPresentersRandomly(evalTypeId, scope);
     if (!result) {
       return res.status(404).json({ error: 'Eval type not found' });
