@@ -11,6 +11,8 @@
  *     percentage of the eligible targets; empty means all of them)
  *   - which presenters a student has been excused from (absent that day), so
  *     those drop out of the student's required set
+ *   - in 'assigned' mode, which presenters were randomly assigned to each
+ *     student; only those are owed (and visible)
  *
  * Used by the student page, the student dashboard, the submit routes, the
  * teacher progress view, and the reminder scheduler so they all agree.
@@ -47,7 +49,8 @@ async function loadAudienceContext(evalTypeId) {
         include: { class: { select: { id: true, name: true, dueDateTimezone: true } } }
       },
       presentationSlots: true,
-      presentationExcusals: true
+      presentationExcusals: true,
+      presentationAssignments: true
     }
   });
   if (!evalType) return null;
@@ -85,6 +88,14 @@ async function loadAudienceContext(evalTypeId) {
     excusedByStudent.get(ex.studentId).add(key);
   }
 
+  // studentId -> Set of presenter keys assigned to them ('assigned' mode)
+  const assignedByStudent = new Map();
+  for (const a of evalType.presentationAssignments) {
+    const key = a.groupId ? `g${a.groupId}` : `u${a.presenterUserId}`;
+    if (!assignedByStudent.has(a.studentId)) assignedByStudent.set(a.studentId, new Set());
+    assignedByStudent.get(a.studentId).add(key);
+  }
+
   const timezone = evalType.assignment.class.dueDateTimezone || DEFAULT_TZ;
 
   return {
@@ -97,9 +108,12 @@ async function loadAudienceContext(evalTypeId) {
     students: enrollments.map(e => e.user),
     slotByGroup,
     slotByUser,
-    excusedByStudent
+    excusedByStudent,
+    assignedByStudent
   };
 }
+
+const isAssignedMode = (ctx) => ctx.evalType.audienceAssignmentMode === 'assigned';
 
 const presenterKey = (target) => (target.kind === 'group' ? `g${target.id}` : `u${target.id}`);
 
@@ -142,7 +156,7 @@ function decorateTarget(ctx, target, slot) {
  * (unless includeExcused is set) presenters the student was excused from.
  * Each target carries an `excused` flag.
  */
-function buildTargets(ctx, studentId, { includeExcused = false } = {}) {
+function buildTargets(ctx, studentId, { includeExcused = false, ignoreAssignments = false } = {}) {
   const ownGroup = findOwnGroup(ctx, studentId);
   let targets;
 
@@ -175,6 +189,12 @@ function buildTargets(ctx, studentId, { includeExcused = false } = {}) {
   targets = targets
     .map(t => ({ ...t, excused: isExcused(ctx, studentId, t) }))
     .filter(t => includeExcused || !t.excused);
+
+  // In 'assigned' mode a student only sees (and owes) their assigned presenters
+  if (isAssignedMode(ctx) && !ignoreAssignments) {
+    const assigned = ctx.assignedByStudent.get(studentId) || new Set();
+    targets = targets.filter(t => assigned.has(presenterKey(t)));
+  }
 
   // Scheduled presenters first, in date order; unscheduled keep their list order
   return targets.sort((a, b) => {
@@ -218,10 +238,11 @@ function attachEvaluations(targets, { groupEvals, individualEvals }) {
   });
 }
 
-function summarize(ctx, allTargets) {
+function summarize(ctx, allTargets, studentId) {
   const targets = allTargets.filter(t => !t.excused);
   const available = targets.length;
-  const required = requiredCount(ctx.evalType, available);
+  // Assigned presenters are all required; the percentage was applied when assigning
+  const required = isAssignedMode(ctx) ? available : requiredCount(ctx.evalType, available);
   const completed = targets.filter(t => t.evaluation).length;
   const openIncomplete = targets.filter(t => !t.evaluation && t.is_open && t.due_date);
   const nextDue = openIncomplete.map(t => t.due_date).sort()[0] || null;
@@ -232,6 +253,8 @@ function summarize(ctx, allTargets) {
     required,
     completed,
     excused: allTargets.length - targets.length,
+    assignment_mode: ctx.evalType.audienceAssignmentMode,
+    assigned: isAssignedMode(ctx) ? (ctx.assignedByStudent.get(studentId)?.size || 0) : null,
     is_complete: required > 0 ? completed >= required : true,
     next_due: nextDue,
     next_presentation: nextPresentation
@@ -242,7 +265,7 @@ function summarize(ctx, allTargets) {
 async function getStudentAudienceStatus(ctx, studentId, evaluations) {
   const evals = evaluations || await fetchStudentEvaluations(ctx.evalType.id, studentId);
   const targets = attachEvaluations(buildTargets(ctx, studentId, { includeExcused: true }), evals);
-  return { targets, ...summarize(ctx, targets) };
+  return { targets, ...summarize(ctx, targets, studentId) };
 }
 
 /** Counts for every enrolled student, for the teacher's progress view. */
@@ -265,7 +288,7 @@ async function getClassAudienceProgress(ctx) {
       individualEvals: individualEvals.filter(e => e.evaluatorId === student.id)
     };
     const targets = attachEvaluations(buildTargets(ctx, student.id), mine);
-    const { available, required, completed, is_complete } = summarize(ctx, targets);
+    const { available, required, completed, is_complete } = summarize(ctx, targets, student.id);
     progress[student.id] = { available, required, completed, is_complete };
   }
   return progress;
@@ -283,6 +306,15 @@ function validateSubmission(ctx, studentId, { groupId, evaluateeId }) {
 
   if (target?.excused) {
     return { ok: false, status: 403, error: 'You were excused from evaluating this presenter' };
+  }
+  if (!target && isAssignedMode(ctx)) {
+    const eligible = buildTargets(ctx, studentId, { ignoreAssignments: true });
+    const wouldBeEligible = groupId
+      ? eligible.some(t => t.kind === 'group' && t.id === groupId)
+      : eligible.some(t => t.kind === 'individual' && t.id === evaluateeId);
+    if (wouldBeEligible) {
+      return { ok: false, status: 403, error: 'You were not assigned to evaluate this presenter' };
+    }
   }
   if (!target) {
     const ownGroup = findOwnGroup(ctx, studentId);
@@ -314,6 +346,9 @@ function listPresenters(ctx) {
   const excusedFor = (key) => [...ctx.excusedByStudent.entries()]
     .filter(([, keys]) => keys.has(key))
     .map(([studentId]) => studentId);
+  const assignedFor = (key) => [...ctx.assignedByStudent.entries()]
+    .filter(([, keys]) => keys.has(key))
+    .map(([studentId]) => studentId);
 
   if (ctx.evalType.targetType === 'group') {
     return ctx.groups.map(g => ({
@@ -323,7 +358,8 @@ function listPresenters(ctx) {
       members: g.members.map(m => ({ id: m.user.id, first_name: m.user.firstName, last_name: m.user.lastName })),
       presentation_date: ctx.slotByGroup.get(g.id)?.presentationDate || null,
       due_date: targetDueDate(ctx, ctx.slotByGroup.get(g.id)),
-      excused_student_ids: excusedFor(`g${g.id}`)
+      excused_student_ids: excusedFor(`g${g.id}`),
+      assigned_student_ids: assignedFor(`g${g.id}`)
     }));
   }
   return ctx.students.map(s => ({
@@ -335,18 +371,118 @@ function listPresenters(ctx) {
     email: s.email,
     presentation_date: ctx.slotByUser.get(s.id)?.presentationDate || null,
     due_date: targetDueDate(ctx, ctx.slotByUser.get(s.id)),
-    excused_student_ids: excusedFor(`u${s.id}`)
+    excused_student_ids: excusedFor(`u${s.id}`),
+    assigned_student_ids: assignedFor(`u${s.id}`)
   }));
 }
 
 /** Class roster for the teacher's attendance view. */
 function listStudents(ctx) {
-  return ctx.students.map(s => ({
-    id: s.id,
-    first_name: s.firstName,
-    last_name: s.lastName,
-    group_id: findOwnGroup(ctx, s.id)?.id || null
-  }));
+  return ctx.students.map(s => {
+    const assigned = [...(ctx.assignedByStudent.get(s.id) || [])];
+    const eligible = buildTargets(ctx, s.id, { ignoreAssignments: true });
+    return {
+      id: s.id,
+      first_name: s.firstName,
+      last_name: s.lastName,
+      group_id: findOwnGroup(ctx, s.id)?.id || null,
+      eligible_count: eligible.length,
+      required_count: requiredCount(ctx.evalType, eligible.length),
+      assigned: assigned.map(key => ({ kind: key[0] === 'g' ? 'group' : 'individual', id: parseInt(key.slice(1)) }))
+    };
+  });
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/**
+ * Randomly assign presenters to students, balancing how many evaluators each
+ * presenter gets. Each student receives requiredCount(eligible) presenters
+ * from their eligible set (no self, own group, or excused presenters).
+ * Presenters a student has already evaluated are always kept.
+ *
+ * scope: 'all' reassigns everyone; 'unassigned' only fills in students who
+ * currently have no assignments (e.g. late enrollments), balancing against
+ * the existing load.
+ */
+async function assignPresentersRandomly(evalTypeId, scope = 'all') {
+  const ctx = await loadAudienceContext(evalTypeId);
+  if (!ctx) return null;
+
+  const [groupEvals, individualEvals] = await Promise.all([
+    prisma.groupEvaluation.findMany({ where: { evalTypeId }, select: { evaluatorId: true, groupId: true } }),
+    prisma.assignmentEvaluation.findMany({ where: { evalTypeId }, select: { evaluatorId: true, evaluateeId: true } })
+  ]);
+  const evaluatedByStudent = new Map();
+  const noteDone = (studentId, key) => {
+    if (!evaluatedByStudent.has(studentId)) evaluatedByStudent.set(studentId, new Set());
+    evaluatedByStudent.get(studentId).add(key);
+  };
+  groupEvals.forEach(e => noteDone(e.evaluatorId, `g${e.groupId}`));
+  individualEvals.forEach(e => noteDone(e.evaluatorId, `u${e.evaluateeId}`));
+
+  const studentsToAssign = scope === 'unassigned'
+    ? ctx.students.filter(s => !(ctx.assignedByStudent.get(s.id)?.size > 0))
+    : ctx.students;
+  const assignIds = new Set(studentsToAssign.map(s => s.id));
+
+  // Load per presenter: assignments we are keeping (students outside the scope)
+  const load = new Map();
+  const bump = (key) => load.set(key, (load.get(key) || 0) + 1);
+  for (const [studentId, keys] of ctx.assignedByStudent.entries()) {
+    if (!assignIds.has(studentId)) keys.forEach(bump);
+  }
+
+  const plan = new Map(); // studentId -> Set of keys
+  for (const student of shuffle(studentsToAssign)) {
+    const eligible = buildTargets(ctx, student.id, { ignoreAssignments: true }).map(presenterKey);
+    const want = requiredCount(ctx.evalType, eligible.length);
+    const chosen = new Set();
+
+    // Keep anything already evaluated
+    for (const key of evaluatedByStudent.get(student.id) || []) {
+      if (eligible.includes(key)) chosen.add(key);
+    }
+    // Fill from the least-loaded presenters, random tie-break
+    const candidates = shuffle(eligible.filter(k => !chosen.has(k)))
+      .sort((a, b) => (load.get(a) || 0) - (load.get(b) || 0));
+    for (const key of candidates) {
+      if (chosen.size >= want) break;
+      chosen.add(key);
+    }
+    chosen.forEach(bump);
+    plan.set(student.id, chosen);
+  }
+
+  const rows = [];
+  for (const [studentId, keys] of plan.entries()) {
+    for (const key of keys) {
+      rows.push({
+        evalTypeId,
+        studentId,
+        groupId: key[0] === 'g' ? parseInt(key.slice(1)) : null,
+        presenterUserId: key[0] === 'u' ? parseInt(key.slice(1)) : null
+      });
+    }
+  }
+
+  await prisma.$transaction([
+    prisma.presentationAssignment.deleteMany({ where: { evalTypeId, studentId: { in: [...assignIds] } } }),
+    ...(rows.length > 0 ? [prisma.presentationAssignment.createMany({ data: rows })] : [])
+  ]);
+
+  return { assignedStudents: plan.size, assignments: rows.length };
+}
+
+async function clearAssignments(evalTypeId) {
+  await prisma.presentationAssignment.deleteMany({ where: { evalTypeId } });
 }
 
 /**
@@ -480,6 +616,8 @@ module.exports = {
   listStudents,
   saveSchedule,
   saveExcusals,
+  assignPresentersRandomly,
+  clearAssignments,
   audienceRemindersDue,
   estimateExpectedSubmissions
 };

@@ -627,7 +627,19 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
           hours after each presentation
         </label>
         <label style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-          Must evaluate at least
+          Students evaluate:
+          <select
+            value={et.assignment_mode || 'any'}
+            onChange={(e) => handleUpdateEvalType(et.id, { assignment_mode: e.target.value })}
+            style={{ ...smallInput, width: 'auto', cursor: 'pointer' }}
+            title="Whether students pick which presenters to evaluate, or are assigned a random, balanced set"
+          >
+            <option value="any">presenters they choose</option>
+            <option value="assigned">randomly assigned presenters</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+          {(et.assignment_mode || 'any') === 'assigned' ? 'Each assigned' : 'Must evaluate at least'}
           <input
             type="number"
             min="1"
@@ -1818,16 +1830,17 @@ function ClassSettingsPanel({ darkMode, editingClass, setEditingClass, onSubmit,
                   presentation_date: p.presentation_date
                 }));
               const assignment = scheduleEvalType.assignment;
-              replaceAssignment({
+              const patch = { presentation_slots: slots, assignment_mode: schedule.assignment_mode };
+              const updatedAssignment = {
                 ...assignment,
                 eval_types: (assignment.eval_types || []).map(x =>
-                  x.id === scheduleEvalType.evalType.id ? { ...x, presentation_slots: slots } : x
+                  x.id === scheduleEvalType.evalType.id ? { ...x, ...patch } : x
                 )
-              });
+              };
+              replaceAssignment(updatedAssignment);
               setScheduleEvalType({
-                ...scheduleEvalType,
-                assignment: { ...assignment, eval_types: (assignment.eval_types || []).map(x =>
-                  x.id === scheduleEvalType.evalType.id ? { ...x, presentation_slots: slots } : x) }
+                evalType: { ...scheduleEvalType.evalType, ...patch },
+                assignment: updatedAssignment
               });
             }}
           />

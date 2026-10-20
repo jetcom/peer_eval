@@ -52,6 +52,8 @@ model User {
   presentationSlots          PresentationSlot[]
   presentationExcusals       PresentationExcusal[] @relation("ExcusedStudent")
   excusedAsPresenter         PresentationExcusal[] @relation("ExcusedPresenter")
+  presentationAssignments    PresentationAssignment[] @relation("AssignedStudent")
+  assignedAsPresenter        PresentationAssignment[] @relation("AssignedPresenter")
 
   @@map("users")
 }
@@ -132,6 +134,7 @@ model Group {
   groupEvaluations  GroupEvaluation[]
   presentationSlots PresentationSlot[]
   presentationExcusals PresentationExcusal[]
+  presentationAssignments PresentationAssignment[]
 
   @@map("groups")
 }
@@ -319,6 +322,9 @@ model AssignmentEvalType {
   // Audience rounds with staggered presentations: each presenter's evaluations
   // are due this many hours after their presentation (null = use dueDate)
   evalWindowHours Int?    @map("eval_window_hours")
+  // 'any': students pick which presenters to evaluate; 'assigned': the
+  // teacher has the system assign each student a random, balanced set
+  audienceAssignmentMode String @default("any") @map("audience_assignment_mode")
 
   assignment        Assignment               @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   criteria          EvalTypeCriterion[]
@@ -328,6 +334,7 @@ model AssignmentEvalType {
   paperReviewRound  PaperReviewRound?
   presentationSlots PresentationSlot[]
   presentationExcusals PresentationExcusal[]
+  presentationAssignments PresentationAssignment[]
 
   @@unique([assignmentId, evalType])
   @@map("assignment_eval_types")
@@ -473,6 +480,26 @@ model PresentationExcusal {
   @@unique([evalTypeId, studentId, groupId])
   @@unique([evalTypeId, studentId, presenterUserId])
   @@map("presentation_excusals")
+}
+
+// A presenter randomly assigned to a student to evaluate (audience rounds in
+// 'assigned' mode). Students only see, and only owe, their assigned presenters.
+model PresentationAssignment {
+  id              Int      @id @default(autoincrement())
+  evalTypeId      Int      @map("eval_type_id")
+  studentId       Int      @map("student_id")
+  groupId         Int?     @map("group_id")
+  presenterUserId Int?     @map("presenter_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  evalType  AssignmentEvalType @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  student   User               @relation("AssignedStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  group     Group?             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  presenter User?              @relation("AssignedPresenter", fields: [presenterUserId], references: [id], onDelete: Cascade)
+
+  @@unique([evalTypeId, studentId, groupId])
+  @@unique([evalTypeId, studentId, presenterUserId])
+  @@map("presentation_assignments")
 }
 
 // ==========================================

@@ -21,6 +21,7 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
   const [message, setMessage] = useState({ type: '', text: '' });
   const [fill, setFill] = useState({ start: '', perSession: 3, daysBetween: 7 });
   const [pendingAdd, setPendingAdd] = useState({}); // sessionKey -> student id chosen in the dropdown
+  const [assigning, setAssigning] = useState(false);
 
   const applySchedule = (data) => {
     setSchedule(data);
@@ -53,6 +54,8 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
   const windowHours = schedule?.eval_window_hours;
   const scheduledCount = presenters.filter(p => dates[p.id]).length;
   const isGroupRound = schedule?.target_type === 'group';
+  const isAssignedMode = schedule?.assignment_mode === 'assigned';
+  const presenterByKey = new Map(presenters.map(p => [presenterKey(p), p]));
   const presenterLabel = (p) => (p.kind === 'group' ? p.name : `${p.last_name}, ${p.first_name}`);
 
   const dueFor = (dateStr) => {
@@ -116,6 +119,55 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
       });
       return next;
     });
+  };
+
+  // Random assignment of presenters to students ('assigned' mode)
+  const runAssignment = async (scope) => {
+    if (scope === 'all' && presenters.some(p => p.assigned_student_ids?.length > 0) &&
+        !window.confirm('Reassign presenters for every student? Presenters a student has already evaluated are kept.')) {
+      return;
+    }
+    setAssigning(true);
+    setMessage({ type: '', text: '' });
+    try {
+      const res = await axios.post(`/api/assignments/eval-type/${evalType.id}/assignments`, { scope });
+      applySchedule(res.data);
+      setMessage({ type: 'success', text: `Assigned presenters to ${res.data.result.assignedStudents} student(s)` });
+      if (onSaved) onSaved(res.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to assign presenters' });
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const clearAssignments = async () => {
+    if (!window.confirm('Remove all random assignments for this round?')) return;
+    setAssigning(true);
+    try {
+      const res = await axios.delete(`/api/assignments/eval-type/${evalType.id}/assignments`);
+      applySchedule(res.data);
+      if (onSaved) onSaved(res.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to clear assignments' });
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const setAssignmentMode = async (mode) => {
+    setAssigning(true);
+    setMessage({ type: '', text: '' });
+    try {
+      await axios.put(`/api/assignments/eval-type/${evalType.id}`, { assignment_mode: mode });
+      const res = await axios.get(`/api/assignments/eval-type/${evalType.id}/schedule`);
+      applySchedule(res.data);
+      if (onSaved) onSaved(res.data);
+    } catch (err) {
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to change the setting' });
+    } finally {
+      setAssigning(false);
+    }
   };
 
   const handleSave = async () => {
@@ -349,6 +401,110 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
     </>
   );
 
+  const renderAssignmentsTab = () => {
+    const unassigned = students.filter(s => s.assigned.length === 0 && s.eligible_count > 0);
+    const totalAssigned = students.reduce((n, s) => n + s.assigned.length, 0);
+    const labelFor = (ref) => {
+      const p = presenterByKey.get(`${ref.kind}:${ref.id}`);
+      return p ? presenterLabel(p) : '?';
+    };
+
+    if (!isAssignedMode) {
+      return (
+        <div style={{ padding: '10px 0' }}>
+          <p style={{ color: mutedColor, fontSize: '0.9rem', marginTop: 0 }}>
+            Students currently choose which presenters to evaluate
+            {schedule?.min_completion ? ` (at least ${schedule.min_completion}% of them)` : ''}.
+            With random assignment, each student instead gets a balanced set of presenters chosen for them,
+            so every presenter receives a similar number of evaluations and nobody can skip the final sessions.
+          </p>
+          <button type="button" className="btn btn-primary" onClick={() => setAssignmentMode('assigned')} disabled={assigning}>
+            Switch to random assignment
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <button type="button" className="btn btn-primary" onClick={() => runAssignment('all')} disabled={assigning || students.length === 0}>
+            {assigning ? 'Working...' : totalAssigned > 0 ? 'Reassign all' : 'Assign randomly'}
+          </button>
+          {totalAssigned > 0 && unassigned.length > 0 && (
+            <button type="button" className="btn btn-secondary" onClick={() => runAssignment('unassigned')} disabled={assigning}>
+              Assign {unassigned.length} unassigned student{unassigned.length === 1 ? '' : 's'}
+            </button>
+          )}
+          {totalAssigned > 0 && (
+            <button type="button" className="btn btn-secondary" onClick={clearAssignments} disabled={assigning}>Clear</button>
+          )}
+          <button type="button" className="btn btn-secondary" onClick={() => setAssignmentMode('any')} disabled={assigning} style={{ marginLeft: 'auto' }}>
+            Let students choose instead
+          </button>
+        </div>
+        <div style={{ fontSize: '0.85rem', color: mutedColor, marginBottom: '12px' }}>
+          Each student is assigned {schedule?.min_completion ? `${schedule.min_completion}% of` : 'all'} the presenters they are eligible to evaluate
+          (never themselves, their group, or sessions they were excused from). Presenters are balanced so each receives a similar
+          number of evaluators. Change the percentage in the round's settings.
+          {unassigned.length > 0 && totalAssigned > 0 && (
+            <span style={{ color: '#f39c12' }}> {unassigned.length} student{unassigned.length === 1 ? ' has' : 's have'} no assignments yet.</span>
+          )}
+        </div>
+
+        {students.length === 0 ? (
+          <div style={{ padding: '20px', color: mutedColor }}>No students are enrolled in this class yet.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 3fr) minmax(0, 2fr)', gap: '20px' }}>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={theadStyle}>
+                    <th style={{ padding: '8px 10px' }}>Student</th>
+                    <th style={{ padding: '8px 10px' }}>Assigned to evaluate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map(s => (
+                    <tr key={s.id} style={{ borderBottom: rowBorder, verticalAlign: 'top' }}>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{s.last_name}, {s.first_name}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {s.assigned.length === 0
+                          ? <span style={{ fontStyle: 'italic', color: s.eligible_count > 0 ? '#f39c12' : mutedColor }}>
+                              {s.eligible_count > 0 ? 'none yet' : 'nothing to evaluate'}
+                            </span>
+                          : s.assigned.map(labelFor).sort().join(', ')}
+                        <span style={{ color: mutedColor, fontSize: '0.8rem' }}> ({s.assigned.length}/{s.required_count})</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={theadStyle}>
+                    <th style={{ padding: '8px 10px' }}>{isGroupRound ? 'Group' : 'Presenter'}</th>
+                    <th style={{ padding: '8px 10px', textAlign: 'right' }}>Evaluators</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {presenters.map(p => (
+                    <tr key={p.id} style={{ borderBottom: rowBorder }}>
+                      <td style={{ padding: '8px 10px' }}>{presenterLabel(p)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>{p.assigned_student_ids?.length || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  };
+
   return (
     <div style={overlayStyle}>
       <div style={panelStyle}>
@@ -377,6 +533,9 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
         <div style={{ display: 'flex', borderBottom: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`, marginBottom: '15px' }}>
           <button type="button" style={tabStyle(tab === 'schedule')} onClick={() => setTab('schedule')}>Schedule</button>
           <button type="button" style={tabStyle(tab === 'absences')} onClick={() => setTab('absences')}>Excused absences</button>
+          <button type="button" style={tabStyle(tab === 'assignments')} onClick={() => setTab('assignments')}>
+            Random assignment{isAssignedMode ? ' (on)' : ''}
+          </button>
         </div>
 
         {message.text && (
@@ -391,7 +550,7 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
               ? 'This class has no groups yet. Add groups first, then schedule their presentations.'
               : 'This class has no students enrolled yet.'}
           </div>
-        ) : tab === 'schedule' ? renderScheduleTab() : renderAbsencesTab()}
+        ) : tab === 'schedule' ? renderScheduleTab() : tab === 'absences' ? renderAbsencesTab() : renderAssignmentsTab()}
       </div>
     </div>
   );

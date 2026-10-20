@@ -34,6 +34,7 @@ const formatSchedule = (ctx) => ({
   target_type: ctx.evalType.targetType,
   eval_window_hours: ctx.evalType.evalWindowHours,
   min_completion: ctx.evalType.minCompletion,
+  assignment_mode: ctx.evalType.audienceAssignmentMode || 'any',
   round_due_date: ctx.evalType.dueDate || ctx.assignment.dueDate || null,
   timezone: ctx.timezone,
   presenters: audience.listPresenters(ctx),
@@ -70,6 +71,7 @@ const formatAssignment = (a) => ({
     allow_late: et.allowLate === 1,
     due_date: et.dueDate,
     eval_window_hours: et.evalWindowHours,
+    assignment_mode: et.audienceAssignmentMode || 'any',
     presentation_slots: et.presentationSlots?.map(ps => ({
       group_id: ps.groupId,
       user_id: ps.userId,
@@ -325,6 +327,12 @@ router.put('/eval-type/:evalTypeId', authenticateToken, async (req, res) => {
       }
       data.evalWindowHours = hours;
     }
+    if (b.assignment_mode !== undefined) {
+      if (!['any', 'assigned'].includes(b.assignment_mode)) {
+        return res.status(400).json({ error: 'assignment_mode must be any or assigned' });
+      }
+      data.audienceAssignmentMode = b.assignment_mode;
+    }
     if (b.min_completion !== undefined) {
       const pct = b.min_completion === null || b.min_completion === '' ? null : parseInt(b.min_completion);
       if (pct !== null && (Number.isNaN(pct) || pct < 1 || pct > 100)) {
@@ -338,9 +346,12 @@ router.put('/eval-type/:evalTypeId', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Eval type not found' });
     }
 
-    // Switching between group and individual presenters invalidates the schedule
+    // Switching between group and individual presenters invalidates the schedule,
+    // excusals and random assignments
     if (data.targetType && data.targetType !== existing.targetType) {
       await prisma.presentationSlot.deleteMany({ where: { evalTypeId } });
+      await prisma.presentationExcusal.deleteMany({ where: { evalTypeId } });
+      await prisma.presentationAssignment.deleteMany({ where: { evalTypeId } });
     }
 
     const updated = await prisma.assignmentEvalType.update({
@@ -425,6 +436,46 @@ router.put('/eval-type/:evalTypeId/excusals', authenticateToken, async (req, res
   } catch (error) {
     console.error('Error saving excusals:', error);
     res.status(500).json({ error: 'Failed to save excused absences' });
+  }
+});
+
+// Randomly assign presenters to students ('assigned' mode).
+// Body: { scope: 'all' | 'unassigned' }  — 'unassigned' only fills in students with no assignments.
+router.post('/eval-type/:evalTypeId/assignments', authenticateToken, async (req, res) => {
+  try {
+    if (!isTeacherOrAdmin(req)) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+    const evalTypeId = parseInt(req.params.evalTypeId);
+    const scope = req.body?.scope === 'unassigned' ? 'unassigned' : 'all';
+    const result = await audience.assignPresentersRandomly(evalTypeId, scope);
+    if (!result) {
+      return res.status(404).json({ error: 'Eval type not found' });
+    }
+    const ctx = await audience.loadAudienceContext(evalTypeId);
+    res.json({ ...formatSchedule(ctx), result });
+  } catch (error) {
+    console.error('Error assigning presenters:', error);
+    res.status(500).json({ error: 'Failed to assign presenters' });
+  }
+});
+
+// Remove all random assignments for a round
+router.delete('/eval-type/:evalTypeId/assignments', authenticateToken, async (req, res) => {
+  try {
+    if (!isTeacherOrAdmin(req)) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+    const evalTypeId = parseInt(req.params.evalTypeId);
+    await audience.clearAssignments(evalTypeId);
+    const ctx = await audience.loadAudienceContext(evalTypeId);
+    if (!ctx) {
+      return res.status(404).json({ error: 'Eval type not found' });
+    }
+    res.json(formatSchedule(ctx));
+  } catch (error) {
+    console.error('Error clearing assignments:', error);
+    res.status(500).json({ error: 'Failed to clear assignments' });
   }
 });
 

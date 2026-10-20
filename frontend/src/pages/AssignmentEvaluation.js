@@ -595,14 +595,25 @@ function AssignmentEvaluation() {
               {audienceCompleted >= audienceRequired && ' ✓'}
             </p>
             <p style={{ margin: 0, color: mutedColor, fontSize: '0.95rem' }}>
-              {audienceRequired < audienceAvailable
-                ? `You may evaluate any ${audienceRequired} of the ${audienceAvailable} ${evalType.target_type === 'group' ? 'groups' : 'presenters'} listed below. `
-                : `Evaluate all ${audienceAvailable} ${evalType.target_type === 'group' ? 'groups' : 'presenters'} listed below. `}
+              {audienceInfo.assignment_mode === 'assigned'
+                ? `You have been assigned ${audienceAvailable} ${evalType.target_type === 'group' ? 'groups' : 'presenters'} to evaluate, listed below. `
+                : audienceRequired < audienceAvailable
+                  ? `You may evaluate any ${audienceRequired} of the ${audienceAvailable} ${evalType.target_type === 'group' ? 'groups' : 'presenters'} listed below. `
+                  : `Evaluate all ${audienceAvailable} ${evalType.target_type === 'group' ? 'groups' : 'presenters'} listed below. `}
               {audienceInfo.eval_window_hours != null
                 ? `Each evaluation is due ${audienceInfo.eval_window_hours} hours after that presentation.`
                 : ''}
               {' '}Your own {group ? 'group' : 'presentation'} is not included.
               {audienceExcused > 0 && ` You have been excused from ${audienceExcused}.`}
+            </p>
+          </div>
+        )}
+
+        {isAudience && audienceInfo?.assignment_mode === 'assigned' && audienceAvailable === 0 && audienceExcused === 0 && (
+          <div className="card" style={{ background: darkMode ? '#2a4a6a' : '#fff3cd', borderLeft: '4px solid #f39c12' }}>
+            <h2 style={{ marginBottom: '10px' }}>Not Assigned Yet</h2>
+            <p style={{ margin: 0, color: darkMode ? '#e0e0e0' : '#856404' }}>
+              Your instructor assigns presenters to evaluate at random. You have not been assigned any yet. Check back later.
             </p>
           </div>
         )}
@@ -614,7 +625,7 @@ function AssignmentEvaluation() {
           </div>
         )}
 
-        {targets.length === 0 && (isAudience || evalType?.target_type === 'group') && (
+        {targets.length === 0 && (isAudience || evalType?.target_type === 'group') && audienceInfo?.assignment_mode !== 'assigned' && (
           <div className="card" style={{ background: darkMode ? '#2a4a6a' : '#fff3cd', borderLeft: '4px solid #f39c12' }}>
             <h2 style={{ marginBottom: '10px' }}>
               {evalType?.target_type === 'group' ? 'No Groups to Evaluate' : 'No Presenters to Evaluate'}
