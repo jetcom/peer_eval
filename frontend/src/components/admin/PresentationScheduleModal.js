@@ -2,28 +2,43 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { addHoursWallClock as addHours, formatWallClock as formatLocal } from '../../utils/wallClock';
 
+const presenterKey = (p) => `${p.kind}:${p.id}`;
+
 /**
  * Teacher view for an audience round: when each group (or each student, for
- * individual presentations) presents. Evaluations of a presenter are due a
- * set number of hours after their slot, or on the round's due date when no
- * window is set.
+ * individual presentations) presents, and which students were absent for a
+ * session. Evaluations of a presenter are due a set number of hours after
+ * their slot, or on the round's due date when no window is set. Excused
+ * students are not expected to evaluate that session's presenters.
  */
 function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose, onSaved }) {
+  const [tab, setTab] = useState('schedule');
   const [schedule, setSchedule] = useState(null);
   const [dates, setDates] = useState({});
+  const [excused, setExcused] = useState({}); // presenterKey -> Set of student ids
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
   const [fill, setFill] = useState({ start: '', perSession: 3, daysBetween: 7 });
+  const [pendingAdd, setPendingAdd] = useState({}); // sessionKey -> student id chosen in the dropdown
+
+  const applySchedule = (data) => {
+    setSchedule(data);
+    const initialDates = {};
+    const initialExcused = {};
+    data.presenters.forEach(p => {
+      initialDates[p.id] = p.presentation_date || '';
+      initialExcused[presenterKey(p)] = new Set(p.excused_student_ids || []);
+    });
+    setDates(initialDates);
+    setExcused(initialExcused);
+  };
 
   useEffect(() => {
     const fetchSchedule = async () => {
       try {
         const res = await axios.get(`/api/assignments/eval-type/${evalType.id}/schedule`);
-        setSchedule(res.data);
-        const initial = {};
-        res.data.presenters.forEach(p => { initial[p.id] = p.presentation_date || ''; });
-        setDates(initial);
+        applySchedule(res.data);
       } catch (err) {
         setMessage({ type: 'error', text: 'Failed to load the presentation schedule' });
       } finally {
@@ -34,8 +49,11 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
   }, [evalType.id]);
 
   const presenters = schedule?.presenters || [];
+  const students = schedule?.students || [];
   const windowHours = schedule?.eval_window_hours;
   const scheduledCount = presenters.filter(p => dates[p.id]).length;
+  const isGroupRound = schedule?.target_type === 'group';
+  const presenterLabel = (p) => (p.kind === 'group' ? p.name : `${p.last_name}, ${p.first_name}`);
 
   const dueFor = (dateStr) => {
     if (dateStr && windowHours != null) return addHours(dateStr, windowHours);
@@ -64,6 +82,42 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
     setDates(cleared);
   };
 
+  // Sessions: presenters that share a date-time, using the saved (unsaved edits
+  // included) schedule. Unscheduled presenters each form their own row.
+  const sessions = (() => {
+    const byDate = new Map();
+    presenters.forEach(p => {
+      const key = dates[p.id] ? `d:${dates[p.id]}` : `p:${presenterKey(p)}`;
+      if (!byDate.has(key)) byDate.set(key, { key, date: dates[p.id] || null, presenters: [] });
+      byDate.get(key).presenters.push(p);
+    });
+    return [...byDate.values()].sort((a, b) => {
+      if (a.date && b.date) return a.date.localeCompare(b.date);
+      if (a.date) return -1;
+      if (b.date) return 1;
+      return 0;
+    });
+  })();
+
+  // Students excused from every presenter in the session
+  const excusedForSession = (session) => {
+    const sets = session.presenters.map(p => excused[presenterKey(p)] || new Set());
+    return students.filter(s => sets.every(set => set.has(s.id)));
+  };
+
+  const setSessionExcused = (session, studentId, isExcused) => {
+    setExcused(prev => {
+      const next = { ...prev };
+      session.presenters.forEach(p => {
+        const k = presenterKey(p);
+        const set = new Set(next[k] || []);
+        if (isExcused) set.add(studentId); else set.delete(studentId);
+        next[k] = set;
+      });
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setMessage({ type: '', text: '' });
@@ -72,12 +126,17 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
         [p.kind === 'group' ? 'group_id' : 'user_id']: p.id,
         presentation_date: dates[p.id] || null
       }));
-      const res = await axios.put(`/api/assignments/eval-type/${evalType.id}/schedule`, { slots });
-      setSchedule(res.data);
-      setMessage({ type: 'success', text: 'Schedule saved' });
+      await axios.put(`/api/assignments/eval-type/${evalType.id}/schedule`, { slots });
+      const excusals = presenters.map(p => ({
+        [p.kind === 'group' ? 'group_id' : 'user_id']: p.id,
+        student_ids: [...(excused[presenterKey(p)] || [])]
+      }));
+      const res = await axios.put(`/api/assignments/eval-type/${evalType.id}/excusals`, { excusals });
+      applySchedule(res.data);
+      setMessage({ type: 'success', text: 'Saved' });
       if (onSaved) onSaved(res.data);
     } catch (err) {
-      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save the schedule' });
+      setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save' });
     } finally {
       setSaving(false);
     }
@@ -106,6 +165,189 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
     background: darkMode ? '#2a2a2a' : '#fff',
     color: darkMode ? '#e0e0e0' : '#333'
   };
+  const tabStyle = (active) => ({
+    padding: '8px 16px',
+    border: 'none',
+    borderBottom: active ? '3px solid #3498db' : '3px solid transparent',
+    background: 'transparent',
+    color: active ? '#3498db' : mutedColor,
+    fontWeight: active ? 600 : 400,
+    cursor: 'pointer',
+    fontSize: '0.95rem'
+  });
+  const theadStyle = { background: darkMode ? '#111' : '#f0f0f0', textAlign: 'left' };
+  const rowBorder = `1px solid ${darkMode ? '#333' : '#eee'}`;
+
+  const renderScheduleTab = () => (
+    <>
+      <div style={{
+        display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap',
+        padding: '12px 15px', marginBottom: '15px', borderRadius: '6px',
+        background: darkMode ? 'rgba(255,255,255,0.05)' : '#f8f9fa',
+        border: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`
+      }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '0.8rem', color: mutedColor, marginBottom: '4px' }}>First session</label>
+          <input type="datetime-local" value={fill.start} onChange={(e) => setFill({ ...fill, start: e.target.value })} style={inputStyle} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '0.8rem', color: mutedColor, marginBottom: '4px' }}>Presenters per session</label>
+          <input type="number" min="1" value={fill.perSession} onChange={(e) => setFill({ ...fill, perSession: e.target.value })} style={{ ...inputStyle, width: '70px' }} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: '0.8rem', color: mutedColor, marginBottom: '4px' }}>Days between sessions</label>
+          <input type="number" min="1" value={fill.daysBetween} onChange={(e) => setFill({ ...fill, daysBetween: e.target.value })} style={{ ...inputStyle, width: '70px' }} />
+        </div>
+        <button type="button" className="btn btn-secondary" onClick={fillSequentially} disabled={!fill.start} title="Assign dates to the presenters that don't have one yet, in list order">
+          Fill unscheduled
+        </button>
+        <button type="button" className="btn btn-secondary" onClick={clearAll}>Clear all</button>
+      </div>
+
+      <div style={{ fontSize: '0.85rem', color: mutedColor, marginBottom: '8px' }}>
+        {scheduledCount} of {presenters.length} scheduled. Students cannot evaluate a presenter until their presentation time.
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', fontSize: '0.9rem' }}>
+          <thead>
+            <tr style={theadStyle}>
+              <th style={{ padding: '8px 10px' }}>{isGroupRound ? 'Group' : 'Student'}</th>
+              <th style={{ padding: '8px 10px' }}>Presents</th>
+              <th style={{ padding: '8px 10px' }}>Evaluations due</th>
+            </tr>
+          </thead>
+          <tbody>
+            {presenters.map(p => {
+              const due = dueFor(dates[p.id]);
+              return (
+                <tr key={p.id} style={{ borderBottom: rowBorder }}>
+                  <td style={{ padding: '8px 10px' }}>
+                    <div style={{ fontWeight: 500 }}>{presenterLabel(p)}</div>
+                    {p.kind === 'group' && p.members?.length > 0 && (
+                      <div style={{ fontSize: '0.8rem', color: mutedColor }}>
+                        {p.members.map(m => `${m.first_name} ${m.last_name}`).join(', ')}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                    <input
+                      type="datetime-local"
+                      value={dates[p.id] || ''}
+                      onChange={(e) => setDates({ ...dates, [p.id]: e.target.value })}
+                      style={inputStyle}
+                    />
+                    {dates[p.id] && (
+                      <button
+                        type="button"
+                        onClick={() => setDates({ ...dates, [p.id]: '' })}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: mutedColor, fontSize: '1.1rem', marginLeft: '4px' }}
+                        title="Clear"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px 10px', color: mutedColor, whiteSpace: 'nowrap' }}>
+                    {due ? formatLocal(due) : <span style={{ fontStyle: 'italic' }}>no deadline</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+
+  const renderAbsencesTab = () => (
+    <>
+      <div style={{ fontSize: '0.85rem', color: mutedColor, marginBottom: '12px' }}>
+        Students who missed a session are excused from evaluating that session's presenters.
+        An excused presenter does not count toward what the student must complete.
+        {' '}Presenters sharing a date and time are treated as one session.
+      </div>
+
+      {students.length === 0 ? (
+        <div style={{ padding: '20px', color: mutedColor }}>No students are enrolled in this class yet.</div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', fontSize: '0.9rem' }}>
+            <thead>
+              <tr style={theadStyle}>
+                <th style={{ padding: '8px 10px' }}>Session</th>
+                <th style={{ padding: '8px 10px' }}>Presenting</th>
+                <th style={{ padding: '8px 10px' }}>Excused students</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map(session => {
+                const excusedList = excusedForSession(session);
+                const excusedIds = new Set(excusedList.map(s => s.id));
+                const candidates = students.filter(s => !excusedIds.has(s.id));
+                const chosen = pendingAdd[session.key] || '';
+                return (
+                  <tr key={session.key} style={{ borderBottom: rowBorder, verticalAlign: 'top' }}>
+                    <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                      {session.date ? formatLocal(session.date) : <span style={{ fontStyle: 'italic', color: mutedColor }}>Unscheduled</span>}
+                    </td>
+                    <td style={{ padding: '8px 10px' }}>
+                      {session.presenters.map(presenterLabel).join(', ')}
+                    </td>
+                    <td style={{ padding: '8px 10px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                        {excusedList.map(s => (
+                          <span key={s.id} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '4px',
+                            padding: '2px 8px', borderRadius: '12px', fontSize: '0.8rem',
+                            background: darkMode ? '#333' : '#e8e8e8'
+                          }}>
+                            {s.last_name}, {s.first_name}
+                            <button
+                              type="button"
+                              onClick={() => setSessionExcused(session, s.id, false)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: mutedColor, padding: 0, lineHeight: 1 }}
+                              title="Remove excusal"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                        <select
+                          value={chosen}
+                          onChange={(e) => {
+                            const id = parseInt(e.target.value);
+                            if (id) setSessionExcused(session, id, true);
+                            setPendingAdd({ ...pendingAdd, [session.key]: '' });
+                          }}
+                          style={{ ...inputStyle, fontSize: '0.8rem', padding: '3px 6px' }}
+                        >
+                          <option value="">Excuse a student...</option>
+                          {candidates.map(s => (
+                            <option key={s.id} value={s.id}>{s.last_name}, {s.first_name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      {session.presenters.length > 1 && (() => {
+                        // Excusals that cover only some presenters in this session (set before they shared a time)
+                        const partial = students.filter(s => !excusedIds.has(s.id) &&
+                          session.presenters.some(p => excused[presenterKey(p)]?.has(s.id)));
+                        return partial.length > 0 ? (
+                          <div style={{ fontSize: '0.75rem', color: mutedColor, marginTop: '4px' }}>
+                            Partly excused: {partial.map(s => `${s.last_name}, ${s.first_name}`).join('; ')}
+                          </div>
+                        ) : null;
+                      })()}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div style={overlayStyle}>
@@ -114,12 +356,12 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
           <h2 style={{ margin: 0 }}>Presentation Schedule</h2>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving || loading}>
-              {saving ? 'Saving...' : 'Save Schedule'}
+              {saving ? 'Saving...' : 'Save'}
             </button>
             <button className="btn btn-secondary" onClick={onClose}>Close</button>
           </div>
         </div>
-        <p style={{ margin: '0 0 15px', color: mutedColor, fontSize: '0.9rem' }}>
+        <p style={{ margin: '0 0 12px', color: mutedColor, fontSize: '0.9rem' }}>
           {assignmentName} &middot; {evalType.name}
           {schedule && (
             <>
@@ -132,6 +374,11 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
           )}
         </p>
 
+        <div style={{ display: 'flex', borderBottom: `1px solid ${darkMode ? '#333' : '#e0e0e0'}`, marginBottom: '15px' }}>
+          <button type="button" style={tabStyle(tab === 'schedule')} onClick={() => setTab('schedule')}>Schedule</button>
+          <button type="button" style={tabStyle(tab === 'absences')} onClick={() => setTab('absences')}>Excused absences</button>
+        </div>
+
         {message.text && (
           <div className={`message ${message.type}`} style={{ marginBottom: '15px' }}>{message.text}</div>
         )}
@@ -140,92 +387,11 @@ function PresentationScheduleModal({ darkMode, evalType, assignmentName, onClose
           <div style={{ padding: '20px', color: mutedColor }}>Loading schedule...</div>
         ) : presenters.length === 0 ? (
           <div style={{ padding: '20px', color: mutedColor }}>
-            {schedule?.target_type === 'group'
+            {isGroupRound
               ? 'This class has no groups yet. Add groups first, then schedule their presentations.'
               : 'This class has no students enrolled yet.'}
           </div>
-        ) : (
-          <>
-            {/* Quick fill */}
-            <div style={{
-              display: 'flex', gap: '10px', alignItems: 'flex-end', flexWrap: 'wrap',
-              padding: '12px 15px', marginBottom: '15px', borderRadius: '6px',
-              background: darkMode ? 'rgba(255,255,255,0.05)' : '#f8f9fa',
-              border: `1px solid ${darkMode ? '#335' : '#e0e0e0'}`
-            }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: mutedColor, marginBottom: '4px' }}>First session</label>
-                <input type="datetime-local" value={fill.start} onChange={(e) => setFill({ ...fill, start: e.target.value })} style={inputStyle} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: mutedColor, marginBottom: '4px' }}>Presenters per session</label>
-                <input type="number" min="1" value={fill.perSession} onChange={(e) => setFill({ ...fill, perSession: e.target.value })} style={{ ...inputStyle, width: '70px' }} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: mutedColor, marginBottom: '4px' }}>Days between sessions</label>
-                <input type="number" min="1" value={fill.daysBetween} onChange={(e) => setFill({ ...fill, daysBetween: e.target.value })} style={{ ...inputStyle, width: '70px' }} />
-              </div>
-              <button type="button" className="btn btn-secondary" onClick={fillSequentially} disabled={!fill.start} title="Assign dates to the presenters that don't have one yet, in list order">
-                Fill unscheduled
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={clearAll}>Clear all</button>
-            </div>
-
-            <div style={{ fontSize: '0.85rem', color: mutedColor, marginBottom: '8px' }}>
-              {scheduledCount} of {presenters.length} scheduled. Students cannot evaluate a presenter until their presentation time.
-            </div>
-
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', fontSize: '0.9rem' }}>
-                <thead>
-                  <tr style={{ background: darkMode ? '#1a1a1a' : '#f0f0f0', textAlign: 'left' }}>
-                    <th style={{ padding: '8px 10px' }}>{schedule.target_type === 'group' ? 'Group' : 'Student'}</th>
-                    <th style={{ padding: '8px 10px' }}>Presents</th>
-                    <th style={{ padding: '8px 10px' }}>Evaluations due</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {presenters.map(p => {
-                    const due = dueFor(dates[p.id]);
-                    return (
-                      <tr key={p.id} style={{ borderBottom: `1px solid ${darkMode ? '#335' : '#eee'}` }}>
-                        <td style={{ padding: '8px 10px' }}>
-                          <div style={{ fontWeight: 500 }}>{p.kind === 'group' ? p.name : `${p.last_name}, ${p.first_name}`}</div>
-                          {p.kind === 'group' && p.members?.length > 0 && (
-                            <div style={{ fontSize: '0.8rem', color: mutedColor }}>
-                              {p.members.map(m => `${m.first_name} ${m.last_name}`).join(', ')}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
-                          <input
-                            type="datetime-local"
-                            value={dates[p.id] || ''}
-                            onChange={(e) => setDates({ ...dates, [p.id]: e.target.value })}
-                            style={inputStyle}
-                          />
-                          {dates[p.id] && (
-                            <button
-                              type="button"
-                              onClick={() => setDates({ ...dates, [p.id]: '' })}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: mutedColor, fontSize: '1.1rem', marginLeft: '4px' }}
-                              title="Clear"
-                            >
-                              ×
-                            </button>
-                          )}
-                        </td>
-                        <td style={{ padding: '8px 10px', color: mutedColor, whiteSpace: 'nowrap' }}>
-                          {due ? formatLocal(due) : <span style={{ fontStyle: 'italic' }}>no deadline</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+        ) : tab === 'schedule' ? renderScheduleTab() : renderAbsencesTab()}
       </div>
     </div>
   );

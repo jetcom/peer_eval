@@ -492,10 +492,11 @@ function AssignmentEvaluation() {
 
   // Audience progress, kept live as evaluations are saved
   const audienceCompleted = isAudience
-    ? targets.filter(t => evaluationIds[keyForAudienceTarget(t)]).length
+    ? targets.filter(t => !t.excused && evaluationIds[keyForAudienceTarget(t)]).length
     : 0;
   const audienceRequired = audienceInfo?.required ?? 0;
   const audienceAvailable = audienceInfo?.available ?? 0;
+  const audienceExcused = audienceInfo?.excused ?? 0;
   const mutedColor = darkMode ? '#a0a0a0' : '#666';
 
   const renderAudienceMeta = (target) => {
@@ -601,7 +602,15 @@ function AssignmentEvaluation() {
                 ? `Each evaluation is due ${audienceInfo.eval_window_hours} hours after that presentation.`
                 : ''}
               {' '}Your own {group ? 'group' : 'presentation'} is not included.
+              {audienceExcused > 0 && ` You have been excused from ${audienceExcused}.`}
             </p>
+          </div>
+        )}
+
+        {isAudience && audienceAvailable === 0 && audienceExcused > 0 && (
+          <div className="card">
+            <h2 style={{ marginBottom: '10px' }}>Nothing to Evaluate</h2>
+            <p style={{ margin: 0, color: mutedColor }}>You have been excused from every presentation in this round.</p>
           </div>
         )}
 
@@ -626,6 +635,19 @@ function AssignmentEvaluation() {
           const targetLabel = isGroupTarget
             ? target.name
             : `${target.last_name}, ${target.first_name}${target.id === currentUserId ? ' (Self)' : ''}`;
+
+          // Excused (absent): shown for transparency, nothing owed
+          if (isAudience && target.excused) {
+            return (
+              <div key={targetId} className="card evaluation-section" style={{ opacity: 0.6 }}>
+                <div className="member-name">{targetLabel}</div>
+                <p style={{ margin: 0, color: mutedColor }}>
+                  You were excused from this evaluation
+                  {target.presentation_date ? ` (presented ${formatWallClock(target.presentation_date)})` : ''}.
+                </p>
+              </div>
+            );
+          }
 
           // Locked until the presentation happens
           if (isAudience && !target.is_open) {

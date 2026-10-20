@@ -50,6 +50,8 @@ model User {
   paperReviewsAssigned       PaperReviewAssignment[] @relation("PaperReviewer")
   teacherPaperReviews        PaperReview[]          @relation("TeacherPaperReviews")
   presentationSlots          PresentationSlot[]
+  presentationExcusals       PresentationExcusal[] @relation("ExcusedStudent")
+  excusedAsPresenter         PresentationExcusal[] @relation("ExcusedPresenter")
 
   @@map("users")
 }
@@ -129,6 +131,7 @@ model Group {
   members           GroupMember[]
   groupEvaluations  GroupEvaluation[]
   presentationSlots PresentationSlot[]
+  presentationExcusals PresentationExcusal[]
 
   @@map("groups")
 }
@@ -324,6 +327,7 @@ model AssignmentEvalType {
   extensions        AssignmentExtension[]
   paperReviewRound  PaperReviewRound?
   presentationSlots PresentationSlot[]
+  presentationExcusals PresentationExcusal[]
 
   @@unique([assignmentId, evalType])
   @@map("assignment_eval_types")
@@ -449,6 +453,26 @@ model PresentationSlot {
   @@unique([evalTypeId, groupId])
   @@unique([evalTypeId, userId])
   @@map("presentation_slots")
+}
+
+// A student excused from evaluating one presenter (they were absent for that
+// presentation). The presenter drops out of the student's required set.
+model PresentationExcusal {
+  id              Int      @id @default(autoincrement())
+  evalTypeId      Int      @map("eval_type_id")
+  studentId       Int      @map("student_id")
+  groupId         Int?     @map("group_id")           // presenter, when groups present
+  presenterUserId Int?     @map("presenter_user_id")  // presenter, for individual presentations
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  evalType  AssignmentEvalType @relation(fields: [evalTypeId], references: [id], onDelete: Cascade)
+  student   User               @relation("ExcusedStudent", fields: [studentId], references: [id], onDelete: Cascade)
+  group     Group?             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  presenter User?              @relation("ExcusedPresenter", fields: [presenterUserId], references: [id], onDelete: Cascade)
+
+  @@unique([evalTypeId, studentId, groupId])
+  @@unique([evalTypeId, studentId, presenterUserId])
+  @@map("presentation_excusals")
 }
 
 // ==========================================

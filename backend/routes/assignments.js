@@ -36,7 +36,8 @@ const formatSchedule = (ctx) => ({
   min_completion: ctx.evalType.minCompletion,
   round_due_date: ctx.evalType.dueDate || ctx.assignment.dueDate || null,
   timezone: ctx.timezone,
-  presenters: audience.listPresenters(ctx)
+  presenters: audience.listPresenters(ctx),
+  students: audience.listStudents(ctx)
 });
 
 // Configure multer for memory storage
@@ -398,6 +399,32 @@ router.put('/eval-type/:evalTypeId/schedule', authenticateToken, async (req, res
   } catch (error) {
     console.error('Error saving presentation schedule:', error);
     res.status(500).json({ error: 'Failed to save schedule' });
+  }
+});
+
+// Excuse students from evaluating given presenters (they were absent).
+// Body: { excusals: [{ group_id | user_id (the presenter), student_ids: [...] }] }
+// Each listed presenter's excused list is replaced in full.
+router.put('/eval-type/:evalTypeId/excusals', authenticateToken, async (req, res) => {
+  try {
+    if (!isTeacherOrAdmin(req)) {
+      return res.status(403).json({ error: 'Permission denied' });
+    }
+    const evalTypeId = parseInt(req.params.evalTypeId);
+    const { excusals } = req.body;
+    if (!Array.isArray(excusals)) {
+      return res.status(400).json({ error: 'excusals must be an array' });
+    }
+    await audience.saveExcusals(evalTypeId, excusals);
+
+    const ctx = await audience.loadAudienceContext(evalTypeId);
+    if (!ctx) {
+      return res.status(404).json({ error: 'Eval type not found' });
+    }
+    res.json(formatSchedule(ctx));
+  } catch (error) {
+    console.error('Error saving excusals:', error);
+    res.status(500).json({ error: 'Failed to save excused absences' });
   }
 });
 

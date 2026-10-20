@@ -9,6 +9,8 @@
  *   - whether a target is open yet (its presentation has happened)
  *   - how many evaluations the student must complete (minCompletion is a
  *     percentage of the eligible targets; empty means all of them)
+ *   - which presenters a student has been excused from (absent that day), so
+ *     those drop out of the student's required set
  *
  * Used by the student page, the student dashboard, the submit routes, the
  * teacher progress view, and the reminder scheduler so they all agree.
@@ -44,7 +46,8 @@ async function loadAudienceContext(evalTypeId) {
       assignment: {
         include: { class: { select: { id: true, name: true, dueDateTimezone: true } } }
       },
-      presentationSlots: true
+      presentationSlots: true,
+      presentationExcusals: true
     }
   });
   if (!evalType) return null;
@@ -74,6 +77,14 @@ async function loadAudienceContext(evalTypeId) {
     if (slot.userId) slotByUser.set(slot.userId, slot);
   }
 
+  // studentId -> Set of presenter keys ("g<groupId>" / "u<userId>") they are excused from
+  const excusedByStudent = new Map();
+  for (const ex of evalType.presentationExcusals) {
+    const key = ex.groupId ? `g${ex.groupId}` : `u${ex.presenterUserId}`;
+    if (!excusedByStudent.has(ex.studentId)) excusedByStudent.set(ex.studentId, new Set());
+    excusedByStudent.get(ex.studentId).add(key);
+  }
+
   const timezone = evalType.assignment.class.dueDateTimezone || DEFAULT_TZ;
 
   return {
@@ -85,8 +96,15 @@ async function loadAudienceContext(evalTypeId) {
     groups,
     students: enrollments.map(e => e.user),
     slotByGroup,
-    slotByUser
+    slotByUser,
+    excusedByStudent
   };
+}
+
+const presenterKey = (target) => (target.kind === 'group' ? `g${target.id}` : `u${target.id}`);
+
+function isExcused(ctx, studentId, target) {
+  return ctx.excusedByStudent.get(studentId)?.has(presenterKey(target)) || false;
 }
 
 /** The due date for evaluating one presenter: slot + window, else the round's date. */
@@ -120,9 +138,11 @@ function decorateTarget(ctx, target, slot) {
 
 /**
  * Everyone this student may evaluate in this round, in presentation order.
- * Excludes the student and, when they are in a group, their group-mates.
+ * Excludes the student and, when they are in a group, their group-mates, and
+ * (unless includeExcused is set) presenters the student was excused from.
+ * Each target carries an `excused` flag.
  */
-function buildTargets(ctx, studentId) {
+function buildTargets(ctx, studentId, { includeExcused = false } = {}) {
   const ownGroup = findOwnGroup(ctx, studentId);
   let targets;
 
@@ -151,6 +171,10 @@ function buildTargets(ctx, studentId) {
         last_name: s.lastName
       }, ctx.slotByUser.get(s.id)));
   }
+
+  targets = targets
+    .map(t => ({ ...t, excused: isExcused(ctx, studentId, t) }))
+    .filter(t => includeExcused || !t.excused);
 
   // Scheduled presenters first, in date order; unscheduled keep their list order
   return targets.sort((a, b) => {
@@ -194,7 +218,8 @@ function attachEvaluations(targets, { groupEvals, individualEvals }) {
   });
 }
 
-function summarize(ctx, targets) {
+function summarize(ctx, allTargets) {
+  const targets = allTargets.filter(t => !t.excused);
   const available = targets.length;
   const required = requiredCount(ctx.evalType, available);
   const completed = targets.filter(t => t.evaluation).length;
@@ -206,6 +231,7 @@ function summarize(ctx, targets) {
     available,
     required,
     completed,
+    excused: allTargets.length - targets.length,
     is_complete: required > 0 ? completed >= required : true,
     next_due: nextDue,
     next_presentation: nextPresentation
@@ -215,7 +241,7 @@ function summarize(ctx, targets) {
 /** Full picture for one student: targets with their evaluations, plus counts. */
 async function getStudentAudienceStatus(ctx, studentId, evaluations) {
   const evals = evaluations || await fetchStudentEvaluations(ctx.evalType.id, studentId);
-  const targets = attachEvaluations(buildTargets(ctx, studentId), evals);
+  const targets = attachEvaluations(buildTargets(ctx, studentId, { includeExcused: true }), evals);
   return { targets, ...summarize(ctx, targets) };
 }
 
@@ -250,11 +276,14 @@ async function getClassAudienceProgress(ctx) {
  * Returns { ok: true, isLate } or { ok: false, status, error }.
  */
 function validateSubmission(ctx, studentId, { groupId, evaluateeId }) {
-  const targets = buildTargets(ctx, studentId);
+  const targets = buildTargets(ctx, studentId, { includeExcused: true });
   const target = groupId
     ? targets.find(t => t.kind === 'group' && t.id === groupId)
     : targets.find(t => t.kind === 'individual' && t.id === evaluateeId);
 
+  if (target?.excused) {
+    return { ok: false, status: 403, error: 'You were excused from evaluating this presenter' };
+  }
   if (!target) {
     const ownGroup = findOwnGroup(ctx, studentId);
     const isSelf = evaluateeId === studentId;
@@ -282,6 +311,10 @@ function validateSubmission(ctx, studentId, { groupId, evaluateeId }) {
  * The teacher's schedule view: every presenter in the round with its slot.
  */
 function listPresenters(ctx) {
+  const excusedFor = (key) => [...ctx.excusedByStudent.entries()]
+    .filter(([, keys]) => keys.has(key))
+    .map(([studentId]) => studentId);
+
   if (ctx.evalType.targetType === 'group') {
     return ctx.groups.map(g => ({
       kind: 'group',
@@ -289,7 +322,8 @@ function listPresenters(ctx) {
       name: g.name,
       members: g.members.map(m => ({ id: m.user.id, first_name: m.user.firstName, last_name: m.user.lastName })),
       presentation_date: ctx.slotByGroup.get(g.id)?.presentationDate || null,
-      due_date: targetDueDate(ctx, ctx.slotByGroup.get(g.id))
+      due_date: targetDueDate(ctx, ctx.slotByGroup.get(g.id)),
+      excused_student_ids: excusedFor(`g${g.id}`)
     }));
   }
   return ctx.students.map(s => ({
@@ -300,8 +334,40 @@ function listPresenters(ctx) {
     last_name: s.lastName,
     email: s.email,
     presentation_date: ctx.slotByUser.get(s.id)?.presentationDate || null,
-    due_date: targetDueDate(ctx, ctx.slotByUser.get(s.id))
+    due_date: targetDueDate(ctx, ctx.slotByUser.get(s.id)),
+    excused_student_ids: excusedFor(`u${s.id}`)
   }));
+}
+
+/** Class roster for the teacher's attendance view. */
+function listStudents(ctx) {
+  return ctx.students.map(s => ({
+    id: s.id,
+    first_name: s.firstName,
+    last_name: s.lastName,
+    group_id: findOwnGroup(ctx, s.id)?.id || null
+  }));
+}
+
+/**
+ * Replace the excused list for the given presenters.
+ * `entries` is [{ group_id | user_id (the presenter), student_ids: [...] }].
+ */
+async function saveExcusals(evalTypeId, entries) {
+  const ops = [];
+  for (const e of entries || []) {
+    const groupId = e.group_id ? parseInt(e.group_id) : null;
+    const presenterUserId = e.user_id ? parseInt(e.user_id) : null;
+    if (!groupId && !presenterUserId) continue;
+    const studentIds = [...new Set((e.student_ids || []).map(id => parseInt(id)).filter(Boolean))];
+    ops.push(prisma.presentationExcusal.deleteMany({ where: { evalTypeId, groupId, presenterUserId } }));
+    if (studentIds.length > 0) {
+      ops.push(prisma.presentationExcusal.createMany({
+        data: studentIds.map(studentId => ({ evalTypeId, studentId, groupId, presenterUserId }))
+      }));
+    }
+  }
+  await prisma.$transaction(ops);
 }
 
 /**
@@ -411,7 +477,9 @@ module.exports = {
   getClassAudienceProgress,
   validateSubmission,
   listPresenters,
+  listStudents,
   saveSchedule,
+  saveExcusals,
   audienceRemindersDue,
   estimateExpectedSubmissions
 };
