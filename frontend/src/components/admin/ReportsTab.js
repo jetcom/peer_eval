@@ -103,8 +103,14 @@ function ReportsTab({
     const studentSummaries = students.map(student => {
       const studentGroup = getStudentGroup(student.id);
 
-      // Get evaluations received by this student (individual)
+      // Evaluations received by this student: those about them personally,
+      // plus those about their group (e.g. audience evaluations of a group
+      // presentation), which every member shares
       const receivedEvals = individualEvals.filter(e => e.evaluatee_id === student.id);
+      const receivedGroupEvals = studentGroup
+        ? groupEvals.filter(e => e.group_id === studentGroup.id)
+        : [];
+      const receivedScored = [...receivedEvals, ...receivedGroupEvals].filter(e => e.avg_score != null);
 
       // Get evaluations submitted by this student
       const submittedIndividual = individualEvals.filter(e => e.evaluator_id === student.id);
@@ -114,11 +120,14 @@ function ReportsTab({
       const assignmentScores = {};
       assignments.forEach(assignment => {
         const assignmentEvals = receivedEvals.filter(e => e.assignment_id === assignment.id);
-        if (assignmentEvals.length > 0) {
-          const avgScore = assignmentEvals.reduce((sum, e) => sum + (e.avg_score || 0), 0) / assignmentEvals.length;
+        const scored = receivedScored.filter(e => e.assignment_id === assignment.id);
+        if (assignmentEvals.length > 0 || scored.length > 0) {
+          const avgScore = scored.length > 0
+            ? scored.reduce((sum, e) => sum + e.avg_score, 0) / scored.length
+            : null;
           assignmentScores[assignment.id] = {
             avgScore,
-            count: assignmentEvals.length,
+            count: scored.length,
             comments: assignmentEvals.filter(e => e.comments || (e.attachments && e.attachments.length > 0)).map(e => ({
               from: e.evaluator_name,
               text: e.comments,
@@ -128,10 +137,9 @@ function ReportsTab({
         }
       });
 
-      // Overall average
-      const allReceivedScores = receivedEvals.filter(e => e.avg_score != null);
-      const overallAvg = allReceivedScores.length > 0
-        ? allReceivedScores.reduce((sum, e) => sum + e.avg_score, 0) / allReceivedScores.length
+      // Overall average across everything received
+      const overallAvg = receivedScored.length > 0
+        ? receivedScored.reduce((sum, e) => sum + e.avg_score, 0) / receivedScored.length
         : null;
 
       return {
@@ -242,7 +250,11 @@ function ReportsTab({
         )}
 
         <div className="card">
-          <h2>Student Scores by Assignment</h2>
+          <h2>Scores Received by Student</h2>
+          <p style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '15px' }}>
+            Average of the evaluations each student received, per assignment. Scores given to a group
+            (such as a presentation) count for every member. &ldquo;Submitted&rdquo; is how many evaluations the student gave.
+          </p>
           {students.length === 0 ? (
             <p>No students found.</p>
           ) : (
