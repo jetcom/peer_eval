@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import ImageViewer from '../ImageViewer';
+import PresentationReport from './PresentationReport';
 // Helper to escape CSV values
 function escapeCSV(value) {
   if (value === null || value === undefined) return '';
@@ -350,118 +351,17 @@ function ReportsTab({
           )}
         </div>
 
-        {/* Group Scores Section - for audience/group evaluations */}
-        {groupEvals.length > 0 && (
-          <div className="card">
-            <h2>Group Scores (Audience Evaluations)</h2>
-            <p style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '15px' }}>
-              Scores received by groups from audience evaluations
-            </p>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>
-                    <th style={{ textAlign: 'left', padding: '10px' }}>Assignment</th>
-                    <th style={{ textAlign: 'center', padding: '10px' }}>Avg Score</th>
-                    <th style={{ textAlign: 'center', padding: '10px' }}># Evaluations</th>
-                    <th style={{ textAlign: 'left', padding: '10px' }}>Comments</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(() => {
-                    // Group evaluations by group and assignment
-                    const groupSummaries = {};
-                    groupEvals.forEach(e => {
-                      const key = `${e.group_id}-${e.assignment_id}`;
-                      if (!groupSummaries[key]) {
-                        groupSummaries[key] = {
-                          group_id: e.group_id,
-                          group_name: e.group_name,
-                          assignment_id: e.assignment_id,
-                          assignment_name: e.assignment_name,
-                          scores: [],
-                          comments: []
-                        };
-                      }
-                      if (e.avg_score != null) {
-                        groupSummaries[key].scores.push(e.avg_score);
-                      }
-                      if (e.comments || (e.attachments && e.attachments.length > 0)) {
-                        groupSummaries[key].comments.push({
-                          from: e.evaluator_name,
-                          text: e.comments,
-                          attachments: e.attachments || []
-                        });
-                      }
-                    });
-
-                    return Object.values(groupSummaries).map((summary, idx) => {
-                      const avgScore = summary.scores.length > 0
-                        ? summary.scores.reduce((a, b) => a + b, 0) / summary.scores.length
-                        : null;
-                      return (
-                        <tr key={`${summary.group_id}-${summary.assignment_id}`} style={{ background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.05)' }}>
-                          <td style={{ padding: '10px', fontWeight: 'bold' }}>{summary.group_name}</td>
-                          <td style={{ padding: '10px' }}>{summary.assignment_name}</td>
-                          <td style={{ textAlign: 'center', padding: '10px' }}>
-                            {avgScore != null ? (
-                              <span style={{
-                                padding: '2px 8px',
-                                borderRadius: '3px',
-                                background: avgScore >= 4 ? '#27ae60' : avgScore >= 3 ? '#f39c12' : '#e74c3c',
-                                color: 'white',
-                                fontSize: '0.85rem'
-                              }}>
-                                {avgScore.toFixed(2)}
-                              </span>
-                            ) : '-'}
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '10px' }}>{summary.scores.length}</td>
-                          <td style={{ padding: '10px', fontSize: '0.85rem' }}>
-                            {summary.comments.length > 0 ? (
-                              <details>
-                                <summary style={{ cursor: 'pointer' }}>{summary.comments.length} comment(s)</summary>
-                                <div style={{ marginTop: '8px' }}>
-                                  {summary.comments.map((c, i) => (
-                                    <div key={i} style={{ marginBottom: '10px', paddingLeft: '10px', borderLeft: '2px solid #ddd' }}>
-                                      <span style={{ color: darkMode ? '#a0a0a0' : '#666', fontSize: '0.8rem' }}>{c.from}:</span> {c.text}
-                                      {c.attachments && c.attachments.length > 0 && (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                                          {c.attachments.map((att, attIdx) => (
-                                            <button
-                                              key={att.id}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                openImageViewer(c.attachments, attIdx);
-                                              }}
-                                              style={{
-                                                padding: 0,
-                                                border: 'none',
-                                                background: 'none',
-                                                cursor: 'pointer'
-                                              }}
-                                            >
-                                              <img src={att.url} alt={att.fileName} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }} />
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </details>
-                            ) : '-'}
-                          </td>
-                        </tr>
-                      );
-                    });
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+        {/* Audience (presentation) evaluations organized by the presenter that received them */}
+        <PresentationReport
+          darkMode={darkMode}
+          className={selectedClassData?.name}
+          assignments={assignments}
+          individualEvals={individualEvals}
+          groupEvals={groupEvals}
+          classGroups={classGroups}
+          classStudents={classStudents}
+          openImageViewer={openImageViewer}
+        />
 
         <div className="card">
           <h2>All Comments by Assignment</h2>
