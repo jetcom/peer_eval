@@ -360,6 +360,7 @@ function ReportsTab({
           groupEvals={groupEvals}
           classGroups={classGroups}
           classStudents={classStudents}
+          reportGroup={reportGroup}
           openImageViewer={openImageViewer}
         />
 

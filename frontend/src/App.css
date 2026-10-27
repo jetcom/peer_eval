@@ -927,17 +927,17 @@ body.dark-mode .admin-stat-sublabel {
 /* Improved Tabs */
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 24px;
   background: #ecf0f1;
   padding: 4px;
   border-radius: 10px;
-  overflow-x: auto;
 }
 
 .admin-tab {
   position: relative;
-  padding: 12px 24px;
+  padding: 12px 18px;
   background: transparent;
   border: none;
   border-radius: 8px;

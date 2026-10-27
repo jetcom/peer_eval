@@ -49,10 +49,13 @@ function PresentationReport({
   groupEvals,
   classGroups,
   classStudents,
+  reportGroup,
   openImageViewer
 }) {
   const [selectedEvalTypeId, setSelectedEvalTypeId] = useState(null);
-  const [selectedPresenter, setSelectedPresenter] = useState('all');
+  // Follows the page-level "Filter by Group" selector
+  const filterGroupId = reportGroup && reportGroup !== 'all' ? parseInt(reportGroup) : null;
+  const filterGroup = filterGroupId ? classGroups.find(g => g.id === filterGroupId) : null;
 
   const audienceEvalTypes = assignments.flatMap(a =>
     (a.eval_types || [])
@@ -85,9 +88,12 @@ function PresentationReport({
   (evalType.presentation_slots || []).forEach(s => {
     slotByPresenter[isGroupTarget ? s.group_id : s.user_id] = s.presentation_date;
   });
+  const candidateStudents = filterGroup
+    ? (filterGroup.members || [])
+    : classStudents;
   const presenters = (isGroupTarget
-    ? classGroups.map(g => ({ id: g.id, name: g.name }))
-    : classStudents
+    ? classGroups.filter(g => !filterGroupId || g.id === filterGroupId).map(g => ({ id: g.id, name: g.name }))
+    : candidateStudents
         .filter(s => s.role === 'student')
         .map(s => ({ id: s.id, name: `${s.last_name}, ${s.first_name}` }))
   )
@@ -109,9 +115,7 @@ function PresentationReport({
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 
-  const shownPresenters = selectedPresenter === 'all'
-    ? presenters
-    : presenters.filter(p => p.id === parseInt(selectedPresenter));
+  const showSummary = presenters.length > 1;
 
   const maxScale = likertCriteria.length > 0 ? Math.max(...likertCriteria.map(c => c.max_value || 5)) : 5;
 
@@ -123,7 +127,7 @@ function PresentationReport({
     headers.push('Comments');
 
     const rows = [];
-    shownPresenters.forEach(p => {
+    presenters.forEach(p => {
       p.evaluations.forEach(e => {
         const row = [p.name, e.evaluator_name, e.submitted_at ? new Date(e.submitted_at).toLocaleString() : '', e.is_late ? 'Yes' : 'No'];
         likertCriteria.forEach(c => row.push(e.scores.find(s => s.criterion_id === c.id)?.score ?? ''));
@@ -159,45 +163,30 @@ function PresentationReport({
         Everything each {isGroupTarget ? 'group' : 'presenter'} received from the audience: per-criterion averages, then every evaluator's scores and written feedback.
       </p>
 
-      {/* Round + presenter selectors */}
-      <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap' }}>
-        {audienceEvalTypes.length > 1 && (
-          <div>
-            <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.85rem', fontWeight: '500' }}>Round:</label>
-            <select
-              value={evalType.id}
-              onChange={(e) => { setSelectedEvalTypeId(parseInt(e.target.value)); setSelectedPresenter('all'); }}
-              style={{ padding: '8px', fontSize: '0.9rem', minWidth: '200px' }}
-            >
-              {audienceEvalTypes.map(et => (
-                <option key={et.id} value={et.id}>{et.assignment_name} – {et.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-        <div>
-          <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.85rem', fontWeight: '500' }}>
-            {isGroupTarget ? 'Group' : 'Presenter'}:
-          </label>
+      {/* Round selector; the presenter set follows the page-level group filter */}
+      {audienceEvalTypes.length > 1 && (
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontSize: '0.85rem', fontWeight: '500' }}>Round:</label>
           <select
-            value={selectedPresenter}
-            onChange={(e) => setSelectedPresenter(e.target.value)}
+            value={evalType.id}
+            onChange={(e) => setSelectedEvalTypeId(parseInt(e.target.value))}
             style={{ padding: '8px', fontSize: '0.9rem', minWidth: '200px' }}
           >
-            <option value="all">All {isGroupTarget ? 'groups' : 'presenters'}</option>
-            {presenters.map(p => (
-              <option key={p.id} value={p.id}>{p.name} ({p.evaluations.length})</option>
+            {audienceEvalTypes.map(et => (
+              <option key={et.id} value={et.id}>{et.assignment_name} – {et.name}</option>
             ))}
           </select>
         </div>
-      </div>
+      )}
 
-      {evals.length === 0 ? (
+      {presenters.length === 0 ? (
+        <p>No {isGroupTarget ? 'groups' : 'students'} match the selected group filter.</p>
+      ) : evals.length === 0 ? (
         <p>No audience evaluations have been submitted for this round yet.</p>
       ) : (
         <>
           {/* Summary: one row per presenter, one column per criterion */}
-          {selectedPresenter === 'all' && (
+          {showSummary && (
             <div style={{ overflowX: 'auto', marginBottom: '25px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -231,7 +220,7 @@ function PresentationReport({
           )}
 
           {/* Detail: every evaluator's scores and written feedback per presenter */}
-          {shownPresenters.map(p => (
+          {presenters.map(p => (
             <div key={p.id} style={{ marginBottom: '30px' }}>
               <div style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px',
