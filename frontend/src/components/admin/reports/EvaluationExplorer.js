@@ -3,7 +3,7 @@ import ScoreBadge from './ScoreBadge';
 import RoundSection from './RoundSection';
 import {
   typeLabel, studentRoundCell, groupRoundCell, studentOverall, groupOverall, givenCount,
-  evalsForStudent, evalsForGroup
+  evalsForStudent, evalsForGroup, mean
 } from './model';
 import { downloadCSV, exportAllEvaluations, fmt } from './csv';
 
@@ -176,8 +176,53 @@ function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
   );
 }
 
+/**
+ * A group-level round as seen from one member: the group was evaluated, not
+ * the student, so only the group's totals and a link to the group appear.
+ */
+function GroupRoundSummary({ round, group, evals, darkMode, onOpenGroup }) {
+  const muted = darkMode ? '#a0a0a0' : '#666';
+  const borderColor = darkMode ? '#444' : '#ddd';
+  const avg = mean(evals.map(e => e.avg_score));
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px',
+        borderBottom: `2px solid ${borderColor}`, paddingBottom: '6px', marginBottom: '8px'
+      }}>
+        <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
+          {round.label}
+          <span style={{
+            marginLeft: '8px', padding: '1px 7px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 'normal',
+            background: darkMode ? '#333' : '#e8ecef', color: muted, verticalAlign: 'middle'
+          }}>
+            {typeLabel(round.type)}
+          </span>
+        </h3>
+        <span style={{ fontSize: '0.85rem', color: muted }}>
+          {group ? <>evaluated as <strong>{group.name}</strong></> : 'evaluates groups'}
+          {group && <> · {evals.length} evaluation{evals.length === 1 ? '' : 's'}</>}
+          {avg != null && <> · avg <strong>{avg.toFixed(2)}</strong> / {round.scaleMax}</>}
+        </span>
+      </div>
+      {group ? (
+        <button
+          type="button"
+          onClick={() => onOpenGroup(group.id)}
+          className="btn btn-secondary"
+          style={{ fontSize: '0.85rem', padding: '6px 10px' }}
+        >
+          View {group.name}'s evaluations
+        </button>
+      ) : (
+        <p style={{ fontSize: '0.9rem', color: muted, margin: 0 }}>This student is not in a group, so nothing was received in this round.</p>
+      )}
+    </div>
+  );
+}
+
 /** Detail view for one student: every round they received, one section each. */
-function StudentDetail({ model, student, rounds, darkMode, openImageViewer, compact = false }) {
+function StudentDetail({ model, student, rounds, darkMode, openImageViewer, onOpenGroup, compact = false }) {
   const muted = darkMode ? '#a0a0a0' : '#666';
   const overall = studentOverall(model, rounds, student);
   const Heading = compact ? 'h3' : 'h2';
@@ -193,15 +238,16 @@ function StudentDetail({ model, student, rounds, darkMode, openImageViewer, comp
         </span>
       </div>
       {rounds.map(round => {
-        const slot = round.presentation_slots.find(s => (round.target === 'group' ? s.group_id === student.group?.id : s.user_id === student.id));
+        const evals = evalsForStudent(model, round, student);
+        if (round.target === 'group') {
+          return <GroupRoundSummary key={round.id} round={round} group={student.group} evals={evals} darkMode={darkMode} onOpenGroup={onOpenGroup} />;
+        }
+        const slot = round.presentation_slots.find(s => s.user_id === student.id);
         return (
           <RoundSection
             key={round.id}
             round={round}
-            evals={evalsForStudent(model, round, student)}
-            note={round.target === 'group'
-              ? (student.group ? `Received by ${student.group.name} as a group; counts for every member.` : 'This round evaluates groups, and this student is not in one.')
-              : null}
+            evals={evals}
             presentationDate={slot?.presentation_date}
             darkMode={darkMode}
             openImageViewer={openImageViewer}
@@ -257,7 +303,7 @@ function GroupDetail({ model, group, rounds, columns, groupColumns, darkMode, on
  * Every recipient's evaluator-level detail on one page: the way to read all
  * within-group peer evaluations for every member together.
  */
-function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, openImageViewer }) {
+function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, openImageViewer, onOpenGroup }) {
   const muted = darkMode ? '#a0a0a0' : '#666';
   const borderColor = darkMode ? '#444' : '#ddd';
   const block = { border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '16px', marginBottom: '20px' };
@@ -266,7 +312,7 @@ function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, ope
     if (students.length === 0) return <p>No students found.</p>;
     return students.map(s => (
       <div key={s.id} style={block}>
-        <StudentDetail model={model} student={s} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} compact />
+        <StudentDetail model={model} student={s} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} onOpenGroup={onOpenGroup} compact />
       </div>
     ));
   }
@@ -342,6 +388,7 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
   const selectedStudent = selectedStudentId ? model.studentById[selectedStudentId] : null;
 
   const changeScope = (value) => { setReportGroup(value); setSelectedStudentId(null); };
+  const openGroupDetail = (groupId) => { changeScope(String(groupId)); setDetailMode('detail'); };
 
   const exportView = () => {
     const headers = [];
@@ -377,7 +424,7 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
   // What the main card shows when no student is open
   let body;
   if (selectedStudent) {
-    body = <StudentDetail model={model} student={selectedStudent} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} />;
+    body = <StudentDetail model={model} student={selectedStudent} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} onOpenGroup={openGroupDetail} />;
   } else if (model.rounds.length === 0) {
     body = <p>This class has no evaluation rounds yet.</p>;
   } else if (detailMode === 'detail') {
@@ -390,6 +437,7 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
         rounds={rounds}
         darkMode={darkMode}
         openImageViewer={openImageViewer}
+        onOpenGroup={openGroupDetail}
       />
     );
   } else if (scopeGroup) {
