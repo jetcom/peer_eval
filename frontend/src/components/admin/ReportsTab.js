@@ -45,7 +45,6 @@ function ReportsTab({
   }
 
   const selectedClassData = classes.find(c => c.id.toString() === selectedClass);
-  const showGroups = !!selectedClassData?.show_groups;
   const className = selectedClassData?.name || 'class';
 
   const model = buildModel({
@@ -57,19 +56,24 @@ function ReportsTab({
     assignmentEvaluations
   });
 
+  // A class with only paper reviews has nothing for the explorer to show
+  const hasPaperReviews = paperReviewData?.rounds?.length > 0;
+  const showExplorer = model.rounds.length > 0 || !hasPaperReviews;
+
   return (
     <>
       {/* Keyed by class so drill-down state resets when the class changes */}
-      <EvaluationExplorer
-        key={selectedClass}
-        model={model}
-        className={className}
-        darkMode={darkMode}
-        showGroups={showGroups}
-        reportGroup={reportGroup}
-        setReportGroup={setReportGroup}
-        openImageViewer={openImageViewer}
-      />
+      {showExplorer && (
+        <EvaluationExplorer
+          key={selectedClass}
+          model={model}
+          className={className}
+          darkMode={darkMode}
+          reportGroup={reportGroup}
+          setReportGroup={setReportGroup}
+          openImageViewer={openImageViewer}
+        />
+      )}
 
       {/* Paper Reviews Section */}
       {paperReviewData?.rounds?.length > 0 && (

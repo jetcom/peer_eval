@@ -35,8 +35,8 @@ export function exportAllEvaluations(model, className) {
 
   const headers = [
     'Assignment', 'Round', 'Type', 'Recipient Type', 'Recipient', 'Recipient Group',
-    'Evaluator', 'Evaluator Group', 'Submitted', 'Late',
-    ...criterionNames, 'Avg', 'Points', 'Comments'
+    'Evaluator', 'Evaluator Group', 'Self', 'Former Group', 'Submitted', 'Late',
+    ...criterionNames, 'Avg', 'Avg % of Max', 'Points', 'Comments'
   ];
 
   const rows = [headers];
@@ -55,10 +55,10 @@ export function exportAllEvaluations(model, className) {
       rows.push([
         round.assignment_name, round.name, typeLabel(round.type),
         e.recipient_kind === 'group' ? 'Group' : 'Student', e.recipient_name, recipientGroup,
-        e.evaluator_name, evaluatorGroup,
+        e.evaluator_name, evaluatorGroup, e.is_self ? 'Yes' : 'No', e.is_former_group ? 'Yes' : 'No',
         e.submitted_at ? new Date(e.submitted_at).toLocaleString() : '', e.is_late ? 'Yes' : 'No',
         ...criterionNames.map(n => byName[n] ?? ''),
-        fmt(e.avg_score), e.points ?? '', e.comments || ''
+        fmt(e.avg_score), e.norm_score == null ? '' : fmt(e.norm_score * 100, 1), e.points ?? '', e.comments || ''
       ]);
     });
   });

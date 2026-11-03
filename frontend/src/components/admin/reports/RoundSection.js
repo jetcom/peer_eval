@@ -1,13 +1,13 @@
 import React from 'react';
 import ScoreBadge from './ScoreBadge';
-import { typeLabel, sourceLabel, criterionAverages, mean } from './model';
+import { typeLabel, sourceLabel, criterionAverages, scoreDisplay, displayAverage } from './model';
 import { formatWallClock } from '../../../utils/wallClock';
 
 /**
  * One round's worth of evaluations received by a single recipient: the
  * criterion averages, then every evaluator's scores and written feedback.
  */
-function RoundSection({ round, evals, note, presentationDate, darkMode, openImageViewer }) {
+function RoundSection({ model, round, evals, note, presentationDate, darkMode, openImageViewer }) {
   const mutedColor = darkMode ? '#a0a0a0' : '#666';
   const borderColor = darkMode ? '#444' : '#ddd';
   const panelBg = darkMode ? '#1a1a1a' : '#f8f9fa';
@@ -18,9 +18,11 @@ function RoundSection({ round, evals, note, presentationDate, darkMode, openImag
   const open = round.criteria.filter(c => c.question_type !== 'likert');
   const sorted = [...evals].sort((a, b) => a.evaluator_name.localeCompare(b.evaluator_name));
   const avgs = criterionAverages(round, evals);
+  const display = scoreDisplay(model, round);
+  const evalAvg = (e) => (display.percent ? (e.norm_score == null ? null : e.norm_score * 100) : e.avg_score);
   const overall = round.points
     ? evals.reduce((sum, e) => sum + (e.points || 0), 0)
-    : mean(evals.map(e => e.avg_score));
+    : displayAverage(model, round, evals);
 
   return (
     <div style={{ marginBottom: '28px' }}>
@@ -44,11 +46,16 @@ function RoundSection({ round, evals, note, presentationDate, darkMode, openImag
           {evals.length > 0 && overall != null && (
             round.points
               ? <> · <strong>{overall} pts</strong></>
-              : <> · avg <strong>{overall.toFixed(2)}</strong> / {round.scaleMax}</>
+              : display.percent
+                ? <> · avg <strong>{Math.round(overall)}%</strong> of maximum</>
+                : <> · avg <strong>{overall.toFixed(2)}</strong> / {round.scaleMax}</>
           )}
         </span>
       </div>
       {note && <p style={{ fontSize: '0.85rem', color: mutedColor, margin: '0 0 10px 0' }}>{note}</p>}
+      {!round.points && display.percent && (
+        <p style={{ fontSize: '0.8rem', color: mutedColor, margin: '0 0 10px 0' }}>Criteria use different scales, so averages are shown as a percent of the maximum.</p>
+      )}
 
       {evals.length === 0 ? (
         <p style={{ fontSize: '0.9rem', color: mutedColor, margin: 0 }}>No evaluations received yet.</p>
@@ -76,7 +83,7 @@ function RoundSection({ round, evals, note, presentationDate, darkMode, openImag
                     </td>
                   ))}
                   <td style={{ textAlign: 'center', padding: '4px 10px', borderLeft: '2px solid #586e75' }}>
-                    <ScoreBadge value={overall} max={round.scaleMax} digits={2} />
+                    <ScoreBadge value={overall} max={display.max} digits={2} percent={display.percent} />
                   </td>
                   <td />
                 </tr>
@@ -84,7 +91,7 @@ function RoundSection({ round, evals, note, presentationDate, darkMode, openImag
             </thead>
             <tbody>
               {sorted.map((e, idx) => {
-                const isSelf = e.recipient_kind === 'student' && e.evaluator_id === e.recipient_id;
+                const isSelf = e.is_self;
                 const openResponses = open
                   .map(c => ({ name: c.name, text: e.scores.find(s => s.criterion_id === c.id)?.text_response }))
                   .filter(r => r.text);
@@ -97,6 +104,7 @@ function RoundSection({ round, evals, note, presentationDate, darkMode, openImag
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         {e.evaluator_name}
                         {isSelf && <span style={{ color: mutedColor, marginLeft: '6px', fontSize: '0.8rem' }}>(self)</span>}
+                        {e.is_former_group && <span style={{ color: mutedColor, marginLeft: '6px', fontSize: '0.8rem' }} title="No longer in this student's group">(former group)</span>}
                       </td>
                       {likert.map(c => {
                         const score = e.scores.find(s => s.criterion_id === c.id)?.score;
@@ -110,7 +118,7 @@ function RoundSection({ round, evals, note, presentationDate, darkMode, openImag
                         ? <td style={{ textAlign: 'center', padding: '8px 10px', fontWeight: 'bold' }}>{e.points ?? 0}</td>
                         : likert.length > 0 && (
                           <td style={{ textAlign: 'center', padding: '8px 10px', borderLeft: '2px solid #586e75' }}>
-                            <ScoreBadge value={e.avg_score} max={round.scaleMax} />
+                            <ScoreBadge value={evalAvg(e)} max={display.max} percent={display.percent} />
                           </td>
                         )}
                       <td style={{ padding: '8px 10px', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>

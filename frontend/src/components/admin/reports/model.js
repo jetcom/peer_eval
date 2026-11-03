@@ -9,6 +9,11 @@
  * Phases-mode classes have fixed criteria plus an overall score out of 100
  * and a points-based final round. Assignment-mode classes have per-round
  * criteria and may target groups instead of individuals.
+ *
+ * Averages: each evaluation carries a raw average of its Likert scores
+ * (avg_score) and the same average as a fraction of each criterion's
+ * maximum (norm_score). Rounds whose criteria share one scale display the
+ * raw average; rounds that mix scales display the fraction as a percent.
  */
 
 export const TYPE_LABELS = { audience: 'Audience', peer: 'Peer', self: 'Self', final: 'Final' };
@@ -39,55 +44,77 @@ const PHASE_CRITERIA = [
 // shown but excluded from the Likert average
 const PHASE_SCORE_CRITERION = { id: 'score', name: 'Score /100', max_value: 100, question_type: 'likert', in_avg: false };
 
+/** Raw and normalized averages of an evaluation's scored criteria. */
+function averages(round, scores) {
+  const scored = round.criteria
+    .filter(c => c.question_type === 'likert' && c.in_avg)
+    .map(c => ({ c, s: scores.find(s => s.criterion_id === c.id)?.score }))
+    .filter(x => x.s != null);
+  return {
+    avg_score: mean(scored.map(x => x.s)),
+    norm_score: mean(scored.map(x => (x.c.max_value > 0 ? x.s / x.c.max_value : null)))
+  };
+}
+
+function finishRound(round) {
+  const inAvg = round.criteria.filter(c => c.question_type === 'likert' && c.in_avg);
+  const maxes = [...new Set(inAvg.map(c => c.max_value))];
+  return {
+    ...round,
+    scaleMax: maxes.length > 0 ? Math.max(...maxes) : 5,
+    uniformScale: maxes.length <= 1
+  };
+}
+
 function fromPhases(classData, classId, studentIds, evaluations, finalComments) {
   const numPhases = classData?.num_phases || 3;
-  const rounds = Array.from({ length: numPhases }, (_, i) => ({
+  const rounds = Array.from({ length: numPhases }, (_, i) => finishRound({
     id: `phase-${i + 1}`,
     label: `Phase ${i + 1}`,
-    shortLabel: `P${i + 1}`,
     assignment_name: '',
     name: `Phase ${i + 1}`,
+    multi: false,
     type: 'peer',
     target: 'individual',
     criteria: [...PHASE_CRITERIA, PHASE_SCORE_CRITERION],
-    scaleMax: 5,
     points: false,
     presentation_slots: []
   }));
   if (classData?.has_final_evaluation) {
-    rounds.push({
+    rounds.push(finishRound({
       id: 'final',
       label: 'Final',
-      shortLabel: 'Final',
       assignment_name: '',
       name: 'Final',
+      multi: false,
       type: 'final',
       target: 'individual',
       criteria: [],
-      scaleMax: 5,
       points: true,
       presentation_slots: []
-    });
+    }));
   }
+  const roundById = Object.fromEntries(rounds.map(r => [r.id, r]));
 
   // Older rows have no class_id; fall back to both parties being enrolled
   const inClass = (e) => (e.class_id ? e.class_id === classId : (studentIds.has(e.evaluator_id) && studentIds.has(e.evaluatee_id)));
 
-  const evals = evaluations.filter(inClass).map(e => {
+  const evals = evaluations.filter(inClass).filter(e => roundById[`phase-${e.phase}`]).map(e => {
+    const round = roundById[`phase-${e.phase}`];
     const scores = PHASE_CRITERIA.map(c => ({
       criterion_id: c.id, criterion_name: c.name, score: e[c.id] ?? null, question_type: 'likert', text_response: null
     }));
     scores.push({ criterion_id: 'score', criterion_name: 'Score /100', score: e.score ?? null, question_type: 'likert', text_response: null });
     return {
       id: `e-${e.id}`,
-      round_id: `phase-${e.phase}`,
+      round_id: round.id,
       evaluator_id: e.evaluator_id,
       evaluator_name: e.evaluator_name,
       recipient_kind: 'student',
       recipient_id: e.evaluatee_id,
       recipient_name: e.evaluatee_name,
       scores,
-      avg_score: mean(PHASE_CRITERIA.map(c => e[c.id])),
+      ...averages(round, scores),
       points: null,
       comments: e.comments,
       attachments: e.attachments || [],
@@ -108,6 +135,7 @@ function fromPhases(classData, classId, studentIds, evaluations, finalComments) 
         recipient_name: fc.evaluatee_name,
         scores: [],
         avg_score: null,
+        norm_score: null,
         points: fc.final_points || 0,
         comments: fc.comments,
         attachments: [],
@@ -122,65 +150,72 @@ function fromPhases(classData, classId, studentIds, evaluations, finalComments) 
 
 function fromAssignments(assignmentEvaluations) {
   const assignments = assignmentEvaluations?.assignments || [];
-  const rounds = assignments.flatMap(a =>
-    (a.eval_types || [])
-      .filter(et => et.eval_type !== 'paper_review')
-      .map(et => {
-        const criteria = (et.criteria || []).map(c => ({
-          id: c.id,
-          name: c.name,
-          description: c.description,
-          max_value: c.max_value || 5,
-          question_type: c.question_type || 'likert',
-          in_avg: (c.question_type || 'likert') === 'likert'
-        }));
-        const likert = criteria.filter(c => c.question_type === 'likert');
-        return {
-          id: et.id,
-          label: `${a.name} – ${et.name}`,
-          shortLabel: `${a.name} – ${et.name}`,
-          assignment_name: a.name,
-          name: et.name,
-          type: et.eval_type,
-          target: et.target_type === 'group' ? 'group' : 'individual',
-          criteria,
-          scaleMax: likert.length > 0 ? Math.max(...likert.map(c => c.max_value)) : 5,
-          points: false,
-          presentation_slots: et.presentation_slots || []
-        };
-      })
-  );
-  const roundIds = new Set(rounds.map(r => r.id));
+  const rounds = assignments.flatMap(a => {
+    const evalTypes = (a.eval_types || []).filter(et => et.eval_type !== 'paper_review');
+    // An assignment with a single round is labeled by the assignment alone
+    const multi = evalTypes.length > 1;
+    return evalTypes.map(et => finishRound({
+      id: et.id,
+      label: multi ? `${a.name} – ${et.name}` : a.name,
+      assignment_name: a.name,
+      name: et.name,
+      multi,
+      type: et.eval_type,
+      target: et.target_type === 'group' ? 'group' : 'individual',
+      criteria: (et.criteria || []).map(c => ({
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        max_value: c.max_value || 5,
+        question_type: c.question_type || 'likert',
+        in_avg: (c.question_type || 'likert') === 'likert'
+      })),
+      points: false,
+      presentation_slots: et.presentation_slots || []
+    }));
+  });
+  const roundById = Object.fromEntries(rounds.map(r => [r.id, r]));
 
-  const convert = (e, kind) => ({
-    id: `${kind === 'group' ? 'g' : 'i'}-${e.id}`,
-    round_id: e.eval_type_id,
-    evaluator_id: e.evaluator_id,
-    evaluator_name: e.evaluator_name,
-    recipient_kind: kind,
-    recipient_id: kind === 'group' ? e.group_id : e.evaluatee_id,
-    recipient_name: kind === 'group' ? e.group_name : e.evaluatee_name,
-    scores: (e.scores || []).map(s => ({
+  const convert = (e, kind) => {
+    const round = roundById[e.eval_type_id];
+    const scores = (e.scores || []).map(s => ({
       criterion_id: s.criterion_id,
       criterion_name: s.criterion_name,
       score: s.score,
       question_type: s.question_type || 'likert',
       text_response: s.text_response || null
-    })),
-    avg_score: e.avg_score,
-    points: null,
-    comments: e.comments,
-    attachments: e.attachments || [],
-    submitted_at: e.submitted_at,
-    is_late: !!e.is_late
-  });
+    }));
+    return {
+      id: `${kind === 'group' ? 'g' : 'i'}-${e.id}`,
+      round_id: e.eval_type_id,
+      evaluator_id: e.evaluator_id,
+      evaluator_name: e.evaluator_name,
+      recipient_kind: kind,
+      recipient_id: kind === 'group' ? e.group_id : e.evaluatee_id,
+      recipient_name: kind === 'group' ? e.group_name : e.evaluatee_name,
+      scores,
+      ...averages(round, scores),
+      points: null,
+      comments: e.comments,
+      attachments: e.attachments || [],
+      submitted_at: e.submitted_at,
+      is_late: !!e.is_late
+    };
+  };
 
   const evals = [
-    ...(assignmentEvaluations?.individual_evaluations || []).filter(e => roundIds.has(e.eval_type_id)).map(e => convert(e, 'student')),
-    ...(assignmentEvaluations?.group_evaluations || []).filter(e => roundIds.has(e.eval_type_id)).map(e => convert(e, 'group'))
+    ...(assignmentEvaluations?.individual_evaluations || []).filter(e => roundById[e.eval_type_id]).map(e => convert(e, 'student')),
+    ...(assignmentEvaluations?.group_evaluations || []).filter(e => roundById[e.eval_type_id]).map(e => convert(e, 'group'))
   ];
 
   return { rounds, evals };
+}
+
+function indexEvals(rounds, evals) {
+  const evalsByRound = {};
+  rounds.forEach(r => { evalsByRound[r.id] = []; });
+  evals.forEach(e => { if (evalsByRound[e.round_id]) evalsByRound[e.round_id].push(e); });
+  return evalsByRound;
 }
 
 /**
@@ -214,13 +249,66 @@ export function buildModel({ classData, classStudents, classGroups, evaluations,
   const { rounds, evals } = isAssignmentMode
     ? fromAssignments(assignmentEvaluations)
     : fromPhases(classData, classId, studentIds, evaluations || [], finalComments || []);
+  const roundById = Object.fromEntries(rounds.map(r => [r.id, r]));
 
-  const evalsByRound = {};
-  rounds.forEach(r => { evalsByRound[r.id] = []; });
-  evals.forEach(e => { if (evalsByRound[e.round_id]) evalsByRound[e.round_id].push(e); });
+  // Flag self-evaluations and evaluations between people who are no longer
+  // groupmates (group membership only records the present, so a mismatch
+  // means one of them has since changed groups)
+  evals.forEach(e => {
+    const round = roundById[e.round_id];
+    e.is_self = e.recipient_kind === 'student' && e.evaluator_id === e.recipient_id;
+    e.is_former_group = false;
+    if (e.recipient_kind === 'student' && !e.is_self && round && round.type !== 'audience') {
+      const recipientGroup = groupOfStudent[e.recipient_id];
+      const evaluatorGroup = groupOfStudent[e.evaluator_id];
+      if (recipientGroup && evaluatorGroup?.id !== recipientGroup.id) e.is_former_group = true;
+    }
+  });
 
-  return { isAssignmentMode, students, groups, rounds, evals, evalsByRound, studentById: Object.fromEntries(students.map(s => [s.id, s])), groupById: Object.fromEntries(groups.map(g => [g.id, g])) };
+  const scoredRounds = rounds.filter(r => !r.points);
+  const overallMaxes = [...new Set(scoredRounds.map(r => r.scaleMax))];
+  const uniformOverall = scoredRounds.every(r => r.uniformScale) && overallMaxes.length <= 1;
+
+  return {
+    isAssignmentMode,
+    students,
+    groups,
+    rounds,
+    evals,
+    evalsByRound: indexEvals(rounds, evals),
+    studentById: Object.fromEntries(students.map(s => [s.id, s])),
+    groupById: Object.fromEntries(groups.map(g => [g.id, g])),
+    hasSelf: evals.some(e => e.is_self),
+    hasFormerGroup: evals.some(e => e.is_former_group),
+    uniformOverall,
+    overallMax: uniformOverall && overallMaxes.length === 1 ? overallMaxes[0] : 100
+  };
 }
+
+/** A copy of the model with some evaluations left out of every total. */
+export function filterModel(model, { includeSelf = true, includeFormerGroup = true } = {}) {
+  if (includeSelf && includeFormerGroup) return model;
+  const evals = model.evals.filter(e => (includeSelf || !e.is_self) && (includeFormerGroup || !e.is_former_group));
+  return { ...model, evals, evalsByRound: indexEvals(model.rounds, evals) };
+}
+
+/**
+ * How to present an average for a round (or, with round null, the overall
+ * average across rounds): the raw value on its scale, or a percent of the
+ * maximum when scales are mixed.
+ */
+export function scoreDisplay(model, round) {
+  if (round) return round.uniformScale ? { percent: false, max: round.scaleMax } : { percent: true, max: 100 };
+  return model.uniformOverall ? { percent: false, max: model.overallMax } : { percent: true, max: 100 };
+}
+
+/** The displayable average of a set of evaluations under scoreDisplay. */
+export function displayAverage(model, round, evals) {
+  const { percent } = scoreDisplay(model, round);
+  return percent ? pct(mean(evals.map(e => e.norm_score))) : mean(evals.map(e => e.avg_score));
+}
+
+const pct = (v) => (v == null ? null : v * 100);
 
 /**
  * Evaluations a student received in a round. Group-targeted rounds (such as
@@ -250,14 +338,14 @@ export function criterionAverages(round, evals) {
 }
 
 /**
- * Summary of what a student received in a round: count, average, criterion
- * averages, and (for points rounds) total points.
+ * Summary of what a student received in a round: count, displayable
+ * average, criterion averages, and (for points rounds) total points.
  */
 export function studentRoundCell(model, round, student) {
   const evals = evalsForStudent(model, round, student);
   return {
     count: evals.length,
-    avg: round.points ? null : mean(evals.map(e => e.avg_score)),
+    avg: round.points ? null : displayAverage(model, round, evals),
     points: round.points ? evals.reduce((sum, e) => sum + (e.points || 0), 0) : null,
     criterionAvgs: criterionAverages(round, evals),
     evals
@@ -271,7 +359,7 @@ export function studentRoundCell(model, round, student) {
 export function groupRoundCell(model, round, group) {
   if (round.target === 'group') {
     const evals = evalsForGroup(model, round, group);
-    return { count: evals.length, avg: mean(evals.map(e => e.avg_score)), points: null, criterionAvgs: criterionAverages(round, evals), evals, perMember: false };
+    return { count: evals.length, avg: displayAverage(model, round, evals), points: null, criterionAvgs: criterionAverages(round, evals), evals, perMember: false };
   }
   const members = group.memberIds.map(id => model.studentById[id]).filter(Boolean);
   const cells = members.map(m => studentRoundCell(model, round, m));
@@ -292,7 +380,7 @@ export function groupRoundCell(model, round, group) {
 /** Overall average across every scored round a student received. */
 export function studentOverall(model, rounds, student) {
   const scored = rounds.filter(r => !r.points).flatMap(r => evalsForStudent(model, r, student));
-  return mean(scored.map(e => e.avg_score));
+  return displayAverage(model, null, scored);
 }
 
 export function groupOverall(model, rounds, group) {

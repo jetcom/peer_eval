@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ScoreBadge from './ScoreBadge';
 import RoundSection from './RoundSection';
 import {
   typeLabel, studentRoundCell, groupRoundCell, studentOverall, groupOverall, givenCount,
-  evalsForStudent, evalsForGroup, mean
+  evalsForStudent, evalsForGroup, displayAverage, scoreDisplay, filterModel
 } from './model';
 import { downloadCSV, exportAllEvaluations, fmt } from './csv';
 
@@ -14,9 +14,13 @@ import { downloadCSV, exportAllEvaluations, fmt } from './csv';
  * With "All rounds" selected there is one column per round; with a single
  * round selected there is one column per criterion of that round.
  */
-function buildColumns({ viewBy, rounds, singleRound, showGroups, darkMode }) {
+function buildColumns({ model, viewBy, rounds, singleRound, showGroups, darkMode }) {
   const muted = darkMode ? '#a0a0a0' : '#666';
   const cols = [];
+  const fmtAvg = (round, value) => {
+    if (value == null) return '';
+    return scoreDisplay(model, round).percent ? `${Math.round(value)}%` : fmt(value);
+  };
 
   if (viewBy === 'students') {
     cols.push({ key: 'name', header: 'Student', align: 'left', render: r => <strong>{r.name}</strong>, csv: r => r.name });
@@ -47,17 +51,18 @@ function buildColumns({ viewBy, rounds, singleRound, showGroups, darkMode }) {
     } else if (likert.length > 0) {
       cols.push({
         key: 'avg', header: 'Avg', align: 'center', divider: true,
-        render: r => <strong>{fmt(r.cells[singleRound.id].avg) || '-'}</strong>,
-        csv: r => fmt(r.cells[singleRound.id].avg)
+        render: r => <strong>{fmtAvg(singleRound, r.cells[singleRound.id].avg) || '-'}</strong>,
+        csv: r => fmtAvg(singleRound, r.cells[singleRound.id].avg)
       });
     }
   } else {
     rounds.forEach(round => {
       const scoreCriterion = round.criteria.find(c => c.question_type === 'likert' && c.in_avg === false);
+      const display = scoreDisplay(model, round);
       cols.push({
         key: `r-${round.id}`,
         header: round.assignment_name || round.label,
-        sub: round.assignment_name ? `${round.name} · ${typeLabel(round.type)}` : typeLabel(round.type),
+        sub: round.multi ? `${round.name} · ${typeLabel(round.type)}` : typeLabel(round.type),
         align: 'center',
         render: r => {
           const cell = r.cells[round.id];
@@ -65,7 +70,7 @@ function buildColumns({ viewBy, rounds, singleRound, showGroups, darkMode }) {
           if (round.points) return <strong>{fmt(cell.points, viewBy === 'groups' ? 1 : 0)} pts</strong>;
           return (
             <>
-              <ScoreBadge value={cell.avg} max={round.scaleMax} />
+              <ScoreBadge value={cell.avg} max={display.max} percent={display.percent} />
               {scoreCriterion && cell.criterionAvgs[scoreCriterion.id] != null && (
                 <div style={{ fontSize: '0.72rem', color: muted, marginTop: '2px' }}>
                   {fmt(cell.criterionAvgs[scoreCriterion.id], 0)}/{scoreCriterion.max_value}
@@ -77,7 +82,7 @@ function buildColumns({ viewBy, rounds, singleRound, showGroups, darkMode }) {
         csv: r => {
           const cell = r.cells[round.id];
           if (cell.count === 0) return '';
-          return round.points ? fmt(cell.points, viewBy === 'groups' ? 1 : 0) : fmt(cell.avg);
+          return round.points ? fmt(cell.points, viewBy === 'groups' ? 1 : 0) : fmtAvg(round, cell.avg);
         },
         // Extra CSV-only column for the phases-mode score out of 100
         extraCsv: scoreCriterion ? {
@@ -86,7 +91,7 @@ function buildColumns({ viewBy, rounds, singleRound, showGroups, darkMode }) {
         } : null
       });
     });
-    cols.push({ key: 'overall', header: 'Overall', align: 'center', divider: true, render: r => <strong>{fmt(r.overall) || '-'}</strong>, csv: r => fmt(r.overall) });
+    cols.push({ key: 'overall', header: 'Overall', align: 'center', divider: true, render: r => <strong>{fmtAvg(null, r.overall) || '-'}</strong>, csv: r => fmtAvg(null, r.overall) });
   }
 
   if (viewBy === 'students') {
@@ -180,10 +185,11 @@ function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
  * A group-level round as seen from one member: the group was evaluated, not
  * the student, so only the group's totals and a link to the group appear.
  */
-function GroupRoundSummary({ round, group, evals, darkMode, onOpenGroup }) {
+function GroupRoundSummary({ model, round, group, evals, darkMode, onOpenGroup }) {
   const muted = darkMode ? '#a0a0a0' : '#666';
   const borderColor = darkMode ? '#444' : '#ddd';
-  const avg = mean(evals.map(e => e.avg_score));
+  const display = scoreDisplay(model, round);
+  const avg = displayAverage(model, round, evals);
   return (
     <div style={{ marginBottom: '20px' }}>
       <div style={{
@@ -202,7 +208,7 @@ function GroupRoundSummary({ round, group, evals, darkMode, onOpenGroup }) {
         <span style={{ fontSize: '0.85rem', color: muted }}>
           {group ? <>evaluated as <strong>{group.name}</strong></> : 'evaluates groups'}
           {group && <> · {evals.length} evaluation{evals.length === 1 ? '' : 's'}</>}
-          {avg != null && <> · avg <strong>{avg.toFixed(2)}</strong> / {round.scaleMax}</>}
+          {avg != null && (display.percent ? <> · avg <strong>{Math.round(avg)}%</strong></> : <> · avg <strong>{avg.toFixed(2)}</strong> / {round.scaleMax}</>)}
         </span>
       </div>
       {group ? (
@@ -234,18 +240,19 @@ function StudentDetail({ model, student, rounds, darkMode, openImageViewer, onOp
           {student.group && <span style={{ fontSize: '0.9rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{student.group.name}</span>}
         </Heading>
         <span style={{ fontSize: '0.9rem', color: muted }}>
-          {student.email}{overall != null && <> · overall <strong>{overall.toFixed(2)}</strong></>}
+          {student.email}{overall != null && <> · overall <strong>{scoreDisplay(model, null).percent ? `${Math.round(overall)}%` : overall.toFixed(2)}</strong></>}
         </span>
       </div>
       {rounds.map(round => {
         const evals = evalsForStudent(model, round, student);
         if (round.target === 'group') {
-          return <GroupRoundSummary key={round.id} round={round} group={student.group} evals={evals} darkMode={darkMode} onOpenGroup={onOpenGroup} />;
+          return <GroupRoundSummary key={round.id} model={model} round={round} group={student.group} evals={evals} darkMode={darkMode} onOpenGroup={onOpenGroup} />;
         }
         const slot = round.presentation_slots.find(s => s.user_id === student.id);
         return (
           <RoundSection
             key={round.id}
+            model={model}
             round={round}
             evals={evals}
             presentationDate={slot?.presentation_date}
@@ -275,7 +282,7 @@ function GroupDetail({ model, group, rounds, columns, groupColumns, darkMode, on
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px', marginBottom: '18px' }}>
         <h2 style={{ margin: 0 }}>{group.name}</h2>
         <span style={{ fontSize: '0.9rem', color: muted }}>
-          {members.length} member{members.length === 1 ? '' : 's'}{overall != null && <> · members' overall <strong>{overall.toFixed(2)}</strong></>}
+          {members.length} member{members.length === 1 ? '' : 's'}{overall != null && <> · members' overall <strong>{scoreDisplay(model, null).percent ? `${Math.round(overall)}%` : overall.toFixed(2)}</strong></>}
         </span>
       </div>
 
@@ -331,6 +338,7 @@ function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, ope
         {groupRounds.map(round => (
           <RoundSection
             key={round.id}
+            model={model}
             round={round}
             evals={evalsForGroup(model, round, g)}
             note="Evaluations of the group as a whole."
@@ -355,9 +363,13 @@ function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, ope
  *     survives tab switches: 'all' (every student), 'groups' (one row per
  *     group), or a group id (that group's members).
  */
-function EvaluationExplorer({ model, className, darkMode, showGroups, reportGroup, setReportGroup, openImageViewer }) {
-  const hasGroups = showGroups && model.groups.length > 0;
+function EvaluationExplorer({ model: baseModel, className, darkMode, reportGroup, setReportGroup, openImageViewer }) {
+  const hasGroups = baseModel.groups.length > 0;
   const [roundId, setRoundId] = useState('all');
+  // Which evaluations count: self-evaluations and ones from former groupmates
+  const [includeSelf, setIncludeSelf] = useState(true);
+  const [includeFormerGroup, setIncludeFormerGroup] = useState(true);
+  const model = useMemo(() => filterModel(baseModel, { includeSelf, includeFormerGroup }), [baseModel, includeSelf, includeFormerGroup]);
   // 'summary' is the grid; 'detail' lists every evaluator for every row at once
   const [detailMode, setDetailMode] = useState('summary');
   // A student opened from the grid, or null
@@ -380,8 +392,8 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
 
   const students = scopeGroup ? model.students.filter(s => s.group?.id === scopeGroup.id) : model.students;
 
-  const studentColumns = buildColumns({ viewBy: 'students', rounds, singleRound, showGroups: hasGroups && !scopeGroup, darkMode });
-  const groupColumns = buildColumns({ viewBy: 'groups', rounds, singleRound, showGroups: hasGroups, darkMode });
+  const studentColumns = buildColumns({ model, viewBy: 'students', rounds, singleRound, showGroups: hasGroups && !scopeGroup, darkMode });
+  const groupColumns = buildColumns({ model, viewBy: 'groups', rounds, singleRound, showGroups: hasGroups, darkMode });
   const columns = scopeIsGroups ? groupColumns : studentColumns;
   const rows = scopeIsGroups ? buildGroupRows(model, model.groups, rounds) : buildStudentRows(model, students, rounds);
 
@@ -515,6 +527,23 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
               <button type="button" onClick={() => { setDetailMode('detail'); setSelectedStudentId(null); }} style={{ ...segBtn(detailMode === 'detail'), borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>Full detail</button>
             </div>
           </div>
+
+          {(baseModel.hasSelf || baseModel.hasFormerGroup) && (
+            <div style={{ ...labelStyle, fontWeight: 'normal', justifyContent: 'flex-end', minHeight: '36px', gap: '6px' }}>
+              {baseModel.hasSelf && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={includeSelf} onChange={e => setIncludeSelf(e.target.checked)} />
+                  Include self-evaluations
+                </label>
+              )}
+              {baseModel.hasFormerGroup && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} title="Evaluations between students who are no longer in the same group">
+                  <input type="checkbox" checked={includeFormerGroup} onChange={e => setIncludeFormerGroup(e.target.checked)} />
+                  Include former-group evaluations
+                </label>
+              )}
+            </div>
+          )}
         </div>
         <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: muted }}>
           {detailMode === 'detail'

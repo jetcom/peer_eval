@@ -213,6 +213,12 @@ function AssignmentsTab({ darkMode, classId, classStudents = [], classGroups = [
                       Review rounds are managed from the Progress tab.
                     </div>
                   )}
+
+                  {et.eval_type === 'peer' && (classGroups || []).length === 0 && (
+                    <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#e67e22' }}>
+                      Peer evaluations are of groupmates, and this class has no groups yet. Create groups on the Groups tab before students can submit.
+                    </div>
+                  )}
                 </div>
               );
             })}
