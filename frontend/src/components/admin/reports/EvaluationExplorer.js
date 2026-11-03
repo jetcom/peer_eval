@@ -304,17 +304,28 @@ function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, ope
   });
 }
 
+/**
+ * Props:
+ *   reportGroup / setReportGroup  the row scope, kept on the dashboard so it
+ *     survives tab switches: 'all' (every student), 'groups' (one row per
+ *     group), or a group id (that group's members).
+ */
 function EvaluationExplorer({ model, className, darkMode, showGroups, reportGroup, setReportGroup, openImageViewer }) {
   const hasGroups = showGroups && model.groups.length > 0;
-  const [viewBy, setViewBy] = useState('students');
   const [roundId, setRoundId] = useState('all');
   // 'summary' is the grid; 'detail' lists every evaluator for every row at once
   const [detailMode, setDetailMode] = useState('summary');
-  // null, or { kind: 'student' | 'group', id, from?: { kind: 'group', id } }
-  const [selection, setSelection] = useState(null);
+  // A student opened from the grid, or null
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
 
-  // Fall back to the students view if groups are hidden
-  useEffect(() => { if (!hasGroups && viewBy === 'groups') setViewBy('students'); }, [hasGroups, viewBy]);
+  const scope = reportGroup || 'all';
+  const scopeGroup = scope !== 'all' && scope !== 'groups' ? model.groupById[parseInt(scope)] : null;
+  const scopeIsGroups = scope === 'groups';
+
+  // Fall back to all students if groups are hidden or the group vanished
+  useEffect(() => {
+    if (scope !== 'all' && (!hasGroups || (!scopeIsGroups && !scopeGroup))) setReportGroup('all');
+  }, [scope, hasGroups, scopeIsGroups, scopeGroup, setReportGroup]);
 
   const muted = darkMode ? '#a0a0a0' : '#666';
   const borderColor = darkMode ? '#444' : '#ddd';
@@ -322,17 +333,16 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
   const singleRound = roundId === 'all' ? null : model.rounds.find(r => String(r.id) === String(roundId)) || null;
   const rounds = singleRound ? [singleRound] : model.rounds;
 
-  const filterGroup = reportGroup !== 'all' ? model.groupById[parseInt(reportGroup)] : null;
-  const students = filterGroup ? model.students.filter(s => s.group?.id === filterGroup.id) : model.students;
-  const groups = filterGroup ? [filterGroup] : model.groups;
+  const students = scopeGroup ? model.students.filter(s => s.group?.id === scopeGroup.id) : model.students;
 
-  const studentColumns = buildColumns({ viewBy: 'students', rounds, singleRound, showGroups: hasGroups, darkMode });
+  const studentColumns = buildColumns({ viewBy: 'students', rounds, singleRound, showGroups: hasGroups && !scopeGroup, darkMode });
   const groupColumns = buildColumns({ viewBy: 'groups', rounds, singleRound, showGroups: hasGroups, darkMode });
-  const columns = viewBy === 'students' ? studentColumns : groupColumns;
-  const rows = viewBy === 'students' ? buildStudentRows(model, students, rounds) : buildGroupRows(model, groups, rounds);
+  const columns = scopeIsGroups ? groupColumns : studentColumns;
+  const rows = scopeIsGroups ? buildGroupRows(model, model.groups, rounds) : buildStudentRows(model, students, rounds);
 
-  const selectedStudent = selection?.kind === 'student' ? model.studentById[selection.id] : null;
-  const selectedGroup = selection?.kind === 'group' ? model.groupById[selection.id] : null;
+  const selectedStudent = selectedStudentId ? model.studentById[selectedStudentId] : null;
+
+  const changeScope = (value) => { setReportGroup(value); setSelectedStudentId(null); };
 
   const exportView = () => {
     const headers = [];
@@ -342,15 +352,11 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
       cellFns.push(c.csv);
       if (c.extraCsv) { headers.push(c.extraCsv.header); cellFns.push(c.extraCsv.value); }
     });
-    if (viewBy === 'students') { headers.splice(1, 0, 'Email'); cellFns.splice(1, 0, r => r.email); }
+    if (!scopeIsGroups) { headers.splice(1, 0, 'Email'); cellFns.splice(1, 0, r => r.email); }
     const out = [headers, ...rows.map(r => cellFns.map(fn => fn(r)))];
-    const scope = singleRound ? singleRound.label : 'all_rounds';
-    downloadCSV(`${className || 'class'}_${viewBy}_${scope}.csv`, out);
-  };
-
-  const back = () => {
-    if (selection?.from) setSelection(selection.from);
-    else setSelection(null);
+    const who = scopeGroup ? scopeGroup.name : scopeIsGroups ? 'groups' : 'students';
+    const what = singleRound ? singleRound.label : 'all_rounds';
+    downloadCSV(`${className || 'class'}_${who}_${what}.csv`, out);
   };
 
   const selectStyle = { padding: '8px', fontSize: '0.9rem' };
@@ -360,6 +366,59 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
     background: active ? (darkMode ? '#3498db' : '#2c3e50') : (darkMode ? '#2a2a2a' : '#fff'),
     color: active ? '#fff' : 'inherit'
   });
+  const labelStyle = { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 };
+
+  const scopeDescription = scopeGroup
+    ? <>members of <strong>{scopeGroup.name}</strong></>
+    : scopeIsGroups ? 'each group' : 'each student';
+  const roundDescription = singleRound ? <> in <strong>{singleRound.label}</strong></> : ' in every round';
+
+  // What the main card shows when no student is open
+  let body;
+  if (selectedStudent) {
+    body = <StudentDetail model={model} student={selectedStudent} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} />;
+  } else if (model.rounds.length === 0) {
+    body = <p>This class has no evaluation rounds yet.</p>;
+  } else if (detailMode === 'detail') {
+    body = (
+      <FullDetailList
+        model={model}
+        viewBy={scopeIsGroups || scopeGroup ? 'groups' : 'students'}
+        students={students}
+        groups={scopeGroup ? [scopeGroup] : model.groups}
+        rounds={rounds}
+        darkMode={darkMode}
+        openImageViewer={openImageViewer}
+      />
+    );
+  } else if (scopeGroup) {
+    body = (
+      <GroupDetail
+        model={model}
+        group={scopeGroup}
+        rounds={rounds}
+        columns={studentColumns}
+        darkMode={darkMode}
+        openImageViewer={openImageViewer}
+        onSelectStudent={row => setSelectedStudentId(row.id)}
+      />
+    );
+  } else {
+    body = (
+      <>
+        <h3 style={{ marginTop: 0, borderBottom: `2px solid ${borderColor}`, paddingBottom: '8px' }}>
+          {scopeIsGroups ? 'Scores by Group' : 'Scores Received by Student'}
+        </h3>
+        <Grid
+          columns={columns}
+          rows={rows}
+          onSelect={row => (scopeIsGroups ? changeScope(String(row.id)) : setSelectedStudentId(row.id))}
+          darkMode={darkMode}
+          emptyText={scopeIsGroups ? 'No groups found.' : 'No students found.'}
+        />
+      </>
+    );
+  }
 
   return (
     <>
@@ -377,7 +436,7 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 }}>
+          <label style={labelStyle}>
             Round
             <select value={roundId} onChange={e => setRoundId(e.target.value)} style={{ ...selectStyle, minWidth: '200px' }}>
               <option value="all">All rounds</option>
@@ -387,87 +446,46 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
             </select>
           </label>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 }}>
-            Show
-            <div style={{ display: 'flex' }}>
-              <button type="button" onClick={() => { setDetailMode('summary'); setSelection(null); }} style={{ ...segBtn(detailMode === 'summary'), borderRadius: '4px 0 0 4px' }}>Summary</button>
-              <button type="button" onClick={() => { setDetailMode('detail'); setSelection(null); }} style={{ ...segBtn(detailMode === 'detail'), borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>Full detail</button>
-            </div>
-          </div>
-
           {hasGroups && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 }}>
-              View by
-              <div style={{ display: 'flex' }}>
-                <button type="button" onClick={() => { setViewBy('students'); setSelection(null); }} style={{ ...segBtn(viewBy === 'students'), borderRadius: '4px 0 0 4px' }}>Students</button>
-                <button type="button" onClick={() => { setViewBy('groups'); setSelection(null); }} style={{ ...segBtn(viewBy === 'groups'), borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>Groups</button>
-              </div>
-            </div>
-          )}
-
-          {hasGroups && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 }}>
-              Group
-              <select value={reportGroup} onChange={e => { setReportGroup(e.target.value); setSelection(null); }} style={{ ...selectStyle, minWidth: '160px' }}>
-                <option value="all">All groups</option>
-                {model.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            <label style={labelStyle}>
+              Rows
+              <select value={scope} onChange={e => changeScope(e.target.value)} style={{ ...selectStyle, minWidth: '160px' }}>
+                <option value="all">All students</option>
+                <option value="groups">Groups</option>
+                <optgroup label="One group">
+                  {model.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </optgroup>
               </select>
             </label>
           )}
+
+          <div style={labelStyle}>
+            Show
+            <div style={{ display: 'flex' }}>
+              <button type="button" onClick={() => { setDetailMode('summary'); setSelectedStudentId(null); }} style={{ ...segBtn(detailMode === 'summary'), borderRadius: '4px 0 0 4px' }}>Summary</button>
+              <button type="button" onClick={() => { setDetailMode('detail'); setSelectedStudentId(null); }} style={{ ...segBtn(detailMode === 'detail'), borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>Full detail</button>
+            </div>
+          </div>
         </div>
         <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: muted }}>
           {detailMode === 'detail'
-            ? <>Every evaluator's scores and comments for every {viewBy === 'students' ? 'student' : 'group and its members'}{singleRound ? <> in <strong>{singleRound.label}</strong></> : ' across all rounds'}. </>
-            : singleRound
-              ? <>Per-criterion averages for <strong>{singleRound.label}</strong>. Click a row to see every evaluator's scores and comments. </>
-              : <>Average received in each round; group-level rounds count for every member. Click a row to see every evaluator's scores and comments. </>}
-          {' '}“Export View” downloads exactly this table; “Export All Evaluations” downloads one row per evaluation across every round.
+            ? <>Every evaluator's scores and comments for {scopeDescription}{roundDescription}. </>
+            : <>{singleRound ? 'Per-criterion averages' : 'Average received'} for {scopeDescription}{roundDescription}. Click a row for every evaluator's scores and comments. </>}
+          “Export View” downloads the summary table; “Export All Evaluations” downloads one row per evaluation across every round.
         </p>
       </div>
 
       <div className="card">
-        {selection && (
-          <button
-            type="button"
-            onClick={back}
-            className="btn btn-secondary"
-            style={{ fontSize: '0.85rem', padding: '6px 10px', marginBottom: '14px' }}
-          >
-            ← {selection.from ? `Back to ${model.groupById[selection.from.id]?.name || 'group'}` : `Back to all ${viewBy}`}
+        {selectedStudent ? (
+          <button type="button" onClick={() => setSelectedStudentId(null)} className="btn btn-secondary" style={{ fontSize: '0.85rem', padding: '6px 10px', marginBottom: '14px' }}>
+            ← Back to {scopeGroup ? scopeGroup.name : 'all students'}
+          </button>
+        ) : scopeGroup && (
+          <button type="button" onClick={() => changeScope('groups')} className="btn btn-secondary" style={{ fontSize: '0.85rem', padding: '6px 10px', marginBottom: '14px' }}>
+            ← Back to all groups
           </button>
         )}
-
-        {selectedStudent ? (
-          <StudentDetail model={model} student={selectedStudent} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} />
-        ) : selectedGroup ? (
-          <GroupDetail
-            model={model}
-            group={selectedGroup}
-            rounds={rounds}
-            columns={studentColumns.filter(c => c.key !== 'group')}
-            darkMode={darkMode}
-            openImageViewer={openImageViewer}
-            onSelectStudent={row => setSelection({ kind: 'student', id: row.id, from: { kind: 'group', id: selectedGroup.id } })}
-          />
-        ) : model.rounds.length === 0 ? (
-          <p>This class has no evaluation rounds yet.</p>
-        ) : detailMode === 'detail' ? (
-          <FullDetailList model={model} viewBy={viewBy} students={students} groups={groups} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} />
-        ) : (
-          <>
-            <h3 style={{ marginTop: 0, borderBottom: `2px solid ${borderColor}`, paddingBottom: '8px' }}>
-              {viewBy === 'students' ? 'Scores Received by Student' : 'Scores by Group'}
-              {filterGroup && <span style={{ fontSize: '0.85rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{filterGroup.name}</span>}
-            </h3>
-            <Grid
-              columns={columns}
-              rows={rows}
-              onSelect={row => setSelection({ kind: row.kind, id: row.id })}
-              darkMode={darkMode}
-              emptyText={viewBy === 'students' ? 'No students found.' : 'No groups found.'}
-            />
-          </>
-        )}
+        {body}
       </div>
     </>
   );
