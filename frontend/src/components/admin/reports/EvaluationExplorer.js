@@ -122,6 +122,7 @@ function buildGroupRows(model, groups, rounds) {
 /** Desktop table plus mobile card list, both driven by the column list. */
 function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
   if (rows.length === 0) return <p>{emptyText}</p>;
+  const clickable = typeof onSelect === 'function';
   const hoverBg = darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
   return (
     <>
@@ -141,11 +142,11 @@ function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
             {rows.map((row, idx) => (
               <tr
                 key={row.id}
-                onClick={() => onSelect(row)}
-                style={{ cursor: 'pointer', background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)' }}
-                onMouseEnter={e => { e.currentTarget.style.background = hoverBg; }}
-                onMouseLeave={e => { e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)'; }}
-                title="Click for details"
+                onClick={clickable ? () => onSelect(row) : undefined}
+                style={{ cursor: clickable ? 'pointer' : 'default', background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)' }}
+                onMouseEnter={clickable ? e => { e.currentTarget.style.background = hoverBg; } : undefined}
+                onMouseLeave={clickable ? e => { e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)'; } : undefined}
+                title={clickable ? 'Click for details' : undefined}
               >
                 {columns.map(c => (
                   <td key={c.key} style={{ textAlign: c.align, padding: '10px', borderLeft: c.divider ? '2px solid #586e75' : undefined }}>
@@ -160,8 +161,8 @@ function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
 
       <div className="mobile-card-list">
         {rows.map(row => (
-          <div key={row.id} className="mobile-card" onClick={() => onSelect(row)} style={{ cursor: 'pointer' }}>
-            <div className="mobile-card-header">{row.name} <span style={{ float: 'right', opacity: 0.6 }}>›</span></div>
+          <div key={row.id} className="mobile-card" onClick={clickable ? () => onSelect(row) : undefined} style={{ cursor: clickable ? 'pointer' : 'default' }}>
+            <div className="mobile-card-header">{row.name} {clickable && <span style={{ float: 'right', opacity: 0.6 }}>›</span>}</div>
             {columns.filter(c => c.key !== 'name').map(c => (
               <div key={c.key} className="mobile-card-row">
                 <span className="mobile-card-label">{c.header}{c.sub ? ` (${c.sub})` : ''}</span>
@@ -211,13 +212,17 @@ function StudentDetail({ model, student, rounds, darkMode, openImageViewer, comp
   );
 }
 
-/** Detail view for one group: group-level rounds, then a members grid to drill further. */
-function GroupDetail({ model, group, rounds, columns, darkMode, openImageViewer, onSelectStudent }) {
+/**
+ * Summary view for one group: the group's own row of averages, then a
+ * members grid to drill further. Evaluator-level tables are in Full detail.
+ */
+function GroupDetail({ model, group, rounds, columns, groupColumns, darkMode, onSelectStudent }) {
   const muted = darkMode ? '#a0a0a0' : '#666';
   const members = group.memberIds.map(id => model.studentById[id]).filter(Boolean);
   const groupRounds = rounds.filter(r => r.target === 'group');
   const memberRounds = rounds.filter(r => r.target !== 'group');
   const overall = groupOverall(model, rounds, group);
+  const groupRows = buildGroupRows(model, [group], rounds);
   const memberRows = buildStudentRows(model, members, rounds);
   return (
     <>
@@ -228,26 +233,20 @@ function GroupDetail({ model, group, rounds, columns, darkMode, openImageViewer,
         </span>
       </div>
 
-      {groupRounds.map(round => {
-        const slot = round.presentation_slots.find(s => s.group_id === group.id);
-        return (
-          <RoundSection
-            key={round.id}
-            round={round}
-            evals={evalsForGroup(model, round, group)}
-            note="Evaluations of the group as a whole."
-            presentationDate={slot?.presentation_date}
-            darkMode={darkMode}
-            openImageViewer={openImageViewer}
-          />
-        );
-      })}
-
-      <h3 style={{ marginBottom: '6px' }}>Members</h3>
+      <h3 style={{ marginBottom: '6px' }}>Group summary</h3>
       <p style={{ fontSize: '0.85rem', color: muted, marginTop: 0 }}>
-        {memberRounds.length > 0
-          ? 'What each member received individually. Click a member to see every evaluator.'
-          : 'Click a member to see every evaluator.'}
+        {groupRounds.length > 0 && memberRounds.length > 0
+          ? 'Group-level rounds use evaluations of the group itself; individual rounds average the members. '
+          : groupRounds.length > 0
+            ? 'Averages of the evaluations the group received as a whole. '
+            : 'Average of what the members received. '}
+        Switch to Full detail for every evaluator's scores and comments.
+      </p>
+      <Grid columns={groupColumns} rows={groupRows} darkMode={darkMode} emptyText="" />
+
+      <h3 style={{ marginBottom: '6px', marginTop: '24px' }}>Members</h3>
+      <p style={{ fontSize: '0.85rem', color: muted, marginTop: 0 }}>
+        Click a member to see every evaluator.
       </p>
       <Grid columns={columns} rows={memberRows} onSelect={onSelectStudent} darkMode={darkMode} emptyText="This group has no students." />
     </>
@@ -398,8 +397,8 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
         group={scopeGroup}
         rounds={rounds}
         columns={studentColumns}
+        groupColumns={groupColumns}
         darkMode={darkMode}
-        openImageViewer={openImageViewer}
         onSelectStudent={row => setSelectedStudentId(row.id)}
       />
     );
