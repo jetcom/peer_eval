@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import ImageViewer from '../ImageViewer';
-import PresentationReport from './PresentationReport';
+import RoundReport, { evalTypeLabel } from './RoundReport';
 // Helper to escape CSV values
 function escapeCSV(value) {
   if (value === null || value === undefined) return '';
@@ -95,6 +95,17 @@ function ReportsTab({
     const assignments = allAssignments.filter(a =>
       a.eval_types?.some(et => et.eval_type !== 'paper_review')
     );
+    // Scores are reported per round (eval type) so audience and peer
+    // evaluations of the same assignment stay separate
+    const rounds = assignments.flatMap(a =>
+      (a.eval_types || [])
+        .filter(et => et.eval_type !== 'paper_review')
+        .map(et => ({
+          ...et,
+          assignment_name: a.name,
+          label: `${a.name} – ${et.name} (${evalTypeLabel(et.eval_type)})`
+        }))
+    );
     const individualEvals = assignmentEvaluations?.individual_evaluations || [];
     const groupEvals = assignmentEvaluations?.group_evaluations || [];
     const students = getStudentsInGroup();
@@ -116,19 +127,19 @@ function ReportsTab({
       const submittedIndividual = individualEvals.filter(e => e.evaluator_id === student.id);
       const submittedGroup = groupEvals.filter(e => e.evaluator_id === student.id);
 
-      // Calculate scores per assignment
-      const assignmentScores = {};
-      assignments.forEach(assignment => {
-        const assignmentEvals = receivedEvals.filter(e => e.assignment_id === assignment.id);
-        const scored = receivedScored.filter(e => e.assignment_id === assignment.id);
-        if (assignmentEvals.length > 0 || scored.length > 0) {
+      // Calculate scores per round
+      const roundScores = {};
+      rounds.forEach(round => {
+        const roundEvals = receivedEvals.filter(e => e.eval_type_id === round.id);
+        const scored = receivedScored.filter(e => e.eval_type_id === round.id);
+        if (roundEvals.length > 0 || scored.length > 0) {
           const avgScore = scored.length > 0
             ? scored.reduce((sum, e) => sum + e.avg_score, 0) / scored.length
             : null;
-          assignmentScores[assignment.id] = {
+          roundScores[round.id] = {
             avgScore,
             count: scored.length,
-            comments: assignmentEvals.filter(e => e.comments || (e.attachments && e.attachments.length > 0)).map(e => ({
+            comments: roundEvals.filter(e => e.comments || (e.attachments && e.attachments.length > 0)).map(e => ({
               from: e.evaluator_name,
               text: e.comments,
               attachments: e.attachments || []
@@ -145,7 +156,7 @@ function ReportsTab({
       return {
         ...student,
         group: studentGroup,
-        assignmentScores,
+        roundScores,
         overallAvg,
         submittedCount: submittedIndividual.length + submittedGroup.length
       };
@@ -155,13 +166,13 @@ function ReportsTab({
     const exportAssignmentScoresCSV = () => {
       const className = selectedClassData?.name || 'class';
       const headers = ['Last Name', 'First Name', 'Email', 'Group'];
-      assignments.forEach(a => headers.push(a.name));
+      rounds.forEach(r => headers.push(r.label));
       headers.push('Overall Avg');
 
       const rows = studentSummaries.map(student => {
         const row = [student.last_name, student.first_name, student.email, student.group?.name || ''];
-        assignments.forEach(a => {
-          const score = student.assignmentScores[a.id]?.avgScore;
+        rounds.forEach(r => {
+          const score = student.roundScores[r.id]?.avgScore;
           row.push(score != null ? score.toFixed(2) : '');
         });
         row.push(student.overallAvg != null ? student.overallAvg.toFixed(2) : '');
@@ -175,13 +186,13 @@ function ReportsTab({
     // Export comments to CSV (includes open response text)
     const exportAssignmentCommentsCSV = () => {
       const className = selectedClassData?.name || 'class';
-      const headers = ['Student Last Name', 'Student First Name', 'Assignment', 'From', 'Comment', 'Open Responses'];
+      const headers = ['Student Last Name', 'Student First Name', 'Group', 'Assignment', 'Round', 'Type', 'From', 'Comment', 'Open Responses'];
       const rows = [];
 
       studentSummaries.forEach(student => {
-        assignments.forEach(assignment => {
-          const assignmentEvals = individualEvals.filter(e => e.evaluatee_id === student.id && e.assignment_id === assignment.id);
-          assignmentEvals.forEach(evalItem => {
+        rounds.forEach(round => {
+          const roundEvals = individualEvals.filter(e => e.evaluatee_id === student.id && e.eval_type_id === round.id);
+          roundEvals.forEach(evalItem => {
             // Collect open response texts
             const openResponses = (evalItem.scores || [])
               .filter(s => s.question_type === 'open_response' && s.text_response)
@@ -192,7 +203,10 @@ function ReportsTab({
               rows.push([
                 student.last_name,
                 student.first_name,
-                assignment.name,
+                student.group?.name || '',
+                round.assignment_name,
+                round.name,
+                evalTypeLabel(round.eval_type),
                 evalItem.evaluator_name,
                 evalItem.comments || '',
                 openResponses
@@ -252,8 +266,8 @@ function ReportsTab({
         <div className="card">
           <h2>Scores Received by Student</h2>
           <p style={{ fontSize: '0.85rem', opacity: 0.7, marginBottom: '15px' }}>
-            Average of the evaluations each student received, per assignment. Scores given to a group
-            (such as a presentation) count for every member. &ldquo;Submitted&rdquo; is how many evaluations the student gave.
+            Average of the evaluations each student received, per round. Audience and peer rounds of the
+            same assignment are shown separately. Scores given to a group (such as a presentation) count for every member. &ldquo;Submitted&rdquo; is how many evaluations the student gave.
           </p>
           {students.length === 0 ? (
             <p>No students found.</p>
@@ -266,8 +280,11 @@ function ReportsTab({
                     <tr>
                       <th style={{ textAlign: 'left', padding: '10px' }}>Student</th>
                       {showGroups && <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>}
-                      {assignments.map(a => (
-                        <th key={a.id} style={{ textAlign: 'center', padding: '10px' }}>{a.name}</th>
+                      {rounds.map(r => (
+                        <th key={r.id} style={{ textAlign: 'center', padding: '10px' }} title={r.label}>
+                          {r.assignment_name}
+                          <div style={{ fontSize: '0.75rem', fontWeight: 'normal', opacity: 0.7 }}>{r.name} · {evalTypeLabel(r.eval_type)}</div>
+                        </th>
                       ))}
                       <th style={{ textAlign: 'center', padding: '10px', borderLeft: '2px solid #586e75' }}>Overall</th>
                       <th style={{ textAlign: 'center', padding: '10px' }}>Submitted</th>
@@ -278,10 +295,10 @@ function ReportsTab({
                       <tr key={student.id}>
                         <td style={{ padding: '10px' }}><strong>{student.last_name}, {student.first_name}</strong></td>
                         {showGroups && <td style={{ padding: '10px', color: darkMode ? '#a0a0a0' : '#666' }}>{student.group?.name || 'No Group'}</td>}
-                        {assignments.map(a => {
-                          const score = student.assignmentScores[a.id];
+                        {rounds.map(r => {
+                          const score = student.roundScores[r.id];
                           return (
-                            <td key={a.id} style={{ textAlign: 'center', padding: '10px' }}>
+                            <td key={r.id} style={{ textAlign: 'center', padding: '10px' }}>
                               {score?.avgScore != null ? (
                                 <span style={{
                                   padding: '2px 8px',
@@ -322,12 +339,12 @@ function ReportsTab({
                       </div>
                     )}
 
-                    {/* Assignment scores */}
-                    {assignments.map(a => {
-                      const score = student.assignmentScores[a.id];
+                    {/* Round scores */}
+                    {rounds.map(r => {
+                      const score = student.roundScores[r.id];
                       return (
-                        <div key={a.id} className="mobile-card-row">
-                          <span className="mobile-card-label">{a.name}</span>
+                        <div key={r.id} className="mobile-card-row">
+                          <span className="mobile-card-label">{r.label}</span>
                           {score?.avgScore != null ? (
                             <span style={{
                               padding: '2px 8px',
@@ -363,8 +380,8 @@ function ReportsTab({
           )}
         </div>
 
-        {/* Audience (presentation) evaluations organized by the presenter that received them */}
-        <PresentationReport
+        {/* One round at a time (audience, peer, or self), organized by the recipient */}
+        <RoundReport
           darkMode={darkMode}
           className={selectedClassData?.name}
           assignments={assignments}
@@ -372,15 +389,16 @@ function ReportsTab({
           groupEvals={groupEvals}
           classGroups={classGroups}
           classStudents={classStudents}
+          showGroups={showGroups}
           reportGroup={reportGroup}
           openImageViewer={openImageViewer}
         />
 
         <div className="card">
-          <h2>All Comments by Assignment</h2>
-          {assignments.map(assignment => {
+          <h2>All Comments by Round</h2>
+          {rounds.map(round => {
             const allComments = studentSummaries.flatMap(student =>
-              (student.assignmentScores[assignment.id]?.comments || []).map(c => ({
+              (student.roundScores[round.id]?.comments || []).map(c => ({
                 ...c,
                 studentName: `${student.last_name}, ${student.first_name}`
               }))
@@ -389,13 +407,13 @@ function ReportsTab({
             if (allComments.length === 0) return null;
 
             return (
-              <div key={assignment.id} style={{ marginBottom: '30px' }}>
+              <div key={round.id} style={{ marginBottom: '30px' }}>
                 <h3 style={{ borderBottom: `2px solid ${darkMode ? '#444' : '#ddd'}`, paddingBottom: '10px', marginBottom: '15px' }}>
-                  {assignment.name}
+                  {round.label}
                 </h3>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '15px' }}>
                   {studentSummaries.map(student => {
-                    const comments = student.assignmentScores[assignment.id]?.comments || [];
+                    const comments = student.roundScores[round.id]?.comments || [];
                     if (comments.length === 0) return null;
                     return (
                       <div key={student.id} style={{
