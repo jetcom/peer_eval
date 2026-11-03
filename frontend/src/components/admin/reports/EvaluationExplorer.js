@@ -358,10 +358,12 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
     downloadCSV(`${className || 'class'}_${who}_${what}.csv`, out);
   };
 
-  const selectStyle = { padding: '8px', fontSize: '0.9rem' };
+  // Every control shares one height and border so the row and its labels line up
+  const controlBorder = `1px solid ${darkMode ? '#555' : '#bbb'}`;
+  const selectStyle = { height: '36px', boxSizing: 'border-box', padding: '0 8px', fontSize: '0.9rem', border: controlBorder, borderRadius: '4px' };
   const segBtn = (active) => ({
-    padding: '7px 12px', fontSize: '0.85rem', cursor: 'pointer',
-    border: `1px solid ${darkMode ? '#555' : '#bbb'}`,
+    height: '36px', boxSizing: 'border-box', padding: '0 12px', fontSize: '0.9rem', cursor: 'pointer',
+    border: controlBorder,
     background: active ? (darkMode ? '#3498db' : '#2c3e50') : (darkMode ? '#2a2a2a' : '#fff'),
     color: active ? '#fff' : 'inherit'
   });
