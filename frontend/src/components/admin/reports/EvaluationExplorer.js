@@ -176,16 +176,17 @@ function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
 }
 
 /** Detail view for one student: every round they received, one section each. */
-function StudentDetail({ model, student, rounds, darkMode, openImageViewer }) {
+function StudentDetail({ model, student, rounds, darkMode, openImageViewer, compact = false }) {
   const muted = darkMode ? '#a0a0a0' : '#666';
   const overall = studentOverall(model, rounds, student);
+  const Heading = compact ? 'h3' : 'h2';
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px', marginBottom: '18px' }}>
-        <h2 style={{ margin: 0 }}>
+        <Heading style={{ margin: 0 }}>
           {student.name}
           {student.group && <span style={{ fontSize: '0.9rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{student.group.name}</span>}
-        </h2>
+        </Heading>
         <span style={{ fontSize: '0.9rem', color: muted }}>
           {student.email}{overall != null && <> · overall <strong>{overall.toFixed(2)}</strong></>}
         </span>
@@ -253,10 +254,62 @@ function GroupDetail({ model, group, rounds, columns, darkMode, openImageViewer,
   );
 }
 
+/**
+ * Every recipient's evaluator-level detail on one page: the way to read all
+ * within-group peer evaluations for every member together.
+ */
+function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, openImageViewer }) {
+  const muted = darkMode ? '#a0a0a0' : '#666';
+  const borderColor = darkMode ? '#444' : '#ddd';
+  const block = { border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '16px', marginBottom: '20px' };
+
+  if (viewBy === 'students') {
+    if (students.length === 0) return <p>No students found.</p>;
+    return students.map(s => (
+      <div key={s.id} style={block}>
+        <StudentDetail model={model} student={s} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} compact />
+      </div>
+    ));
+  }
+
+  if (groups.length === 0) return <p>No groups found.</p>;
+  const groupRounds = rounds.filter(r => r.target === 'group');
+  const memberRounds = rounds.filter(r => r.target !== 'group');
+  return groups.map(g => {
+    const members = g.memberIds.map(id => model.studentById[id]).filter(Boolean);
+    return (
+      <div key={g.id} style={block}>
+        <h2 style={{ marginTop: 0, borderBottom: `2px solid ${borderColor}`, paddingBottom: '8px' }}>
+          {g.name}
+          <span style={{ fontSize: '0.9rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{members.length} member{members.length === 1 ? '' : 's'}</span>
+        </h2>
+        {groupRounds.map(round => (
+          <RoundSection
+            key={round.id}
+            round={round}
+            evals={evalsForGroup(model, round, g)}
+            note="Evaluations of the group as a whole."
+            presentationDate={round.presentation_slots.find(s => s.group_id === g.id)?.presentation_date}
+            darkMode={darkMode}
+            openImageViewer={openImageViewer}
+          />
+        ))}
+        {memberRounds.length > 0 && members.map(s => (
+          <div key={s.id} style={{ marginLeft: '12px', paddingLeft: '12px', borderLeft: `3px solid ${borderColor}`, marginBottom: '16px' }}>
+            <StudentDetail model={model} student={s} rounds={memberRounds} darkMode={darkMode} openImageViewer={openImageViewer} compact />
+          </div>
+        ))}
+      </div>
+    );
+  });
+}
+
 function EvaluationExplorer({ model, className, darkMode, showGroups, reportGroup, setReportGroup, openImageViewer }) {
   const hasGroups = showGroups && model.groups.length > 0;
   const [viewBy, setViewBy] = useState('students');
   const [roundId, setRoundId] = useState('all');
+  // 'summary' is the grid; 'detail' lists every evaluator for every row at once
+  const [detailMode, setDetailMode] = useState('summary');
   // null, or { kind: 'student' | 'group', id, from?: { kind: 'group', id } }
   const [selection, setSelection] = useState(null);
 
@@ -334,6 +387,14 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
             </select>
           </label>
 
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 }}>
+            Show
+            <div style={{ display: 'flex' }}>
+              <button type="button" onClick={() => { setDetailMode('summary'); setSelection(null); }} style={{ ...segBtn(detailMode === 'summary'), borderRadius: '4px 0 0 4px' }}>Summary</button>
+              <button type="button" onClick={() => { setDetailMode('detail'); setSelection(null); }} style={{ ...segBtn(detailMode === 'detail'), borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>Full detail</button>
+            </div>
+          </div>
+
           {hasGroups && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 }}>
               View by
@@ -355,10 +416,11 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
           )}
         </div>
         <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: muted }}>
-          {singleRound
-            ? <>Per-criterion averages for <strong>{singleRound.label}</strong>. </>
-            : <>Average received in each round; group-level rounds count for every member. </>}
-          Click a row to see every evaluator's scores and comments.
+          {detailMode === 'detail'
+            ? <>Every evaluator's scores and comments for every {viewBy === 'students' ? 'student' : 'group and its members'}{singleRound ? <> in <strong>{singleRound.label}</strong></> : ' across all rounds'}. </>
+            : singleRound
+              ? <>Per-criterion averages for <strong>{singleRound.label}</strong>. Click a row to see every evaluator's scores and comments. </>
+              : <>Average received in each round; group-level rounds count for every member. Click a row to see every evaluator's scores and comments. </>}
           {' '}“Export View” downloads exactly this table; “Export All Evaluations” downloads one row per evaluation across every round.
         </p>
       </div>
@@ -389,6 +451,8 @@ function EvaluationExplorer({ model, className, darkMode, showGroups, reportGrou
           />
         ) : model.rounds.length === 0 ? (
           <p>This class has no evaluation rounds yet.</p>
+        ) : detailMode === 'detail' ? (
+          <FullDetailList model={model} viewBy={viewBy} students={students} groups={groups} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} />
         ) : (
           <>
             <h3 style={{ marginTop: 0, borderBottom: `2px solid ${borderColor}`, paddingBottom: '8px' }}>
