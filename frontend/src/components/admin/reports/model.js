@@ -392,3 +392,20 @@ export function groupOverall(model, rounds, group) {
 export function givenCount(model, rounds, studentId) {
   return rounds.reduce((sum, r) => sum + (model.evalsByRound[r.id] || []).filter(e => e.evaluator_id === studentId).length, 0);
 }
+
+/**
+ * Average of the scores a student gave in the given rounds, excluding
+ * self-evaluations, on the same display basis as received averages. Used
+ * to spot lenient and harsh raters.
+ */
+export function givenAverage(model, rounds, studentId) {
+  const scored = rounds.filter(r => !r.points);
+  const evals = scored.flatMap(r => (model.evalsByRound[r.id] || []).filter(e => e.evaluator_id === studentId && !e.is_self));
+  return displayAverage(model, scored.length === 1 ? scored[0] : null, evals);
+}
+
+/** How far apart two averages must be to count as notable on this display basis. */
+export function notableGap(model, round) {
+  const { percent, max } = scoreDisplay(model, round);
+  return percent ? 10 : max * 0.1;
+}

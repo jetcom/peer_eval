@@ -3,9 +3,25 @@ import ScoreBadge from './ScoreBadge';
 import RoundSection from './RoundSection';
 import {
   typeLabel, studentRoundCell, groupRoundCell, studentOverall, groupOverall, givenCount,
-  evalsForStudent, evalsForGroup, displayAverage, scoreDisplay, filterModel
+  evalsForStudent, evalsForGroup, displayAverage, scoreDisplay, filterModel, givenAverage, notableGap, mean
 } from './model';
 import { downloadCSV, exportAllEvaluations, fmt } from './csv';
+
+/** A signed difference, colored once it passes the notable threshold. */
+function Delta({ value, threshold, percent, muted, highOk = true }) {
+  if (value == null) return <span style={{ color: '#999' }}>-</span>;
+  const notable = Math.abs(value) >= threshold;
+  const positive = value > 0;
+  const color = !notable ? muted : (positive === highOk ? '#27ae60' : '#e74c3c');
+  const text = `${value > 0 ? '+' : value < 0 ? '−' : ''}${percent ? `${Math.round(Math.abs(value))}%` : Math.abs(value).toFixed(1)}`;
+  return <span style={{ color, fontWeight: notable ? 'bold' : 'normal', whiteSpace: 'nowrap' }}>{text}</span>;
+}
+
+const fmtDelta = (value, percent) => {
+  if (value == null) return '';
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+  return `${sign}${percent ? Math.round(Math.abs(value)) : Math.abs(value).toFixed(2)}`;
+};
 
 /**
  * Columns are declared once and drive both the on-screen grid and the
@@ -94,34 +110,113 @@ function buildColumns({ model, viewBy, rounds, singleRound, showGroups, darkMode
     cols.push({ key: 'overall', header: 'Overall', align: 'center', divider: true, render: r => <strong>{fmtAvg(null, r.overall) || '-'}</strong>, csv: r => fmtAvg(null, r.overall) });
   }
 
+  const focusDisplay = scoreDisplay(model, singleRound);
+  const gap = notableGap(model, singleRound);
   if (viewBy === 'students') {
+    if (showGroups) {
+      cols.push({
+        key: 'vsGroup', header: 'vs Group', align: 'center',
+        title: 'How far this student\'s average sits from the average of their groupmates',
+        render: r => <Delta value={r.vsGroup} threshold={gap} percent={focusDisplay.percent} muted={muted} />,
+        csv: r => fmtDelta(r.vsGroup, focusDisplay.percent)
+      });
+    }
     cols.push({ key: 'given', header: 'Given', align: 'center', title: 'Evaluations this student submitted', render: r => r.given, csv: r => r.given });
+    cols.push({
+      key: 'givenAvg', header: 'Given avg', align: 'center',
+      title: 'Average score this student gave others, and how it compares to the class',
+      render: r => (
+        r.givenAvg == null ? <span style={{ color: '#999' }}>-</span> : (
+          <>
+            {focusDisplay.percent ? `${Math.round(r.givenAvg)}%` : r.givenAvg.toFixed(1)}
+            <div style={{ fontSize: '0.72rem' }}>
+              <Delta value={r.givenVsClass} threshold={gap} percent={focusDisplay.percent} muted={muted} />
+            </div>
+          </>
+        )
+      ),
+      csv: r => (focusDisplay.percent ? fmtAvg(singleRound, r.givenAvg) : fmt(r.givenAvg)),
+      extraCsv: { header: 'Given avg vs class', value: r => fmtDelta(r.givenVsClass, focusDisplay.percent) }
+    });
+  } else if (showGroups) {
+    cols.push({
+      key: 'spread', header: 'Spread', align: 'center',
+      title: 'Gap between the highest and lowest member average',
+      render: r => (
+        r.spread == null ? <span style={{ color: '#999' }}>-</span> : (
+          <span style={{ color: r.spread >= gap * 2 ? '#e67e22' : muted, fontWeight: r.spread >= gap * 2 ? 'bold' : 'normal' }}>
+            {focusDisplay.percent ? `${Math.round(r.spread)}%` : r.spread.toFixed(1)}
+          </span>
+        )
+      ),
+      csv: r => (r.spread == null ? '' : focusDisplay.percent ? Math.round(r.spread) : fmt(r.spread))
+    });
   }
   return cols;
 }
 
+// The one number a row is judged by: the selected round's average, or the
+// overall average when every round is shown
+const focusOf = (row, rounds) => (rounds.length === 1 ? row.cells[rounds[0].id].avg : row.overall);
+
+/** A student's own average compared with the mean of their groupmates. */
+function vsGroupOf(model, student, focus, rounds, focusByStudent) {
+  if (focus == null || !student.group) return null;
+  const others = student.group.memberIds
+    .filter(id => id !== student.id)
+    .map(id => focusByStudent[id])
+    .filter(v => v != null);
+  return others.length > 0 ? focus - mean(others) : null;
+}
+
 function buildStudentRows(model, students, rounds) {
-  return students.map(s => ({
-    kind: 'student',
-    id: s.id,
-    name: s.name,
-    email: s.email,
-    groupName: s.group?.name || '',
-    cells: Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, s)])),
-    overall: studentOverall(model, rounds, s),
-    given: givenCount(model, rounds, s.id)
-  }));
+  // Group comparisons use every member, not just the students on screen
+  const focusByStudent = {};
+  const givenByStudent = {};
+  model.students.forEach(s => {
+    const cells = Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, s)]));
+    focusByStudent[s.id] = focusOf({ cells, overall: studentOverall(model, rounds, s) }, rounds);
+    givenByStudent[s.id] = givenAverage(model, rounds, s.id);
+  });
+  const classGiven = mean(Object.values(givenByStudent));
+
+  return students.map(s => {
+    const cells = Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, s)]));
+    const overall = studentOverall(model, rounds, s);
+    const focus = focusByStudent[s.id];
+    const givenAvg = givenByStudent[s.id];
+    return {
+      kind: 'student',
+      id: s.id,
+      name: s.name,
+      email: s.email,
+      groupName: s.group?.name || '',
+      cells,
+      overall,
+      given: givenCount(model, rounds, s.id),
+      givenAvg,
+      givenVsClass: givenAvg != null && classGiven != null ? givenAvg - classGiven : null,
+      vsGroup: vsGroupOf(model, s, focus, rounds, focusByStudent)
+    };
+  });
 }
 
 function buildGroupRows(model, groups, rounds) {
-  return groups.map(g => ({
-    kind: 'group',
-    id: g.id,
-    name: g.name,
-    memberCount: g.memberIds.length,
-    cells: Object.fromEntries(rounds.map(r => [r.id, groupRoundCell(model, r, g)])),
-    overall: groupOverall(model, rounds, g)
-  }));
+  return groups.map(g => {
+    const members = g.memberIds.map(id => model.studentById[id]).filter(Boolean);
+    const values = members
+      .map(m => focusOf({ cells: Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, m)])), overall: studentOverall(model, rounds, m) }, rounds))
+      .filter(v => v != null);
+    return {
+      kind: 'group',
+      id: g.id,
+      name: g.name,
+      memberCount: g.memberIds.length,
+      cells: Object.fromEntries(rounds.map(r => [r.id, groupRoundCell(model, r, g)])),
+      overall: groupOverall(model, rounds, g),
+      spread: values.length >= 2 ? Math.max(...values) - Math.min(...values) : null
+    };
+  });
 }
 
 /** Desktop table plus mobile card list, both driven by the column list. */
@@ -549,6 +644,10 @@ function EvaluationExplorer({ model: baseModel, className, darkMode, reportGroup
           {detailMode === 'detail'
             ? <>Every evaluator's scores and comments for {scopeDescription}{roundDescription}. </>
             : <>{singleRound ? 'Per-criterion averages' : 'Average received'} for {scopeDescription}{roundDescription}. Click a row for every evaluator's scores and comments. </>}
+          {detailMode !== 'detail' && (hasGroups
+            ? <>“vs Group” is a student's average against their groupmates'; “Spread” is the gap between a group's highest and lowest member. </>
+            : null)}
+          {detailMode !== 'detail' && <>“Given avg” is what a student gives others, compared with the class, to spot lenient or harsh raters. </>}
           “Export View” downloads the summary table; “Export All Evaluations” downloads one row per evaluation across every round.
         </p>
       </div>
