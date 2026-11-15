@@ -139,6 +139,8 @@ function Evaluation() {
           });
           setFinalComments(fcMap);
           setFinalPoints(fpMap);
+          // What was loaded is the saved baseline: only a real edit may auto-save
+          lastSavedDataRef.current = JSON.stringify({ finalComments: fcMap, finalPoints: fpMap });
 
           // Build previous evaluations map for Final Evaluation (all phases)
           const prevEvalsMap = {};
@@ -189,6 +191,9 @@ function Evaluation() {
           });
           setEvaluations(evalMap);
           setEvaluationIds(evalIdMap);
+          // What was loaded is the saved baseline: opening the form must not
+          // auto-save its pre-filled placeholder scores as a real evaluation
+          lastSavedDataRef.current = JSON.stringify(evalMap);
 
           // Fetch attachments for existing evaluations
           const attachmentsMap = {};
@@ -238,6 +243,12 @@ function Evaluation() {
     if (isFinalEvaluation && !skipValidation && totalPoints !== 23) {
       return false;
     }
+
+    // Nothing edited since load or the last save: don't write untouched defaults
+    const currentData = isFinalEvaluation
+      ? JSON.stringify({ finalComments, finalPoints })
+      : JSON.stringify(evaluations);
+    if (currentData === lastSavedDataRef.current) return false;
 
     setAutoSaveStatus('saving');
     try {
@@ -343,8 +354,9 @@ function Evaluation() {
         // Auto-save 30 seconds before deadline
         if (secsUntilDeadline > 0 && secsUntilDeadline <= 30) {
           console.log('Deadline approaching! Auto-saving...');
-          performAutoSave(true);
-          setMessage({ type: 'info', text: 'Deadline approaching - your work has been auto-saved!' });
+          performAutoSave(true).then(saved => {
+            if (saved) setMessage({ type: 'info', text: 'Deadline approaching - your work has been auto-saved!' });
+          });
         }
       }
     };
