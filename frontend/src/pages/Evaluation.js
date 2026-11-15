@@ -20,6 +20,12 @@ const LIKERT_OPTIONS = [
   { value: 5, label: 'Strongly Agree' }
 ];
 
+// A teammate counts as rated once every criterion and the score are entered.
+// Nothing is saved for a teammate before that.
+const isRated = (evaluation) =>
+  CRITERIA.every(c => typeof evaluation?.[c.key] === 'number') &&
+  typeof evaluation?.score === 'number';
+
 function Evaluation() {
   const { phase } = useParams();
   const [searchParams] = useSearchParams();
@@ -175,13 +181,14 @@ function Evaluation() {
 
           groupRes.data.members.forEach(member => {
             const existing = phaseEvals.find(e => e.evaluatee_id === member.id);
+            // No pre-filled ratings: the form starts blank
             evalMap[member.id] = existing || {
-              contribution: 3,
-              communication: 3,
-              reliability: 3,
-              quality_of_work: 3,
-              collaboration: 3,
-              score: 80,
+              contribution: null,
+              communication: null,
+              reliability: null,
+              quality_of_work: null,
+              collaboration: null,
+              score: null,
               comments: ''
             };
             // Track evaluation ID for attachments
@@ -250,6 +257,12 @@ function Evaluation() {
       : JSON.stringify(evaluations);
     if (currentData === lastSavedDataRef.current) return false;
 
+    // Only teammates the student has fully rated are saved
+    const ratedMembers = isFinalEvaluation
+      ? group.members
+      : group.members.filter(member => isRated(evaluations[member.id]));
+    if (ratedMembers.length === 0) return false;
+
     setAutoSaveStatus('saving');
     try {
       if (isFinalEvaluation) {
@@ -263,7 +276,7 @@ function Evaluation() {
         );
         await Promise.all(promises);
       } else {
-        const promises = group.members.map(member =>
+        const promises = ratedMembers.map(member =>
           axios.post('/api/evaluations', {
             evaluatee_id: member.id,
             phase: parseInt(phase),
@@ -389,7 +402,9 @@ function Evaluation() {
   };
 
   const handleScoreChange = (memberId, value) => {
-    const score = Math.min(100, Math.max(0, parseInt(value) || 0));
+    const parsed = parseInt(value);
+    // An emptied field is "no score yet", not zero
+    const score = Number.isNaN(parsed) ? null : Math.min(100, Math.max(0, parsed));
     setEvaluations(prev => ({
       ...prev,
       [memberId]: {
@@ -442,6 +457,19 @@ function Evaluation() {
       return;
     }
 
+    // Only fully rated teammates are saved; the rest stay blank
+    const ratedMembers = isFinalEvaluation
+      ? []
+      : (group?.members || []).filter(member => isRated(evaluations[member.id]));
+    const unratedMembers = isFinalEvaluation
+      ? []
+      : (group?.members || []).filter(member => !isRated(evaluations[member.id]));
+    if (!isFinalEvaluation && ratedMembers.length === 0) {
+      setMessage({ type: 'error', text: 'Nothing to save yet. Rate every criterion and enter a score for at least one team member.' });
+      setSaving(false);
+      return;
+    }
+
     // Validate minimum word count for comments
     if (minCommentWords > 0 && group?.members) {
       const membersWithInsufficientWords = [];
@@ -453,7 +481,7 @@ function Evaluation() {
           }
         });
       } else {
-        group.members.forEach(member => {
+        ratedMembers.forEach(member => {
           const wordCount = countWords(evaluations[member.id]?.comments);
           if (wordCount < minCommentWords) {
             membersWithInsufficientWords.push(`${member.first_name} ${member.last_name} (${wordCount} words)`);
@@ -484,8 +512,8 @@ function Evaluation() {
         await Promise.all(promises);
         setMessage({ type: 'success', text: 'Final evaluation saved successfully!' });
       } else {
-        // Save evaluations for each member
-        const promises = group.members.map(member =>
+        // Save evaluations for each rated member
+        const promises = ratedMembers.map(member =>
           axios.post('/api/evaluations', {
             evaluatee_id: member.id,
             phase: parseInt(phase),
@@ -499,12 +527,17 @@ function Evaluation() {
         const newEvalIdMap = { ...evaluationIds };
         results.forEach((res, idx) => {
           if (res.data.id) {
-            newEvalIdMap[group.members[idx].id] = res.data.id;
+            newEvalIdMap[ratedMembers[idx].id] = res.data.id;
           }
         });
         setEvaluationIds(newEvalIdMap);
 
-        setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
+        if (unratedMembers.length > 0) {
+          const names = unratedMembers.map(m => `${m.first_name} ${m.last_name}`).join(', ');
+          setMessage({ type: 'info', text: `Saved ${ratedMembers.length} of ${group.members.length}. Still to rate: ${names}.` });
+        } else {
+          setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
+        }
       }
     } catch (err) {
       setMessage({ type: 'error', text: err.response?.data?.error || 'Failed to save evaluations' });
@@ -769,6 +802,13 @@ function Evaluation() {
               <div className="member-name">
                 {member.last_name}, {member.first_name} {member.id === (masqueradeUserId ? parseInt(masqueradeUserId) : user?.id) && '(Self-Evaluation)'}
               </div>
+              {!isRated(evaluations[member.id]) && (
+                <p style={{ fontSize: '0.85rem', margin: '0 0 12px', color: darkMode ? '#a0a0a0' : '#666' }}>
+                  {isReadOnly
+                    ? 'No evaluation was submitted.'
+                    : 'Not saved yet. Rate every criterion and enter a score to save this evaluation.'}
+                </p>
+              )}
 
               {CRITERIA.map(criterion => (
                 <div key={criterion.key} className="criteria-item">
@@ -807,7 +847,7 @@ function Evaluation() {
                     type="number"
                     min="0"
                     max="100"
-                    value={evaluations[member.id]?.score || 0}
+                    value={evaluations[member.id]?.score ?? ''}
                     onChange={(e) => handleScoreChange(member.id, e.target.value)}
                     disabled={isReadOnly}
                   />

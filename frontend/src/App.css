@@ -430,6 +430,12 @@ table tr:hover {
   color: #155724;
 }
 
+.message.info {
+  background: #fff8e1;
+  border: 1px solid #f0d58c;
+  color: #7a5b00;
+}
+
 /* Dark mode toggle button */
 .theme-toggle {
   background: transparent;
@@ -603,6 +609,12 @@ body.dark-mode .message.success {
   background: #1a2d2a;
   border-color: #27ae60;
   color: #2ecc71;
+}
+
+body.dark-mode .message.info {
+  background: #2d2815;
+  border-color: #f39c12;
+  color: #f1c40f;
 }
 
 body.dark-mode .evaluation-section {
