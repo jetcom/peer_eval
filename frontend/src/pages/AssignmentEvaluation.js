@@ -5,9 +5,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ImageUpload from '../components/ImageUpload';
 import { formatWallClock } from '../utils/wallClock';
+import { loadDrafts, storeDrafts } from '../utils/evalDrafts';
 
 // State key for a target: group evaluations are prefixed so the save code
 // can tell them apart from individual evaluatee ids
+const draftScope = (userId, evalTypeId) => `${userId}:assign:${evalTypeId}`;
 const keyForAudienceTarget = (t) => (t.kind === 'group' ? `group_${t.id}` : String(t.id));
 
 function AssignmentEvaluation() {
@@ -37,6 +39,7 @@ function AssignmentEvaluation() {
 
   const autoSaveTimeoutRef = useRef(null);
   const lastSavedDataRef = useRef(null);
+  const draftScopeRef = useRef(null); // which form the loaded state belongs to
 
   // Check if viewing as another user (read-only mode)
   const isReadOnly = !!masqueradeUserId;
@@ -120,12 +123,18 @@ function AssignmentEvaluation() {
 
         // Ratings start blank: nothing is pre-filled, so nothing is saved
         // until the student enters it
-        const initialScores = (existing) => {
+        // Text typed earlier for targets not rated yet (own form only)
+        const scope = !masqueradeUserId && user?.id ? draftScope(user.id, evalTypeId) : null;
+        const drafts = scope ? loadDrafts(scope) : {};
+        draftScopeRef.current = scope;
+        const draftFor = (existing, key) => (existing ? null : drafts[key]) || null;
+
+        const initialScores = (existing, draft) => {
           const scores = {};
           foundEvalType.criteria.forEach(c => {
             const existingScore = existing?.scores?.find(s => s.criterion_id === c.id);
             if ((c.question_type || 'likert') === 'open_response') {
-              scores[c.id] = { text: existingScore?.text_response || '' };
+              scores[c.id] = { text: existingScore?.text_response || draft?.texts?.[c.id] || '' };
             } else {
               scores[c.id] = existingScore?.score ?? null;
             }
@@ -144,12 +153,15 @@ function AssignmentEvaluation() {
                 e => e.evaluatee_id === target.id && e.eval_type_id === parseInt(evalTypeId)
               );
 
+            const draft = draftFor(existing, key);
             evalMap[key] = {
-              comments: existing?.comments || '',
-              scores: initialScores(existing)
+              comments: existing?.comments || draft?.comments || '',
+              scores: initialScores(existing, draft)
             };
             if (existing?.id) {
               evalIdMap[key] = existing.id;
+              started.add(key);
+            } else if (draft) {
               started.add(key);
             }
           });
@@ -164,9 +176,10 @@ function AssignmentEvaluation() {
               e => e.evaluatee_id === member.id && e.eval_type_id === parseInt(evalTypeId)
             );
 
+            const draft = draftFor(existing, member.id);
             evalMap[member.id] = {
-              comments: existing?.comments || '',
-              scores: initialScores(existing)
+              comments: existing?.comments || draft?.comments || '',
+              scores: initialScores(existing, draft)
             };
 
             // Track evaluation ID for attachments
@@ -185,9 +198,10 @@ function AssignmentEvaluation() {
             );
 
             const targetId = `group_${targetGroup.id}`;
+            const draft = draftFor(existing, targetId);
             evalMap[targetId] = {
-              comments: existing?.comments || '',
-              scores: initialScores(existing)
+              comments: existing?.comments || draft?.comments || '',
+              scores: initialScores(existing, draft)
             };
 
             // Track evaluation ID for attachments
@@ -328,6 +342,27 @@ function AssignmentEvaluation() {
       return false;
     }
   }, [isReadOnly, evalType, isAudience, group, buildRequests, keysToSave, evaluations]);
+
+  // Keep text typed for targets that aren't rated yet as a draft in this
+  // browser; it reaches the server with the ratings
+  useEffect(() => {
+    if (isReadOnly || loading || !evalType || !user?.id) return;
+    // Skip while the state on screen still belongs to a previously opened form
+    const scope = draftScope(user.id, evalTypeId);
+    if (draftScopeRef.current !== scope) return;
+    const drafts = {};
+    Object.entries(evaluations).forEach(([key, evalData]) => {
+      if (isFullyScored(evalData)) return;
+      const texts = {};
+      Object.entries(evalData.scores || {}).forEach(([criterionId, v]) => {
+        if (v && typeof v === 'object' && v.text) texts[criterionId] = v.text;
+      });
+      if (evalData.comments || Object.keys(texts).length > 0) {
+        drafts[key] = { comments: evalData.comments || '', texts };
+      }
+    });
+    storeDrafts(scope, drafts);
+  }, [evaluations, isReadOnly, loading, evalType, user, evalTypeId, isFullyScored]);
 
   // Debounced auto-save when data changes
   useEffect(() => {

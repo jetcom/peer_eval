@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import ImageUpload from '../components/ImageUpload';
+import { loadDrafts, storeDrafts } from '../utils/evalDrafts';
 const CRITERIA = [
   { key: 'contribution', label: 'Contribution', description: 'Level of contribution to the project' },
   { key: 'communication', label: 'Communication', description: 'Quality and frequency of communication' },
@@ -22,6 +23,8 @@ const LIKERT_OPTIONS = [
 
 // A teammate counts as rated once every criterion and the score are entered.
 // Nothing is saved for a teammate before that.
+const draftScope = (userId, classId, phase) => `${userId}:phase:${classId}:${phase}`;
+
 const isRated = (evaluation) =>
   CRITERIA.every(c => typeof evaluation?.[c.key] === 'number') &&
   typeof evaluation?.score === 'number';
@@ -59,6 +62,7 @@ function Evaluation() {
   const autoSaveTimeoutRef = useRef(null);
   const deadlineTimeoutRef = useRef(null);
   const lastSavedDataRef = useRef(null);
+  const draftScopeRef = useRef(null); // which form the loaded state belongs to
 
   // Check if viewing as another user (read-only mode) OR if evaluations are past due
   const isReadOnly = !!masqueradeUserId || isPastDue;
@@ -178,6 +182,10 @@ function Evaluation() {
           const evalMap = {};
           const evalIdMap = {};
           const phaseEvals = evalRes.data.filter(e => e.phase === parseInt(phase));
+          // Comments typed earlier for teammates not rated yet (own form only)
+          const scope = !masqueradeUserId && user?.id ? draftScope(user.id, classId, phase) : null;
+          const drafts = scope ? loadDrafts(scope) : {};
+          draftScopeRef.current = scope;
 
           groupRes.data.members.forEach(member => {
             const existing = phaseEvals.find(e => e.evaluatee_id === member.id);
@@ -189,7 +197,7 @@ function Evaluation() {
               quality_of_work: null,
               collaboration: null,
               score: null,
-              comments: ''
+              comments: drafts[member.id] || ''
             };
             // Track evaluation ID for attachments
             if (existing?.id) {
@@ -331,6 +339,21 @@ function Evaluation() {
       }
     };
   }, [evaluations, finalComments, finalPoints, isReadOnly, loading, group, isFinalEvaluation, performAutoSave]);
+
+  // Keep comments for teammates who aren't rated yet as a draft in this
+  // browser; they reach the server with the ratings
+  useEffect(() => {
+    if (isReadOnly || loading || !group || isFinalEvaluation || !user?.id) return;
+    // Skip while the state on screen still belongs to a previously opened form
+    const scope = draftScope(user.id, classId, phase);
+    if (draftScopeRef.current !== scope) return;
+    const drafts = {};
+    group.members.forEach(member => {
+      const evaluation = evaluations[member.id];
+      if (!isRated(evaluation) && evaluation?.comments) drafts[member.id] = evaluation.comments;
+    });
+    storeDrafts(scope, drafts);
+  }, [evaluations, isReadOnly, loading, group, isFinalEvaluation, user, classId, phase]);
 
   // Deadline auto-save timer
   useEffect(() => {
@@ -806,7 +829,7 @@ function Evaluation() {
                 <p style={{ fontSize: '0.85rem', margin: '0 0 12px', color: darkMode ? '#a0a0a0' : '#666' }}>
                   {isReadOnly
                     ? 'No evaluation was submitted.'
-                    : 'Not saved yet. Rate every criterion and enter a score to save this evaluation.'}
+                    : 'Not submitted yet. Rate every criterion and enter a score to submit it; comments you type are kept as a draft on this device until then.'}
                 </p>
               )}
 
