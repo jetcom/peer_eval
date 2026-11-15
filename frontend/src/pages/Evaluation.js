@@ -256,7 +256,7 @@ function Evaluation() {
     };
 
     fetchData();
-  }, [phase, classId, masqueradeUserId, isFinalEvaluation]);
+  }, [phase, classId, masqueradeUserId, isFinalEvaluation, user?.id]);
 
   // Auto-save function (doesn't validate total points - just saves current state)
   const performAutoSave = useCallback(async (skipValidation = true) => {
