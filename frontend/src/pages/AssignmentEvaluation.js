@@ -118,18 +118,16 @@ function AssignmentEvaluation() {
         const evalIdMap = {};
         const started = new Set();
 
-        // Audience targets start blank so students choose which ones to do;
-        // peer evaluations keep the midpoint default
-        const initialScores = (existing, blankDefaults) => {
+        // Ratings start blank: nothing is pre-filled, so nothing is saved
+        // until the student enters it
+        const initialScores = (existing) => {
           const scores = {};
           foundEvalType.criteria.forEach(c => {
             const existingScore = existing?.scores?.find(s => s.criterion_id === c.id);
             if ((c.question_type || 'likert') === 'open_response') {
               scores[c.id] = { text: existingScore?.text_response || '' };
-            } else if (blankDefaults) {
-              scores[c.id] = existingScore?.score ?? null;
             } else {
-              scores[c.id] = existingScore?.score ?? Math.floor((c.min_value + c.max_value) / 2);
+              scores[c.id] = existingScore?.score ?? null;
             }
           });
           return scores;
@@ -148,7 +146,7 @@ function AssignmentEvaluation() {
 
             evalMap[key] = {
               comments: existing?.comments || '',
-              scores: initialScores(existing, true)
+              scores: initialScores(existing)
             };
             if (existing?.id) {
               evalIdMap[key] = existing.id;
@@ -168,7 +166,7 @@ function AssignmentEvaluation() {
 
             evalMap[member.id] = {
               comments: existing?.comments || '',
-              scores: initialScores(existing, false)
+              scores: initialScores(existing)
             };
 
             // Track evaluation ID for attachments
@@ -189,7 +187,7 @@ function AssignmentEvaluation() {
             const targetId = `group_${targetGroup.id}`;
             evalMap[targetId] = {
               comments: existing?.comments || '',
-              scores: initialScores(existing, false)
+              scores: initialScores(existing)
             };
 
             // Track evaluation ID for attachments
@@ -250,10 +248,11 @@ function AssignmentEvaluation() {
   }, [evalType]);
 
   // Which targets a save should send. Audience rounds only send the ones the
-  // student has begun that are open; everything else saves all targets.
+  // student has begun that are open; other rounds send every target whose
+  // criteria are all rated, never a partly rated or untouched one.
   const keysToSave = useCallback((requireFullyScored) => {
     return Object.keys(evaluations).filter(key => {
-      if (!isAudience) return true;
+      if (!isAudience) return isFullyScored(evaluations[key]);
       if (!startedTargets.has(key)) return false;
       const target = audienceTargetByKey(key);
       if (!target || !target.can_submit) return false;
@@ -408,7 +407,12 @@ function AssignmentEvaluation() {
       if (!t) return key;
       return t.kind === 'group' ? t.name : `${t.first_name} ${t.last_name}`;
     }
-    return key;
+    if (key.startsWith('group_')) {
+      const g = allGroups.find(x => `group_${x.id}` === key);
+      return g?.name || key;
+    }
+    const m = group?.members?.find(x => String(x.id) === String(key));
+    return m ? `${m.first_name} ${m.last_name}` : key;
   };
 
   const handleSave = async () => {
@@ -434,6 +438,16 @@ function AssignmentEvaluation() {
       }
     }
 
+    // Peer and group rounds save the fully rated targets and report the rest
+    const unrated = isAudience
+      ? []
+      : Object.keys(evaluations).filter(k => !isFullyScored(evaluations[k]));
+    if (!isAudience && keys.length === 0) {
+      setMessage({ type: 'error', text: 'Nothing to save yet. Rate every criterion for at least one evaluation.' });
+      setSaving(false);
+      return;
+    }
+
     // Validate minimum word count if required
     if (evalType?.require_comments && evalType?.min_comment_words > 0) {
       const insufficient = keys.filter(key => countWords(evaluations[key].comments) < evalType.min_comment_words);
@@ -453,7 +467,14 @@ function AssignmentEvaluation() {
       const results = await Promise.all(entries.map(e => e.promise));
       recordEvaluationIds(entries, results);
 
-      setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
+      if (unrated.length > 0) {
+        setMessage({
+          type: 'info',
+          text: `Saved ${keys.length} of ${keys.length + unrated.length}. Still to rate: ${unrated.map(labelForKey).join(', ')}.`
+        });
+      } else {
+        setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
+      }
       lastSavedDataRef.current = JSON.stringify(evaluations);
       setHasUnsavedChanges(false);
     } catch (err) {
