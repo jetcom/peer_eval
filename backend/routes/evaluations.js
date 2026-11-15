@@ -327,6 +327,62 @@ router.get('/my-final-comments', authenticateToken, async (req, res) => {
   }
 });
 
+// Drafts: text typed for evaluations the student has not completed yet.
+// They live in their own table, so nothing here counts as a submission.
+const DRAFT_SCOPE = /^(phase:\d+:\d+|assign:\d+)$/;
+const MAX_DRAFT_BYTES = 200 * 1024;
+
+router.get('/drafts', authenticateToken, async (req, res) => {
+  try {
+    const scope = String(req.query.scope || '');
+    if (!DRAFT_SCOPE.test(scope)) {
+      return res.status(400).json({ error: 'Invalid draft scope' });
+    }
+    const row = await prisma.evaluationDraft.findUnique({
+      where: { userId_scope: { userId: req.user.id, scope } }
+    });
+    let drafts = {};
+    if (row) {
+      try { drafts = JSON.parse(row.data) || {}; } catch (err) { drafts = {}; }
+    }
+    res.json({ drafts, updated_at: row ? row.updatedAt : null });
+  } catch (error) {
+    console.error('Error fetching evaluation drafts:', error);
+    res.status(500).json({ error: 'Failed to fetch drafts' });
+  }
+});
+
+router.put('/drafts', authenticateToken, async (req, res) => {
+  try {
+    const { scope, drafts } = req.body;
+    if (!DRAFT_SCOPE.test(String(scope || ''))) {
+      return res.status(400).json({ error: 'Invalid draft scope' });
+    }
+    if (!drafts || typeof drafts !== 'object' || Array.isArray(drafts)) {
+      return res.status(400).json({ error: 'drafts must be an object' });
+    }
+    const where = { userId_scope: { userId: req.user.id, scope } };
+    if (Object.keys(drafts).length === 0) {
+      await prisma.evaluationDraft.deleteMany({ where: { userId: req.user.id, scope } });
+      return res.json({ updated_at: null });
+    }
+    const data = JSON.stringify(drafts);
+    if (Buffer.byteLength(data) > MAX_DRAFT_BYTES) {
+      return res.status(413).json({ error: 'Draft is too large' });
+    }
+    const updatedAt = new Date();
+    await prisma.evaluationDraft.upsert({
+      where,
+      update: { data, updatedAt },
+      create: { userId: req.user.id, scope, data, updatedAt }
+    });
+    res.json({ updated_at: updatedAt });
+  } catch (error) {
+    console.error('Error saving evaluation drafts:', error);
+    res.status(500).json({ error: 'Failed to save drafts' });
+  }
+});
+
 // Submit or update evaluation
 router.post('/', authenticateToken, async (req, res) => {
   try {
