@@ -39,6 +39,7 @@ model User {
   groupMemberships           GroupMember[]
   evaluationsGiven           Evaluation[]          @relation("EvaluatorRelation")
   evaluationsReceived        Evaluation[]          @relation("EvaluateeRelation")
+  evaluationDrafts           EvaluationDraft[]
   finalCommentsGiven         FinalComment[]        @relation("FinalCommentEvaluator")
   finalCommentsReceived      FinalComment[]        @relation("FinalCommentEvaluatee")
   extensions                 StudentExtension[]
@@ -595,6 +596,22 @@ model GroupEvaluationAttachment {
   groupEvaluation GroupEvaluation @relation(fields: [groupEvaluationId], references: [id], onDelete: Cascade)
 
   @@map("group_evaluation_attachments")
+}
+
+// Text a student has typed for evaluations they have not completed yet.
+// Kept apart from the evaluation tables so that a row there always means
+// "submitted": reports, progress and reminders never see a draft.
+model EvaluationDraft {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  scope     String   // which form: "phase:<classId>:<phase>" or "assign:<evalTypeId>"
+  data      String   // JSON: text keyed by the teammate or group it is about
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope])
+  @@map("evaluation_drafts")
 }
 
 // ==========================================

@@ -9,7 +9,8 @@ import { loadDrafts, storeDrafts } from '../utils/evalDrafts';
 
 // State key for a target: group evaluations are prefixed so the save code
 // can tell them apart from individual evaluatee ids
-const draftScope = (userId, evalTypeId) => `${userId}:assign:${evalTypeId}`;
+const draftScope = (evalTypeId) => `assign:${evalTypeId}`;
+const wordsIn = (text) => (text || '').trim().split(/\s+/).filter(w => w.length > 0).length;
 const keyForAudienceTarget = (t) => (t.kind === 'group' ? `group_${t.id}` : String(t.id));
 
 function AssignmentEvaluation() {
@@ -124,8 +125,8 @@ function AssignmentEvaluation() {
         // Ratings start blank: nothing is pre-filled, so nothing is saved
         // until the student enters it
         // Text typed earlier for targets not rated yet (own form only)
-        const scope = !masqueradeUserId && user?.id ? draftScope(user.id, evalTypeId) : null;
-        const drafts = scope ? loadDrafts(scope) : {};
+        const scope = !masqueradeUserId && user?.id ? draftScope(evalTypeId) : null;
+        const drafts = scope ? await loadDrafts(user.id, scope) : {};
         draftScopeRef.current = scope;
         const draftFor = (existing, key) => (existing ? null : drafts[key]) || null;
 
@@ -261,18 +262,27 @@ function AssignmentEvaluation() {
     });
   }, [evalType]);
 
+  // Complete enough to be stored as a submission: every criterion rated and,
+  // where the round requires comments, a comment of the required length.
+  // Anything less stays a draft, so the student still shows as not done.
+  const isSubmittable = useCallback((evalData) => {
+    if (!isFullyScored(evalData)) return false;
+    if (!evalType?.require_comments) return true;
+    return wordsIn(evalData?.comments) >= Math.max(1, evalType.min_comment_words || 0);
+  }, [evalType, isFullyScored]);
+
   // Which targets a save should send. Audience rounds only send the ones the
   // student has begun that are open; other rounds send every target whose
   // criteria are all rated, never a partly rated or untouched one.
   const keysToSave = useCallback((requireFullyScored) => {
     return Object.keys(evaluations).filter(key => {
-      if (!isAudience) return isFullyScored(evaluations[key]);
+      if (!isAudience) return isSubmittable(evaluations[key]);
       if (!startedTargets.has(key)) return false;
       const target = audienceTargetByKey(key);
       if (!target || !target.can_submit) return false;
-      return requireFullyScored ? isFullyScored(evaluations[key]) : true;
+      return requireFullyScored ? isSubmittable(evaluations[key]) : true;
     });
-  }, [evaluations, isAudience, startedTargets, audienceTargetByKey, isFullyScored]);
+  }, [evaluations, isAudience, startedTargets, audienceTargetByKey, isSubmittable]);
 
   const buildRequests = useCallback((keys) => {
     return keys.map(key => {
@@ -348,11 +358,11 @@ function AssignmentEvaluation() {
   useEffect(() => {
     if (isReadOnly || loading || !evalType || !user?.id) return;
     // Skip while the state on screen still belongs to a previously opened form
-    const scope = draftScope(user.id, evalTypeId);
+    const scope = draftScope(evalTypeId);
     if (draftScopeRef.current !== scope) return;
     const drafts = {};
     Object.entries(evaluations).forEach(([key, evalData]) => {
-      if (isFullyScored(evalData)) return;
+      if (isSubmittable(evalData)) return;
       const texts = {};
       Object.entries(evalData.scores || {}).forEach(([criterionId, v]) => {
         if (v && typeof v === 'object' && v.text) texts[criterionId] = v.text;
@@ -361,8 +371,8 @@ function AssignmentEvaluation() {
         drafts[key] = { comments: evalData.comments || '', texts };
       }
     });
-    storeDrafts(scope, drafts);
-  }, [evaluations, isReadOnly, loading, evalType, user, evalTypeId, isFullyScored]);
+    storeDrafts(user.id, scope, drafts);
+  }, [evaluations, isReadOnly, loading, evalType, user, evalTypeId, isSubmittable]);
 
   // Debounced auto-save when data changes
   useEffect(() => {
@@ -476,9 +486,9 @@ function AssignmentEvaluation() {
     // Peer and group rounds save the fully rated targets and report the rest
     const unrated = isAudience
       ? []
-      : Object.keys(evaluations).filter(k => !isFullyScored(evaluations[k]));
+      : Object.keys(evaluations).filter(k => !isSubmittable(evaluations[k]));
     if (!isAudience && keys.length === 0) {
-      setMessage({ type: 'error', text: 'Nothing to save yet. Rate every criterion for at least one evaluation.' });
+      setMessage({ type: 'error', text: `Nothing to submit yet. An evaluation needs every criterion rated${evalType?.require_comments ? ' and a comment' : ''}.` });
       setSaving(false);
       return;
     }
@@ -505,7 +515,7 @@ function AssignmentEvaluation() {
       if (unrated.length > 0) {
         setMessage({
           type: 'info',
-          text: `Saved ${keys.length} of ${keys.length + unrated.length}. Still to rate: ${unrated.map(labelForKey).join(', ')}.`
+          text: `Saved ${keys.length} of ${keys.length + unrated.length}. Still to complete: ${unrated.map(labelForKey).join(', ')}.`
         });
       } else {
         setMessage({ type: 'success', text: 'Evaluations saved successfully!' });

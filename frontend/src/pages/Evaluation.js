@@ -21,13 +21,13 @@ const LIKERT_OPTIONS = [
   { value: 5, label: 'Strongly Agree' }
 ];
 
-// A teammate counts as rated once every criterion and the score are entered.
-// Nothing is saved for a teammate before that.
-const draftScope = (userId, classId, phase) => `${userId}:phase:${classId}:${phase}`;
+const draftScope = (classId, phase) => `phase:${classId}:${phase}`;
 
 const isRated = (evaluation) =>
   CRITERIA.every(c => typeof evaluation?.[c.key] === 'number') &&
   typeof evaluation?.score === 'number';
+
+const wordsIn = (text) => (text || '').trim().split(/\s+/).filter(w => w.length > 0).length;
 
 function Evaluation() {
   const { phase } = useParams();
@@ -66,6 +66,14 @@ function Evaluation() {
 
   // Check if viewing as another user (read-only mode) OR if evaluations are past due
   const isReadOnly = !!masqueradeUserId || isPastDue;
+
+  // An evaluation is submitted only once it is complete: every criterion
+  // rated, a score, and a comment of at least the class minimum length.
+  // Until then nothing is saved as an evaluation, so the student still shows
+  // as not done and keeps getting reminders.
+  const isComplete = useCallback((evaluation) =>
+    isRated(evaluation) && wordsIn(evaluation?.comments) >= Math.max(1, minCommentWords),
+  [minCommentWords]);
 
   // Word count helper
   const countWords = (text) => {
@@ -183,8 +191,8 @@ function Evaluation() {
           const evalIdMap = {};
           const phaseEvals = evalRes.data.filter(e => e.phase === parseInt(phase));
           // Comments typed earlier for teammates not rated yet (own form only)
-          const scope = !masqueradeUserId && user?.id ? draftScope(user.id, classId, phase) : null;
-          const drafts = scope ? loadDrafts(scope) : {};
+          const scope = !masqueradeUserId && user?.id && classId ? draftScope(classId, phase) : null;
+          const drafts = scope ? await loadDrafts(user.id, scope) : {};
           draftScopeRef.current = scope;
 
           groupRes.data.members.forEach(member => {
@@ -265,11 +273,11 @@ function Evaluation() {
       : JSON.stringify(evaluations);
     if (currentData === lastSavedDataRef.current) return false;
 
-    // Only teammates the student has fully rated are saved
-    const ratedMembers = isFinalEvaluation
+    // Only complete evaluations are saved
+    const completeMembers = isFinalEvaluation
       ? group.members
-      : group.members.filter(member => isRated(evaluations[member.id]));
-    if (ratedMembers.length === 0) return false;
+      : group.members.filter(member => isComplete(evaluations[member.id]));
+    if (completeMembers.length === 0) return false;
 
     setAutoSaveStatus('saving');
     try {
@@ -284,7 +292,7 @@ function Evaluation() {
         );
         await Promise.all(promises);
       } else {
-        const promises = ratedMembers.map(member =>
+        const promises = completeMembers.map(member =>
           axios.post('/api/evaluations', {
             evaluatee_id: member.id,
             phase: parseInt(phase),
@@ -308,7 +316,7 @@ function Evaluation() {
       setAutoSaveStatus('error');
       return false;
     }
-  }, [isReadOnly, group, isFinalEvaluation, totalPoints, finalComments, finalPoints, evaluations, phase, classId]);
+  }, [isReadOnly, group, isFinalEvaluation, totalPoints, finalComments, finalPoints, evaluations, phase, classId, isComplete]);
 
   // Debounced auto-save when data changes
   useEffect(() => {
@@ -345,15 +353,15 @@ function Evaluation() {
   useEffect(() => {
     if (isReadOnly || loading || !group || isFinalEvaluation || !user?.id) return;
     // Skip while the state on screen still belongs to a previously opened form
-    const scope = draftScope(user.id, classId, phase);
+    const scope = draftScope(classId, phase);
     if (draftScopeRef.current !== scope) return;
     const drafts = {};
     group.members.forEach(member => {
       const evaluation = evaluations[member.id];
-      if (!isRated(evaluation) && evaluation?.comments) drafts[member.id] = evaluation.comments;
+      if (!isComplete(evaluation) && evaluation?.comments) drafts[member.id] = evaluation.comments;
     });
-    storeDrafts(scope, drafts);
-  }, [evaluations, isReadOnly, loading, group, isFinalEvaluation, user, classId, phase]);
+    storeDrafts(user.id, scope, drafts);
+  }, [evaluations, isReadOnly, loading, group, isFinalEvaluation, user, classId, phase, isComplete]);
 
   // Deadline auto-save timer
   useEffect(() => {
@@ -480,15 +488,15 @@ function Evaluation() {
       return;
     }
 
-    // Only fully rated teammates are saved; the rest stay blank
-    const ratedMembers = isFinalEvaluation
+    // Only complete evaluations are saved; the rest stay drafts
+    const completeMembers = isFinalEvaluation
       ? []
-      : (group?.members || []).filter(member => isRated(evaluations[member.id]));
-    const unratedMembers = isFinalEvaluation
+      : (group?.members || []).filter(member => isComplete(evaluations[member.id]));
+    const uncompleteMembers = isFinalEvaluation
       ? []
-      : (group?.members || []).filter(member => !isRated(evaluations[member.id]));
-    if (!isFinalEvaluation && ratedMembers.length === 0) {
-      setMessage({ type: 'error', text: 'Nothing to save yet. Rate every criterion and enter a score for at least one team member.' });
+      : (group?.members || []).filter(member => !isComplete(evaluations[member.id]));
+    if (!isFinalEvaluation && completeMembers.length === 0) {
+      setMessage({ type: 'error', text: `Nothing to submit yet. An evaluation needs every criterion rated, a score and a comment${minCommentWords > 1 ? ` of at least ${minCommentWords} words` : ''}.` });
       setSaving(false);
       return;
     }
@@ -504,7 +512,7 @@ function Evaluation() {
           }
         });
       } else {
-        ratedMembers.forEach(member => {
+        completeMembers.forEach(member => {
           const wordCount = countWords(evaluations[member.id]?.comments);
           if (wordCount < minCommentWords) {
             membersWithInsufficientWords.push(`${member.first_name} ${member.last_name} (${wordCount} words)`);
@@ -536,7 +544,7 @@ function Evaluation() {
         setMessage({ type: 'success', text: 'Final evaluation saved successfully!' });
       } else {
         // Save evaluations for each rated member
-        const promises = ratedMembers.map(member =>
+        const promises = completeMembers.map(member =>
           axios.post('/api/evaluations', {
             evaluatee_id: member.id,
             phase: parseInt(phase),
@@ -550,14 +558,14 @@ function Evaluation() {
         const newEvalIdMap = { ...evaluationIds };
         results.forEach((res, idx) => {
           if (res.data.id) {
-            newEvalIdMap[ratedMembers[idx].id] = res.data.id;
+            newEvalIdMap[completeMembers[idx].id] = res.data.id;
           }
         });
         setEvaluationIds(newEvalIdMap);
 
-        if (unratedMembers.length > 0) {
-          const names = unratedMembers.map(m => `${m.first_name} ${m.last_name}`).join(', ');
-          setMessage({ type: 'info', text: `Saved ${ratedMembers.length} of ${group.members.length}. Still to rate: ${names}.` });
+        if (uncompleteMembers.length > 0) {
+          const names = uncompleteMembers.map(m => `${m.first_name} ${m.last_name}`).join(', ');
+          setMessage({ type: 'info', text: `Saved ${completeMembers.length} of ${group.members.length}. Still to complete: ${names}.` });
         } else {
           setMessage({ type: 'success', text: 'Evaluations saved successfully!' });
         }
@@ -825,11 +833,17 @@ function Evaluation() {
               <div className="member-name">
                 {member.last_name}, {member.first_name} {member.id === (masqueradeUserId ? parseInt(masqueradeUserId) : user?.id) && '(Self-Evaluation)'}
               </div>
-              {!isRated(evaluations[member.id]) && (
+              {isReadOnly && !evaluationIds[member.id] && (
                 <p style={{ fontSize: '0.85rem', margin: '0 0 12px', color: darkMode ? '#a0a0a0' : '#666' }}>
-                  {isReadOnly
-                    ? 'No evaluation was submitted.'
-                    : 'Not submitted yet. Rate every criterion and enter a score to submit it; comments you type are kept as a draft on this device until then.'}
+                  No evaluation was submitted.
+                </p>
+              )}
+              {!isReadOnly && !isComplete(evaluations[member.id]) && (
+                <p style={{ fontSize: '0.85rem', margin: '0 0 12px', color: darkMode ? '#a0a0a0' : '#666' }}>
+                  {evaluationIds[member.id] ? 'Changes here are not saved yet. They are saved' : 'Not submitted yet. It is submitted'}
+                  {' '}once every criterion is rated, a score is entered
+                  and a comment{minCommentWords > 1 ? ` of at least ${minCommentWords} words` : ''} is written.
+                  {!evaluationIds[member.id] && ' Until then your comment is kept as a draft and your ratings are not saved.'}
                 </p>
               )}
 
