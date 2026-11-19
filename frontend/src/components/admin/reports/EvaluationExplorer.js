@@ -87,7 +87,10 @@ function EvaluationExplorer({ model, className, darkMode, reportGroup, setReport
   return (
     <div className="card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
-        <h2 style={{ margin: 0 }}>Evaluation Reports</h2>
+        <h2 style={{ margin: 0 }}>
+          Evaluation Reports
+          {className && <span style={{ fontSize: '1rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{className}</span>}
+        </h2>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button
             onClick={() => exportRoundAverages(exportArgs)}
@@ -110,6 +113,11 @@ function EvaluationExplorer({ model, className, darkMode, reportGroup, setReport
         </div>
       </div>
 
+      {!model.isAssignmentMode && (
+        <p style={{ fontSize: '0.85rem', color: muted, margin: '0 0 12px 0' }}>
+          This class uses phase-based peer evaluations, so there are no assignment or audience rounds here. Pick another class in the header to see its assignments.
+        </p>
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
         <label style={labelStyle}>
           {model.isAssignmentMode ? 'Assignment' : 'Phase'}
