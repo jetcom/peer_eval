@@ -6,8 +6,10 @@ import { formatWallClock } from '../../../utils/wallClock';
 /**
  * One round's worth of evaluations received by a single recipient: the
  * criterion averages, then every evaluator's scores and written feedback.
+ * hideHeading leaves out the round title and totals when the caller already
+ * shows them.
  */
-function RoundSection({ model, round, evals, note, presentationDate, darkMode, openImageViewer }) {
+function RoundSection({ model, round, evals, note, presentationDate, darkMode, openImageViewer, hideHeading = false }) {
   const mutedColor = darkMode ? '#a0a0a0' : '#666';
   const borderColor = darkMode ? '#444' : '#ddd';
   const panelBg = darkMode ? '#1a1a1a' : '#f8f9fa';
@@ -25,8 +27,8 @@ function RoundSection({ model, round, evals, note, presentationDate, darkMode, o
     : displayAverage(model, round, evals);
 
   return (
-    <div style={{ marginBottom: '28px' }}>
-      <div style={{
+    <div style={{ marginBottom: hideHeading ? 0 : '28px' }}>
+      {!hideHeading && <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px',
         borderBottom: `2px solid ${borderColor}`, paddingBottom: '6px', marginBottom: '10px'
       }}>
@@ -51,9 +53,9 @@ function RoundSection({ model, round, evals, note, presentationDate, darkMode, o
                 : <> · avg <strong>{overall.toFixed(2)}</strong> / {round.scaleMax}</>
           )}
         </span>
-      </div>
+      </div>}
       {note && <p style={{ fontSize: '0.85rem', color: mutedColor, margin: '0 0 10px 0' }}>{note}</p>}
-      {!round.points && display.percent && (
+      {!hideHeading && !round.points && display.percent && (
         <p style={{ fontSize: '0.8rem', color: mutedColor, margin: '0 0 10px 0' }}>Criteria use different scales, so averages are shown as a percent of the maximum.</p>
       )}
 

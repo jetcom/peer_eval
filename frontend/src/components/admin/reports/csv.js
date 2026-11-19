@@ -1,5 +1,3 @@
-import { typeLabel } from './model';
-
 export function escapeCSV(value) {
   if (value === null || value === undefined) return '';
   const str = String(value);
@@ -23,45 +21,68 @@ export function downloadCSV(filename, rows) {
 
 export const fmt = (v, digits = 2) => (v == null ? '' : Number(v).toFixed(digits));
 
+const fileName = ({ className, round, scopeName }, suffix) =>
+  [className || 'class', round.label, scopeName, suffix].filter(Boolean).join('_').replace(/[\\/:]/g, '-') + '.csv';
+
+const avgCell = (model, round, value) => {
+  if (value == null) return '';
+  return round.uniformScale ? fmt(value) : `${Math.round(value)}%`;
+};
+
 /**
- * Long-format export: one row per evaluation across every round, with a
- * column for each distinct criterion name. Works for any class structure.
+ * One row per student (or group) in the round as shown on screen: how many
+ * evaluations they received and their average on each criterion.
  */
-export function exportAllEvaluations(model, className) {
-  const criterionNames = [];
-  model.rounds.forEach(r => r.criteria.forEach(c => {
-    if (!criterionNames.includes(c.name)) criterionNames.push(c.name);
-  }));
-
+export function exportRoundAverages({ model, round, recipients, className, scopeName }) {
+  const groupRound = round.target === 'group';
+  const likert = round.criteria.filter(c => c.question_type === 'likert');
   const headers = [
-    'Assignment', 'Round', 'Type', 'Recipient Type', 'Recipient', 'Recipient Group',
-    'Evaluator', 'Evaluator Group', 'Self', 'Former Group', 'Submitted', 'Late',
-    ...criterionNames, 'Avg', 'Avg % of Max', 'Points', 'Comments'
+    ...(groupRound ? ['Group'] : ['Student', 'Email', 'Group']),
+    '# Evaluations',
+    ...likert.map(c => c.name),
+    round.points ? 'Points' : 'Avg'
   ];
+  const rows = recipients.map(r => [
+    ...(groupRound ? [r.name] : [r.name, r.email, r.groupName]),
+    r.count,
+    ...likert.map(c => fmt(r.criterionAvgs[c.id])),
+    r.count === 0 ? '' : round.points ? r.points : avgCell(model, round, r.avg)
+  ]);
+  downloadCSV(fileName({ className, round, scopeName }, 'averages'), [headers, ...rows]);
+}
 
-  const rows = [headers];
-  model.rounds.forEach(round => {
-    (model.evalsByRound[round.id] || []).forEach(e => {
-      const recipientGroup = e.recipient_kind === 'group'
-        ? e.recipient_name
-        : model.studentById[e.recipient_id]?.group?.name || '';
-      const evaluatorGroup = model.studentById[e.evaluator_id]?.group?.name || '';
-      const byName = {};
-      e.scores.forEach(s => {
-        const c = round.criteria.find(cr => cr.id === s.criterion_id);
-        if (!c) return;
-        byName[c.name] = c.question_type === 'likert' ? (s.score ?? '') : (s.text_response || '');
-      });
+/**
+ * One row per evaluation received by the students (or groups) shown on
+ * screen: each evaluator's scores, written answers, and comments.
+ */
+export function exportRoundResponses({ model, round, recipients, className, scopeName }) {
+  const groupRound = round.target === 'group';
+  const headers = [
+    ...(groupRound ? ['Group'] : ['Student', 'Email', 'Group']),
+    'Evaluator', 'Evaluator Group',
+    ...round.criteria.map(c => c.name),
+    round.points ? 'Points' : 'Avg',
+    'Comments', 'Submitted', 'Late'
+  ];
+  const rows = [];
+  recipients.forEach(r => {
+    [...r.evals].sort((a, b) => a.evaluator_name.localeCompare(b.evaluator_name)).forEach(e => {
+      const answer = (c) => {
+        const s = e.scores.find(sc => sc.criterion_id === c.id);
+        if (!s) return '';
+        return c.question_type === 'likert' ? (s.score ?? '') : (s.text_response || '');
+      };
       rows.push([
-        round.assignment_name, round.name, typeLabel(round.type),
-        e.recipient_kind === 'group' ? 'Group' : 'Student', e.recipient_name, recipientGroup,
-        e.evaluator_name, evaluatorGroup, e.is_self ? 'Yes' : 'No', e.is_former_group ? 'Yes' : 'No',
-        e.submitted_at ? new Date(e.submitted_at).toLocaleString() : '', e.is_late ? 'Yes' : 'No',
-        ...criterionNames.map(n => byName[n] ?? ''),
-        fmt(e.avg_score), e.norm_score == null ? '' : fmt(e.norm_score * 100, 1), e.points ?? '', e.comments || ''
+        ...(groupRound ? [r.name] : [r.name, r.email, r.groupName]),
+        e.evaluator_name + (e.is_self ? ' (self)' : ''),
+        model.studentById[e.evaluator_id]?.group?.name || '',
+        ...round.criteria.map(answer),
+        round.points ? (e.points ?? 0) : avgCell(model, round, round.uniformScale ? e.avg_score : (e.norm_score == null ? null : e.norm_score * 100)),
+        e.comments || '',
+        e.submitted_at ? new Date(e.submitted_at).toLocaleString() : '',
+        e.is_late ? 'Yes' : 'No'
       ]);
     });
   });
-
-  downloadCSV(`${className || 'class'}_all_evaluations.csv`, rows);
+  downloadCSV(fileName({ className, round, scopeName }, 'responses'), [headers, ...rows]);
 }

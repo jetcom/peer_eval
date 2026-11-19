@@ -1,670 +1,254 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState } from 'react';
 import ScoreBadge from './ScoreBadge';
 import RoundSection from './RoundSection';
-import {
-  typeLabel, studentRoundCell, groupRoundCell, studentOverall, groupOverall, givenCount,
-  evalsForStudent, evalsForGroup, displayAverage, scoreDisplay, filterModel, givenAverage, notableGap, mean
-} from './model';
-import { downloadCSV, exportAllEvaluations, fmt } from './csv';
-
-/** A signed difference, colored once it passes the notable threshold. */
-function Delta({ value, threshold, percent, muted, highOk = true }) {
-  if (value == null) return <span style={{ color: '#999' }}>-</span>;
-  const notable = Math.abs(value) >= threshold;
-  const positive = value > 0;
-  const color = !notable ? muted : (positive === highOk ? '#27ae60' : '#e74c3c');
-  const text = `${value > 0 ? '+' : value < 0 ? '−' : ''}${percent ? `${Math.round(Math.abs(value))}%` : Math.abs(value).toFixed(1)}`;
-  return <span style={{ color, fontWeight: notable ? 'bold' : 'normal', whiteSpace: 'nowrap' }}>{text}</span>;
-}
-
-const fmtDelta = (value, percent) => {
-  if (value == null) return '';
-  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
-  return `${sign}${percent ? Math.round(Math.abs(value)) : Math.abs(value).toFixed(2)}`;
-};
+import { typeLabel, sourceLabel, recipientsForRound, scoreDisplay, displayAverage } from './model';
+import { exportRoundAverages, exportRoundResponses, fmt } from './csv';
+import { formatWallClock } from '../../../utils/wallClock';
 
 /**
- * Columns are declared once and drive both the on-screen grid and the
- * "Export view" CSV, so what you see is what you download.
+ * The Reports tab's evaluation report: pick one round (a peer evaluation, an
+ * audience evaluation, a phase...), optionally narrow it to one group, and
+ * read or export what each student or group received.
  *
- * With "All rounds" selected there is one column per round; with a single
- * round selected there is one column per criterion of that round.
- */
-function buildColumns({ model, viewBy, rounds, singleRound, showGroups, darkMode }) {
-  const muted = darkMode ? '#a0a0a0' : '#666';
-  const cols = [];
-  const fmtAvg = (round, value) => {
-    if (value == null) return '';
-    return scoreDisplay(model, round).percent ? `${Math.round(value)}%` : fmt(value);
-  };
-
-  if (viewBy === 'students') {
-    cols.push({ key: 'name', header: 'Student', align: 'left', render: r => <strong>{r.name}</strong>, csv: r => r.name });
-    if (showGroups) {
-      cols.push({ key: 'group', header: 'Group', align: 'left', render: r => <span style={{ color: muted }}>{r.groupName || 'No Group'}</span>, csv: r => r.groupName });
-    }
-  } else {
-    cols.push({ key: 'name', header: 'Group', align: 'left', render: r => <strong>{r.name}</strong>, csv: r => r.name });
-    cols.push({ key: 'members', header: 'Members', align: 'center', render: r => r.memberCount, csv: r => r.memberCount });
-  }
-
-  if (singleRound) {
-    const likert = singleRound.criteria.filter(c => c.question_type === 'likert');
-    cols.push({ key: 'count', header: '# Evals', align: 'center', render: r => r.cells[singleRound.id].count, csv: r => r.cells[singleRound.id].count });
-    likert.forEach(c => {
-      cols.push({
-        key: `c-${c.id}`, header: c.name, align: 'center', title: c.description,
-        render: r => <ScoreBadge value={r.cells[singleRound.id].criterionAvgs[c.id]} max={c.max_value} />,
-        csv: r => fmt(r.cells[singleRound.id].criterionAvgs[c.id])
-      });
-    });
-    if (singleRound.points) {
-      cols.push({
-        key: 'points', header: viewBy === 'groups' ? 'Avg Points' : 'Points', align: 'center', divider: true,
-        render: r => <strong>{r.cells[singleRound.id].count > 0 ? fmt(r.cells[singleRound.id].points, viewBy === 'groups' ? 1 : 0) : '-'}</strong>,
-        csv: r => (r.cells[singleRound.id].count > 0 ? fmt(r.cells[singleRound.id].points, viewBy === 'groups' ? 1 : 0) : '')
-      });
-    } else if (likert.length > 0) {
-      cols.push({
-        key: 'avg', header: 'Avg', align: 'center', divider: true,
-        render: r => <strong>{fmtAvg(singleRound, r.cells[singleRound.id].avg) || '-'}</strong>,
-        csv: r => fmtAvg(singleRound, r.cells[singleRound.id].avg)
-      });
-    }
-  } else {
-    rounds.forEach(round => {
-      const scoreCriterion = round.criteria.find(c => c.question_type === 'likert' && c.in_avg === false);
-      const display = scoreDisplay(model, round);
-      cols.push({
-        key: `r-${round.id}`,
-        header: round.assignment_name || round.label,
-        sub: round.multi ? `${round.name} · ${typeLabel(round.type)}` : typeLabel(round.type),
-        align: 'center',
-        render: r => {
-          const cell = r.cells[round.id];
-          if (cell.count === 0) return <span style={{ color: '#999' }}>-</span>;
-          if (round.points) return <strong>{fmt(cell.points, viewBy === 'groups' ? 1 : 0)} pts</strong>;
-          return (
-            <>
-              <ScoreBadge value={cell.avg} max={display.max} percent={display.percent} />
-              {scoreCriterion && cell.criterionAvgs[scoreCriterion.id] != null && (
-                <div style={{ fontSize: '0.72rem', color: muted, marginTop: '2px' }}>
-                  {fmt(cell.criterionAvgs[scoreCriterion.id], 0)}/{scoreCriterion.max_value}
-                </div>
-              )}
-            </>
-          );
-        },
-        csv: r => {
-          const cell = r.cells[round.id];
-          if (cell.count === 0) return '';
-          return round.points ? fmt(cell.points, viewBy === 'groups' ? 1 : 0) : fmtAvg(round, cell.avg);
-        },
-        // Extra CSV-only column for the phases-mode score out of 100
-        extraCsv: scoreCriterion ? {
-          header: `${round.label} ${scoreCriterion.name}`,
-          value: r => (r.cells[round.id].count > 0 ? fmt(r.cells[round.id].criterionAvgs[scoreCriterion.id], 1) : '')
-        } : null
-      });
-    });
-    cols.push({ key: 'overall', header: 'Overall', align: 'center', divider: true, render: r => <strong>{fmtAvg(null, r.overall) || '-'}</strong>, csv: r => fmtAvg(null, r.overall) });
-  }
-
-  const focusDisplay = scoreDisplay(model, singleRound);
-  const gap = notableGap(model, singleRound);
-  if (viewBy === 'students') {
-    if (showGroups) {
-      cols.push({
-        key: 'vsGroup', header: 'vs Group', align: 'center',
-        title: 'How far this student\'s average sits from the average of their groupmates',
-        render: r => <Delta value={r.vsGroup} threshold={gap} percent={focusDisplay.percent} muted={muted} />,
-        csv: r => fmtDelta(r.vsGroup, focusDisplay.percent)
-      });
-    }
-    cols.push({ key: 'given', header: 'Given', align: 'center', title: 'Evaluations this student submitted', render: r => r.given, csv: r => r.given });
-    cols.push({
-      key: 'givenAvg', header: 'Given avg', align: 'center',
-      title: 'Average score this student gave others, and how it compares to the class',
-      render: r => (
-        r.givenAvg == null ? <span style={{ color: '#999' }}>-</span> : (
-          <>
-            {focusDisplay.percent ? `${Math.round(r.givenAvg)}%` : r.givenAvg.toFixed(1)}
-            <div style={{ fontSize: '0.72rem' }}>
-              <Delta value={r.givenVsClass} threshold={gap} percent={focusDisplay.percent} muted={muted} />
-            </div>
-          </>
-        )
-      ),
-      csv: r => (focusDisplay.percent ? fmtAvg(singleRound, r.givenAvg) : fmt(r.givenAvg)),
-      extraCsv: { header: 'Given avg vs class', value: r => fmtDelta(r.givenVsClass, focusDisplay.percent) }
-    });
-  } else if (showGroups) {
-    cols.push({
-      key: 'spread', header: 'Spread', align: 'center',
-      title: 'Gap between the highest and lowest member average',
-      render: r => (
-        r.spread == null ? <span style={{ color: '#999' }}>-</span> : (
-          <span style={{ color: r.spread >= gap * 2 ? '#e67e22' : muted, fontWeight: r.spread >= gap * 2 ? 'bold' : 'normal' }}>
-            {focusDisplay.percent ? `${Math.round(r.spread)}%` : r.spread.toFixed(1)}
-          </span>
-        )
-      ),
-      csv: r => (r.spread == null ? '' : focusDisplay.percent ? Math.round(r.spread) : fmt(r.spread))
-    });
-  }
-  return cols;
-}
-
-// The one number a row is judged by: the selected round's average, or the
-// overall average when every round is shown
-const focusOf = (row, rounds) => (rounds.length === 1 ? row.cells[rounds[0].id].avg : row.overall);
-
-/** A student's own average compared with the mean of their groupmates. */
-function vsGroupOf(model, student, focus, rounds, focusByStudent) {
-  if (focus == null || !student.group) return null;
-  const others = student.group.memberIds
-    .filter(id => id !== student.id)
-    .map(id => focusByStudent[id])
-    .filter(v => v != null);
-  return others.length > 0 ? focus - mean(others) : null;
-}
-
-function buildStudentRows(model, students, rounds) {
-  // Group comparisons use every member, not just the students on screen
-  const focusByStudent = {};
-  const givenByStudent = {};
-  model.students.forEach(s => {
-    const cells = Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, s)]));
-    focusByStudent[s.id] = focusOf({ cells, overall: studentOverall(model, rounds, s) }, rounds);
-    givenByStudent[s.id] = givenAverage(model, rounds, s.id);
-  });
-  const classGiven = mean(Object.values(givenByStudent));
-
-  return students.map(s => {
-    const cells = Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, s)]));
-    const overall = studentOverall(model, rounds, s);
-    const focus = focusByStudent[s.id];
-    const givenAvg = givenByStudent[s.id];
-    return {
-      kind: 'student',
-      id: s.id,
-      name: s.name,
-      email: s.email,
-      groupName: s.group?.name || '',
-      cells,
-      overall,
-      given: givenCount(model, rounds, s.id),
-      givenAvg,
-      givenVsClass: givenAvg != null && classGiven != null ? givenAvg - classGiven : null,
-      vsGroup: vsGroupOf(model, s, focus, rounds, focusByStudent)
-    };
-  });
-}
-
-function buildGroupRows(model, groups, rounds) {
-  return groups.map(g => {
-    const members = g.memberIds.map(id => model.studentById[id]).filter(Boolean);
-    const values = members
-      .map(m => focusOf({ cells: Object.fromEntries(rounds.map(r => [r.id, studentRoundCell(model, r, m)])), overall: studentOverall(model, rounds, m) }, rounds))
-      .filter(v => v != null);
-    return {
-      kind: 'group',
-      id: g.id,
-      name: g.name,
-      memberCount: g.memberIds.length,
-      cells: Object.fromEntries(rounds.map(r => [r.id, groupRoundCell(model, r, g)])),
-      overall: groupOverall(model, rounds, g),
-      spread: values.length >= 2 ? Math.max(...values) - Math.min(...values) : null
-    };
-  });
-}
-
-/** Desktop table plus mobile card list, both driven by the column list. */
-function Grid({ columns, rows, onSelect, darkMode, emptyText }) {
-  if (rows.length === 0) return <p>{emptyText}</p>;
-  const clickable = typeof onSelect === 'function';
-  const hoverBg = darkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  return (
-    <>
-      <div className="desktop-table" style={{ overflowX: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              {columns.map(c => (
-                <th key={c.key} title={c.title || ''} style={{ textAlign: c.align, padding: '10px', borderLeft: c.divider ? '2px solid #586e75' : undefined, verticalAlign: 'bottom' }}>
-                  {c.header}
-                  {c.sub && <div style={{ fontSize: '0.72rem', fontWeight: 'normal', opacity: 0.7 }}>{c.sub}</div>}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <tr
-                key={row.id}
-                onClick={clickable ? () => onSelect(row) : undefined}
-                style={{ cursor: clickable ? 'pointer' : 'default', background: idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)' }}
-                onMouseEnter={clickable ? e => { e.currentTarget.style.background = hoverBg; } : undefined}
-                onMouseLeave={clickable ? e => { e.currentTarget.style.background = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)'; } : undefined}
-                title={clickable ? 'Click for details' : undefined}
-              >
-                {columns.map(c => (
-                  <td key={c.key} style={{ textAlign: c.align, padding: '10px', borderLeft: c.divider ? '2px solid #586e75' : undefined }}>
-                    {c.render(row)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mobile-card-list">
-        {rows.map(row => (
-          <div key={row.id} className="mobile-card" onClick={clickable ? () => onSelect(row) : undefined} style={{ cursor: clickable ? 'pointer' : 'default' }}>
-            <div className="mobile-card-header">{row.name} {clickable && <span style={{ float: 'right', opacity: 0.6 }}>›</span>}</div>
-            {columns.filter(c => c.key !== 'name').map(c => (
-              <div key={c.key} className="mobile-card-row">
-                <span className="mobile-card-label">{c.header}{c.sub ? ` (${c.sub})` : ''}</span>
-                <span className="mobile-card-value">{c.render(row)}</span>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
-/**
- * A group-level round as seen from one member: the group was evaluated, not
- * the student, so only the group's totals and a link to the group appear.
- */
-function GroupRoundSummary({ model, round, group, evals, darkMode, onOpenGroup }) {
-  const muted = darkMode ? '#a0a0a0' : '#666';
-  const borderColor = darkMode ? '#444' : '#ddd';
-  const display = scoreDisplay(model, round);
-  const avg = displayAverage(model, round, evals);
-  return (
-    <div style={{ marginBottom: '20px' }}>
-      <div style={{
-        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px',
-        borderBottom: `2px solid ${borderColor}`, paddingBottom: '6px', marginBottom: '8px'
-      }}>
-        <h3 style={{ margin: 0, fontSize: '1.05rem' }}>
-          {round.label}
-          <span style={{
-            marginLeft: '8px', padding: '1px 7px', borderRadius: '10px', fontSize: '0.72rem', fontWeight: 'normal',
-            background: darkMode ? '#333' : '#e8ecef', color: muted, verticalAlign: 'middle'
-          }}>
-            {typeLabel(round.type)}
-          </span>
-        </h3>
-        <span style={{ fontSize: '0.85rem', color: muted }}>
-          {group ? <>evaluated as <strong>{group.name}</strong></> : 'evaluates groups'}
-          {group && <> · {evals.length} evaluation{evals.length === 1 ? '' : 's'}</>}
-          {avg != null && (display.percent ? <> · avg <strong>{Math.round(avg)}%</strong></> : <> · avg <strong>{avg.toFixed(2)}</strong> / {round.scaleMax}</>)}
-        </span>
-      </div>
-      {group ? (
-        <button
-          type="button"
-          onClick={() => onOpenGroup(group.id)}
-          className="btn btn-secondary"
-          style={{ fontSize: '0.85rem', padding: '6px 10px' }}
-        >
-          View {group.name}'s evaluations
-        </button>
-      ) : (
-        <p style={{ fontSize: '0.9rem', color: muted, margin: 0 }}>This student is not in a group, so nothing was received in this round.</p>
-      )}
-    </div>
-  );
-}
-
-/** Detail view for one student: every round they received, one section each. */
-function StudentDetail({ model, student, rounds, darkMode, openImageViewer, onOpenGroup, compact = false }) {
-  const muted = darkMode ? '#a0a0a0' : '#666';
-  const overall = studentOverall(model, rounds, student);
-  const Heading = compact ? 'h3' : 'h2';
-  return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px', marginBottom: '18px' }}>
-        <Heading style={{ margin: 0 }}>
-          {student.name}
-          {student.group && <span style={{ fontSize: '0.9rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{student.group.name}</span>}
-        </Heading>
-        <span style={{ fontSize: '0.9rem', color: muted }}>
-          {student.email}{overall != null && <> · overall <strong>{scoreDisplay(model, null).percent ? `${Math.round(overall)}%` : overall.toFixed(2)}</strong></>}
-        </span>
-      </div>
-      {rounds.map(round => {
-        const evals = evalsForStudent(model, round, student);
-        if (round.target === 'group') {
-          return <GroupRoundSummary key={round.id} model={model} round={round} group={student.group} evals={evals} darkMode={darkMode} onOpenGroup={onOpenGroup} />;
-        }
-        const slot = round.presentation_slots.find(s => s.user_id === student.id);
-        return (
-          <RoundSection
-            key={round.id}
-            model={model}
-            round={round}
-            evals={evals}
-            presentationDate={slot?.presentation_date}
-            darkMode={darkMode}
-            openImageViewer={openImageViewer}
-          />
-        );
-      })}
-    </>
-  );
-}
-
-/**
- * Summary view for one group: the group's own row of averages, then a
- * members grid to drill further. Evaluator-level tables are in Full detail.
- */
-function GroupDetail({ model, group, rounds, columns, groupColumns, darkMode, onSelectStudent }) {
-  const muted = darkMode ? '#a0a0a0' : '#666';
-  const members = group.memberIds.map(id => model.studentById[id]).filter(Boolean);
-  const groupRounds = rounds.filter(r => r.target === 'group');
-  const memberRounds = rounds.filter(r => r.target !== 'group');
-  const overall = groupOverall(model, rounds, group);
-  const groupRows = buildGroupRows(model, [group], rounds);
-  const memberRows = buildStudentRows(model, members, rounds);
-  return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px', marginBottom: '18px' }}>
-        <h2 style={{ margin: 0 }}>{group.name}</h2>
-        <span style={{ fontSize: '0.9rem', color: muted }}>
-          {members.length} member{members.length === 1 ? '' : 's'}{overall != null && <> · members' overall <strong>{scoreDisplay(model, null).percent ? `${Math.round(overall)}%` : overall.toFixed(2)}</strong></>}
-        </span>
-      </div>
-
-      <h3 style={{ marginBottom: '6px' }}>Group summary</h3>
-      <p style={{ fontSize: '0.85rem', color: muted, marginTop: 0 }}>
-        {groupRounds.length > 0 && memberRounds.length > 0
-          ? 'Group-level rounds use evaluations of the group itself; individual rounds average the members. '
-          : groupRounds.length > 0
-            ? 'Averages of the evaluations the group received as a whole. '
-            : 'Average of what the members received. '}
-        Switch to Full detail for every evaluator's scores and comments.
-      </p>
-      <Grid columns={groupColumns} rows={groupRows} darkMode={darkMode} emptyText="" />
-
-      <h3 style={{ marginBottom: '6px', marginTop: '24px' }}>Members</h3>
-      <p style={{ fontSize: '0.85rem', color: muted, marginTop: 0 }}>
-        Click a member to see every evaluator.
-      </p>
-      <Grid columns={columns} rows={memberRows} onSelect={onSelectStudent} darkMode={darkMode} emptyText="This group has no students." />
-    </>
-  );
-}
-
-/**
- * Every recipient's evaluator-level detail on one page: the way to read all
- * within-group peer evaluations for every member together.
- */
-function FullDetailList({ model, viewBy, students, groups, rounds, darkMode, openImageViewer, onOpenGroup }) {
-  const muted = darkMode ? '#a0a0a0' : '#666';
-  const borderColor = darkMode ? '#444' : '#ddd';
-  const block = { border: `1px solid ${borderColor}`, borderRadius: '8px', padding: '16px', marginBottom: '20px' };
-
-  if (viewBy === 'students') {
-    if (students.length === 0) return <p>No students found.</p>;
-    return students.map(s => (
-      <div key={s.id} style={block}>
-        <StudentDetail model={model} student={s} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} onOpenGroup={onOpenGroup} compact />
-      </div>
-    ));
-  }
-
-  if (groups.length === 0) return <p>No groups found.</p>;
-  const groupRounds = rounds.filter(r => r.target === 'group');
-  const memberRounds = rounds.filter(r => r.target !== 'group');
-  return groups.map(g => {
-    const members = g.memberIds.map(id => model.studentById[id]).filter(Boolean);
-    return (
-      <div key={g.id} style={block}>
-        <h2 style={{ marginTop: 0, borderBottom: `2px solid ${borderColor}`, paddingBottom: '8px' }}>
-          {g.name}
-          <span style={{ fontSize: '0.9rem', fontWeight: 'normal', color: muted, marginLeft: '10px' }}>{members.length} member{members.length === 1 ? '' : 's'}</span>
-        </h2>
-        {groupRounds.map(round => (
-          <RoundSection
-            key={round.id}
-            model={model}
-            round={round}
-            evals={evalsForGroup(model, round, g)}
-            note="Evaluations of the group as a whole."
-            presentationDate={round.presentation_slots.find(s => s.group_id === g.id)?.presentation_date}
-            darkMode={darkMode}
-            openImageViewer={openImageViewer}
-          />
-        ))}
-        {memberRounds.length > 0 && members.map(s => (
-          <div key={s.id} style={{ marginLeft: '12px', paddingLeft: '12px', borderLeft: `3px solid ${borderColor}`, marginBottom: '16px' }}>
-            <StudentDetail model={model} student={s} rounds={memberRounds} darkMode={darkMode} openImageViewer={openImageViewer} compact />
-          </div>
-        ))}
-      </div>
-    );
-  });
-}
-
-/**
  * Props:
- *   reportGroup / setReportGroup  the row scope, kept on the dashboard so it
- *     survives tab switches: 'all' (every student), 'groups' (one row per
- *     group), or a group id (that group's members).
+ *   reportGroup / setReportGroup  the group filter ('all' or a group id),
+ *     kept on the dashboard so it survives tab switches.
  */
-function EvaluationExplorer({ model: baseModel, className, darkMode, reportGroup, setReportGroup, openImageViewer }) {
-  const hasGroups = baseModel.groups.length > 0;
-  const [roundId, setRoundId] = useState('all');
-  // Which evaluations count: self-evaluations and ones from former groupmates
-  const [includeSelf, setIncludeSelf] = useState(true);
-  const [includeFormerGroup, setIncludeFormerGroup] = useState(true);
-  const model = useMemo(() => filterModel(baseModel, { includeSelf, includeFormerGroup }), [baseModel, includeSelf, includeFormerGroup]);
-  // 'summary' is the grid; 'detail' lists every evaluator for every row at once
-  const [detailMode, setDetailMode] = useState('summary');
-  // A student opened from the grid, or null
-  const [selectedStudentId, setSelectedStudentId] = useState(null);
-
-  const scope = reportGroup || 'all';
-  const scopeGroup = scope !== 'all' && scope !== 'groups' ? model.groupById[parseInt(scope)] : null;
-  const scopeIsGroups = scope === 'groups';
-
-  // Fall back to all students if groups are hidden or the group vanished
-  useEffect(() => {
-    if (scope !== 'all' && (!hasGroups || (!scopeIsGroups && !scopeGroup))) setReportGroup('all');
-  }, [scope, hasGroups, scopeIsGroups, scopeGroup, setReportGroup]);
+function EvaluationExplorer({ model, className, darkMode, reportGroup, setReportGroup, openImageViewer }) {
+  const [roundId, setRoundId] = useState(null);
+  const [expanded, setExpanded] = useState(() => new Set());
 
   const muted = darkMode ? '#a0a0a0' : '#666';
   const borderColor = darkMode ? '#444' : '#ddd';
 
-  const singleRound = roundId === 'all' ? null : model.rounds.find(r => String(r.id) === String(roundId)) || null;
-  const rounds = singleRound ? [singleRound] : model.rounds;
-
-  const students = scopeGroup ? model.students.filter(s => s.group?.id === scopeGroup.id) : model.students;
-
-  const studentColumns = buildColumns({ model, viewBy: 'students', rounds, singleRound, showGroups: hasGroups && !scopeGroup, darkMode });
-  const groupColumns = buildColumns({ model, viewBy: 'groups', rounds, singleRound, showGroups: hasGroups, darkMode });
-  const columns = scopeIsGroups ? groupColumns : studentColumns;
-  const rows = scopeIsGroups ? buildGroupRows(model, model.groups, rounds) : buildStudentRows(model, students, rounds);
-
-  const selectedStudent = selectedStudentId ? model.studentById[selectedStudentId] : null;
-
-  const changeScope = (value) => { setReportGroup(value); setSelectedStudentId(null); };
-  const openGroupDetail = (groupId) => { changeScope(String(groupId)); setDetailMode('detail'); };
-
-  const exportView = () => {
-    const headers = [];
-    const cellFns = [];
-    columns.forEach(c => {
-      headers.push(c.sub ? `${c.header} – ${c.sub}` : c.header);
-      cellFns.push(c.csv);
-      if (c.extraCsv) { headers.push(c.extraCsv.header); cellFns.push(c.extraCsv.value); }
-    });
-    if (!scopeIsGroups) { headers.splice(1, 0, 'Email'); cellFns.splice(1, 0, r => r.email); }
-    const out = [headers, ...rows.map(r => cellFns.map(fn => fn(r)))];
-    const who = scopeGroup ? scopeGroup.name : scopeIsGroups ? 'groups' : 'students';
-    const what = singleRound ? singleRound.label : 'all_rounds';
-    downloadCSV(`${className || 'class'}_${who}_${what}.csv`, out);
-  };
-
-  // Every control shares one height and border so the row and its labels line up
-  const controlBorder = `1px solid ${darkMode ? '#555' : '#bbb'}`;
-  const selectStyle = { height: '36px', boxSizing: 'border-box', padding: '0 8px', fontSize: '0.9rem', border: controlBorder, borderRadius: '4px' };
-  const segBtn = (active) => ({
-    height: '36px', boxSizing: 'border-box', padding: '0 12px', fontSize: '0.9rem', cursor: 'pointer',
-    border: controlBorder,
-    background: active ? (darkMode ? '#3498db' : '#2c3e50') : (darkMode ? '#2a2a2a' : '#fff'),
-    color: active ? '#fff' : 'inherit'
-  });
-  const labelStyle = { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 };
-
-  const scopeDescription = scopeGroup
-    ? <>members of <strong>{scopeGroup.name}</strong></>
-    : scopeIsGroups ? 'each group' : 'each student';
-  const roundDescription = singleRound ? <> in <strong>{singleRound.label}</strong></> : ' in every round';
-
-  // What the main card shows when no student is open
-  let body;
-  if (selectedStudent) {
-    body = <StudentDetail model={model} student={selectedStudent} rounds={rounds} darkMode={darkMode} openImageViewer={openImageViewer} onOpenGroup={openGroupDetail} />;
-  } else if (model.rounds.length === 0) {
-    body = <p>This class has no evaluation rounds yet.</p>;
-  } else if (detailMode === 'detail') {
-    body = (
-      <FullDetailList
-        model={model}
-        viewBy={scopeIsGroups || scopeGroup ? 'groups' : 'students'}
-        students={students}
-        groups={scopeGroup ? [scopeGroup] : model.groups}
-        rounds={rounds}
-        darkMode={darkMode}
-        openImageViewer={openImageViewer}
-        onOpenGroup={openGroupDetail}
-      />
-    );
-  } else if (scopeGroup) {
-    body = (
-      <GroupDetail
-        model={model}
-        group={scopeGroup}
-        rounds={rounds}
-        columns={studentColumns}
-        groupColumns={groupColumns}
-        darkMode={darkMode}
-        onSelectStudent={row => setSelectedStudentId(row.id)}
-      />
-    );
-  } else {
-    body = (
-      <>
-        <h3 style={{ marginTop: 0, borderBottom: `2px solid ${borderColor}`, paddingBottom: '8px' }}>
-          {scopeIsGroups ? 'Scores by Group' : 'Scores Received by Student'}
-        </h3>
-        <Grid
-          columns={columns}
-          rows={rows}
-          onSelect={row => (scopeIsGroups ? changeScope(String(row.id)) : setSelectedStudentId(row.id))}
-          darkMode={darkMode}
-          emptyText={scopeIsGroups ? 'No groups found.' : 'No students found.'}
-        />
-      </>
+  if (model.rounds.length === 0) {
+    return (
+      <div className="card">
+        <h2>Evaluation Reports</h2>
+        <p>This class has no evaluation rounds yet.</p>
+      </div>
     );
   }
 
-  return (
-    <>
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
-          <h2 style={{ margin: 0 }}>Evaluation Reports</h2>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button onClick={exportView} className="btn btn-primary" style={{ fontSize: '0.85rem', padding: '8px 12px' }} disabled={rows.length === 0}>
-              Export View
-            </button>
-            <button onClick={() => exportAllEvaluations(model, className)} className="btn btn-secondary" style={{ fontSize: '0.85rem', padding: '8px 12px' }} disabled={model.evals.length === 0}>
-              Export All Evaluations
-            </button>
-          </div>
-        </div>
+  // Until one is picked, show the first round that has anything in it
+  const round = model.rounds.find(r => String(r.id) === String(roundId))
+    || model.rounds.find(r => model.evalsByRound[r.id].length > 0)
+    || model.rounds[0];
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
+  const hasGroups = model.groups.length > 0;
+  const group = hasGroups && reportGroup && reportGroup !== 'all' ? model.groupById[parseInt(reportGroup)] || null : null;
+
+  const recipients = recipientsForRound(model, round, group);
+  const groupRound = round.target === 'group';
+  const showGroupColumn = !groupRound && hasGroups && !group;
+  const likert = round.criteria.filter(c => c.question_type === 'likert');
+  const display = scoreDisplay(model, round);
+  const fmtAvg = (value) => (value == null ? '-' : display.percent ? `${Math.round(value)}%` : value.toFixed(2));
+
+  const shownEvals = recipients.flatMap(r => r.evals);
+  const shownAvg = round.points ? null : displayAverage(model, round, shownEvals);
+  const withEvals = recipients.filter(r => r.count > 0);
+  const allExpanded = withEvals.length > 0 && withEvals.every(r => expanded.has(r.key));
+
+  const toggle = (key) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const toggleAll = () => setExpanded(allExpanded ? new Set() : new Set(withEvals.map(r => r.key)));
+  const changeRound = (id) => { setRoundId(id); setExpanded(new Set()); };
+  const changeGroup = (value) => { setReportGroup(value); setExpanded(new Set()); };
+
+  const exportArgs = { model, round, recipients, className, scopeName: group ? group.name : (hasGroups ? 'all groups' : '') };
+
+  const selectStyle = {
+    height: '36px', boxSizing: 'border-box', padding: '0 8px', fontSize: '0.9rem',
+    border: `1px solid ${darkMode ? '#555' : '#bbb'}`, borderRadius: '4px'
+  };
+  const labelStyle = { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '0.85rem', fontWeight: 500 };
+  const btnStyle = { fontSize: '0.85rem', padding: '8px 12px' };
+  const td = { padding: '10px', textAlign: 'center' };
+  const colCount = 2 + (showGroupColumn ? 1 : 0) + likert.length + (round.points || likert.length > 0 ? 1 : 0);
+
+  const details = (r) => (
+    <>
+      {r.presentationDate && (
+        <p style={{ fontSize: '0.85rem', color: muted, margin: '0 0 8px 0' }}>Presented {formatWallClock(r.presentationDate)}</p>
+      )}
+      <RoundSection model={model} round={round} evals={r.evals} darkMode={darkMode} openImageViewer={openImageViewer} hideHeading />
+    </>
+  );
+
+  const summaryCell = (r) => {
+    if (r.count === 0) return <span style={{ color: '#999' }}>-</span>;
+    return round.points ? <strong>{r.points} pts</strong> : <strong>{fmtAvg(r.avg)}</strong>;
+  };
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', marginBottom: '12px' }}>
+        <h2 style={{ margin: 0 }}>Evaluation Reports</h2>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button
+            onClick={() => exportRoundAverages(exportArgs)}
+            className="btn btn-primary"
+            style={btnStyle}
+            disabled={recipients.length === 0}
+            title={`One row per ${groupRound ? 'group' : 'student'}: the averages in the table below`}
+          >
+            Export Averages
+          </button>
+          <button
+            onClick={() => exportRoundResponses(exportArgs)}
+            className="btn btn-secondary"
+            style={btnStyle}
+            disabled={shownEvals.length === 0}
+            title="One row per evaluation: every evaluator's scores and comments"
+          >
+            Export All Responses
+          </button>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'flex-end' }}>
+        <label style={labelStyle}>
+          {model.isAssignmentMode ? 'Assignment' : 'Phase'}
+          <select value={round.id} onChange={e => changeRound(e.target.value)} style={{ ...selectStyle, minWidth: '220px' }}>
+            {model.rounds.map(r => (
+              <option key={r.id} value={r.id}>{r.label} ({typeLabel(r.type)})</option>
+            ))}
+          </select>
+        </label>
+
+        {hasGroups && (
           <label style={labelStyle}>
-            Round
-            <select value={roundId} onChange={e => setRoundId(e.target.value)} style={{ ...selectStyle, minWidth: '200px' }}>
-              <option value="all">All rounds</option>
-              {model.rounds.map(r => (
-                <option key={r.id} value={r.id}>{r.label} ({typeLabel(r.type)})</option>
-              ))}
+            Group
+            <select value={group ? group.id : 'all'} onChange={e => changeGroup(e.target.value)} style={{ ...selectStyle, minWidth: '160px' }}>
+              <option value="all">All groups</option>
+              {model.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </label>
-
-          {hasGroups && (
-            <label style={labelStyle}>
-              Rows
-              <select value={scope} onChange={e => changeScope(e.target.value)} style={{ ...selectStyle, minWidth: '160px' }}>
-                <option value="all">All students</option>
-                <option value="groups">Groups</option>
-                <optgroup label="One group">
-                  {model.groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </optgroup>
-              </select>
-            </label>
-          )}
-
-          <div style={labelStyle}>
-            Show
-            <div style={{ display: 'flex' }}>
-              <button type="button" onClick={() => { setDetailMode('summary'); setSelectedStudentId(null); }} style={{ ...segBtn(detailMode === 'summary'), borderRadius: '4px 0 0 4px' }}>Summary</button>
-              <button type="button" onClick={() => { setDetailMode('detail'); setSelectedStudentId(null); }} style={{ ...segBtn(detailMode === 'detail'), borderRadius: '0 4px 4px 0', borderLeft: 'none' }}>Full detail</button>
-            </div>
-          </div>
-
-          {(baseModel.hasSelf || baseModel.hasFormerGroup) && (
-            <div style={{ ...labelStyle, fontWeight: 'normal', justifyContent: 'flex-end', minHeight: '36px', gap: '6px' }}>
-              {baseModel.hasSelf && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={includeSelf} onChange={e => setIncludeSelf(e.target.checked)} />
-                  Include self-evaluations
-                </label>
-              )}
-              {baseModel.hasFormerGroup && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} title="Evaluations between students who are no longer in the same group">
-                  <input type="checkbox" checked={includeFormerGroup} onChange={e => setIncludeFormerGroup(e.target.checked)} />
-                  Include former-group evaluations
-                </label>
-              )}
-            </div>
-          )}
-        </div>
-        <p style={{ margin: '12px 0 0 0', fontSize: '0.85rem', color: muted }}>
-          {detailMode === 'detail'
-            ? <>Every evaluator's scores and comments for {scopeDescription}{roundDescription}. </>
-            : <>{singleRound ? 'Per-criterion averages' : 'Average received'} for {scopeDescription}{roundDescription}. Click a row for every evaluator's scores and comments. </>}
-          {detailMode !== 'detail' && (hasGroups
-            ? <>“vs Group” is a student's average against their groupmates'; “Spread” is the gap between a group's highest and lowest member. </>
-            : null)}
-          {detailMode !== 'detail' && <>“Given avg” is what a student gives others, compared with the class, to spot lenient or harsh raters. </>}
-          “Export View” downloads the summary table; “Export All Evaluations” downloads one row per evaluation across every round.
-        </p>
+        )}
       </div>
 
-      <div className="card">
-        {selectedStudent ? (
-          <button type="button" onClick={() => setSelectedStudentId(null)} className="btn btn-secondary" style={{ fontSize: '0.85rem', padding: '6px 10px', marginBottom: '14px' }}>
-            ← Back to {scopeGroup ? scopeGroup.name : 'all students'}
-          </button>
-        ) : scopeGroup && (
-          <button type="button" onClick={() => changeScope('groups')} className="btn btn-secondary" style={{ fontSize: '0.85rem', padding: '6px 10px', marginBottom: '14px' }}>
-            ← Back to all groups
+      <div style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px',
+        borderBottom: `2px solid ${borderColor}`, padding: '18px 0 8px 0', marginBottom: '6px'
+      }}>
+        <span style={{ fontSize: '0.9rem', color: muted }}>
+          {groupRound ? 'Each group' : 'Each student'}'s scores {sourceLabel(round)}
+          {' · '}{shownEvals.length} evaluation{shownEvals.length === 1 ? '' : 's'}
+          {shownAvg != null && <> · average <strong>{fmtAvg(shownAvg)}</strong>{!display.percent && <> / {round.scaleMax}</>}</>}
+        </span>
+        {withEvals.length > 0 && (
+          <button type="button" onClick={toggleAll} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '4px 10px' }}>
+            {allExpanded ? 'Hide all responses' : 'Show all responses'}
           </button>
         )}
-        {body}
       </div>
-    </>
+      {!round.points && display.percent && (
+        <p style={{ fontSize: '0.8rem', color: muted, margin: '0 0 6px 0' }}>Criteria use different scales, so averages are shown as a percent of the maximum.</p>
+      )}
+
+      {recipients.length === 0 ? (
+        <p>
+          {groupRound
+            ? 'This round evaluates groups, and this class has no groups yet.'
+            : group ? 'This group has no students.' : 'No students found.'}
+        </p>
+      ) : (
+        <>
+          <div className="desktop-table" style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '10px' }}>{groupRound ? 'Group' : 'Student'}</th>
+                  {showGroupColumn && <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>}
+                  <th style={td}># Evals</th>
+                  {likert.map(c => <th key={c.id} style={td} title={c.description || ''}>{c.name}</th>)}
+                  {round.points
+                    ? <th style={{ ...td, borderLeft: '2px solid #586e75' }}>Points</th>
+                    : likert.length > 0 && <th style={{ ...td, borderLeft: '2px solid #586e75' }}>Avg</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {recipients.map((r, idx) => {
+                  const open = expanded.has(r.key);
+                  const canOpen = r.count > 0;
+                  const rowBg = idx % 2 === 0 ? 'transparent' : 'rgba(0,0,0,0.04)';
+                  return (
+                    <React.Fragment key={r.key}>
+                      <tr
+                        onClick={canOpen ? () => toggle(r.key) : undefined}
+                        style={{ background: rowBg, cursor: canOpen ? 'pointer' : 'default' }}
+                        title={canOpen ? (open ? 'Click to hide responses' : 'Click to see every evaluator\'s scores and comments') : undefined}
+                      >
+                        <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
+                          <span style={{ display: 'inline-block', width: '1.1em', color: muted }}>{canOpen ? (open ? '▾' : '▸') : ''}</span>
+                          <strong>{r.name}</strong>
+                          {r.offRoster && <span style={{ color: muted, marginLeft: '6px', fontSize: '0.8rem' }}>(not on roster)</span>}
+                        </td>
+                        {showGroupColumn && <td style={{ padding: '10px', color: muted }}>{r.groupName || 'No group'}</td>}
+                        <td style={td}>{r.count}</td>
+                        {likert.map(c => (
+                          <td key={c.id} style={td}><ScoreBadge value={r.criterionAvgs[c.id]} max={c.max_value} /></td>
+                        ))}
+                        {(round.points || likert.length > 0) && (
+                          <td style={{ ...td, borderLeft: '2px solid #586e75' }}>{summaryCell(r)}</td>
+                        )}
+                      </tr>
+                      {open && (
+                        <tr style={{ background: rowBg }}>
+                          <td colSpan={colCount} style={{ padding: '4px 10px 14px 28px' }}>{details(r)}</td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mobile-card-list">
+            {recipients.map(r => {
+              const open = expanded.has(r.key);
+              const canOpen = r.count > 0;
+              return (
+                <div key={r.key} className="mobile-card">
+                  <div className="mobile-card-header" onClick={canOpen ? () => toggle(r.key) : undefined} style={{ cursor: canOpen ? 'pointer' : 'default' }}>
+                    {r.name}
+                    {canOpen && <span style={{ float: 'right', opacity: 0.6 }}>{open ? '▾' : '▸'}</span>}
+                  </div>
+                  {showGroupColumn && (
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Group</span>
+                      <span className="mobile-card-value">{r.groupName || 'No group'}</span>
+                    </div>
+                  )}
+                  <div className="mobile-card-row">
+                    <span className="mobile-card-label"># Evals</span>
+                    <span className="mobile-card-value">{r.count}</span>
+                  </div>
+                  {likert.map(c => (
+                    <div key={c.id} className="mobile-card-row">
+                      <span className="mobile-card-label">{c.name}</span>
+                      <span className="mobile-card-value">{r.count > 0 ? fmt(r.criterionAvgs[c.id], 1) : '-'}</span>
+                    </div>
+                  ))}
+                  {(round.points || likert.length > 0) && (
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">{round.points ? 'Points' : 'Avg'}</span>
+                      <span className="mobile-card-value">{summaryCell(r)}</span>
+                    </div>
+                  )}
+                  {open && <div style={{ marginTop: '10px' }}>{details(r)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

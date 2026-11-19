@@ -229,7 +229,7 @@ export function buildModel({ classData, classStudents, classGroups, evaluations,
     id: g.id,
     name: g.name,
     memberIds: (g.members || []).filter(m => m.role === 'student').map(m => m.id)
-  }));
+  })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   const groupOfStudent = {};
   groups.forEach(g => g.memberIds.forEach(id => { groupOfStudent[id] = g; }));
 
@@ -265,10 +265,6 @@ export function buildModel({ classData, classStudents, classGroups, evaluations,
     }
   });
 
-  const scoredRounds = rounds.filter(r => !r.points);
-  const overallMaxes = [...new Set(scoredRounds.map(r => r.scaleMax))];
-  const uniformOverall = scoredRounds.every(r => r.uniformScale) && overallMaxes.length <= 1;
-
   return {
     isAssignmentMode,
     students,
@@ -277,29 +273,16 @@ export function buildModel({ classData, classStudents, classGroups, evaluations,
     evals,
     evalsByRound: indexEvals(rounds, evals),
     studentById: Object.fromEntries(students.map(s => [s.id, s])),
-    groupById: Object.fromEntries(groups.map(g => [g.id, g])),
-    hasSelf: evals.some(e => e.is_self),
-    hasFormerGroup: evals.some(e => e.is_former_group),
-    uniformOverall,
-    overallMax: uniformOverall && overallMaxes.length === 1 ? overallMaxes[0] : 100
+    groupById: Object.fromEntries(groups.map(g => [g.id, g]))
   };
 }
 
-/** A copy of the model with some evaluations left out of every total. */
-export function filterModel(model, { includeSelf = true, includeFormerGroup = true } = {}) {
-  if (includeSelf && includeFormerGroup) return model;
-  const evals = model.evals.filter(e => (includeSelf || !e.is_self) && (includeFormerGroup || !e.is_former_group));
-  return { ...model, evals, evalsByRound: indexEvals(model.rounds, evals) };
-}
-
 /**
- * How to present an average for a round (or, with round null, the overall
- * average across rounds): the raw value on its scale, or a percent of the
- * maximum when scales are mixed.
+ * How to present an average for a round: the raw value on its scale, or a
+ * percent of the maximum when its criteria mix scales.
  */
 export function scoreDisplay(model, round) {
-  if (round) return round.uniformScale ? { percent: false, max: round.scaleMax } : { percent: true, max: 100 };
-  return model.uniformOverall ? { percent: false, max: model.overallMax } : { percent: true, max: 100 };
+  return round.uniformScale ? { percent: false, max: round.scaleMax } : { percent: true, max: 100 };
 }
 
 /** The displayable average of a set of evaluations under scoreDisplay. */
@@ -338,74 +321,61 @@ export function criterionAverages(round, evals) {
 }
 
 /**
- * Summary of what a student received in a round: count, displayable
- * average, criterion averages, and (for points rounds) total points.
+ * The rows of a round's report: everyone the round evaluates (groups for a
+ * group-targeted round, students otherwise), optionally narrowed to one
+ * group, each with what they received.
  */
-export function studentRoundCell(model, round, student) {
-  const evals = evalsForStudent(model, round, student);
-  return {
+export function recipientsForRound(model, round, group) {
+  const summarize = (evals) => ({
+    evals,
     count: evals.length,
     avg: round.points ? null : displayAverage(model, round, evals),
     points: round.points ? evals.reduce((sum, e) => sum + (e.points || 0), 0) : null,
-    criterionAvgs: criterionAverages(round, evals),
-    evals
-  };
-}
-
-/**
- * Summary of a group in a round. Group-targeted rounds use the evaluations
- * of the group itself; individual rounds average the members' averages.
- */
-export function groupRoundCell(model, round, group) {
-  if (round.target === 'group') {
-    const evals = evalsForGroup(model, round, group);
-    return { count: evals.length, avg: displayAverage(model, round, evals), points: null, criterionAvgs: criterionAverages(round, evals), evals, perMember: false };
-  }
-  const members = group.memberIds.map(id => model.studentById[id]).filter(Boolean);
-  const cells = members.map(m => studentRoundCell(model, round, m));
-  const criterionAvgs = {};
-  round.criteria.filter(c => c.question_type === 'likert').forEach(c => {
-    criterionAvgs[c.id] = mean(cells.map(cell => cell.criterionAvgs[c.id]));
+    criterionAvgs: criterionAverages(round, evals)
   });
-  return {
-    count: cells.reduce((sum, c) => sum + c.count, 0),
-    avg: round.points ? null : mean(cells.map(c => c.avg)),
-    points: round.points ? mean(cells.filter(c => c.count > 0).map(c => c.points)) : null,
-    criterionAvgs,
-    evals: cells.flatMap(c => c.evals),
-    perMember: true
-  };
-}
 
-/** Overall average across every scored round a student received. */
-export function studentOverall(model, rounds, student) {
-  const scored = rounds.filter(r => !r.points).flatMap(r => evalsForStudent(model, r, student));
-  return displayAverage(model, null, scored);
-}
+  if (round.target === 'group') {
+    return (group ? [group] : model.groups).map(g => ({
+      key: `g-${g.id}`,
+      kind: 'group',
+      name: g.name,
+      email: '',
+      groupName: '',
+      presentationDate: round.presentation_slots.find(s => s.group_id === g.id)?.presentation_date || null,
+      ...summarize(evalsForGroup(model, round, g))
+    }));
+  }
 
-export function groupOverall(model, rounds, group) {
-  const members = group.memberIds.map(id => model.studentById[id]).filter(Boolean);
-  return mean(members.map(m => studentOverall(model, rounds, m)));
-}
+  // Teammates sit together: by group, then by name, ungrouped students last
+  const students = model.students
+    .filter(s => !group || s.group?.id === group.id)
+    .sort((a, b) => {
+      if (!a.group !== !b.group) return a.group ? -1 : 1;
+      return (a.group?.name || '').localeCompare(b.group?.name || '', undefined, { numeric: true }) || a.name.localeCompare(b.name);
+    });
+  const rows = students.map(s => ({
+    key: `s-${s.id}`,
+    kind: 'student',
+    name: s.name,
+    email: s.email,
+    groupName: s.group?.name || '',
+    presentationDate: round.presentation_slots.find(p => p.user_id === s.id)?.presentation_date || null,
+    ...summarize(evalsForStudent(model, round, s))
+  }));
 
-/** How many evaluations a student submitted in the given rounds. */
-export function givenCount(model, rounds, studentId) {
-  return rounds.reduce((sum, r) => sum + (model.evalsByRound[r.id] || []).filter(e => e.evaluator_id === studentId).length, 0);
-}
-
-/**
- * Average of the scores a student gave in the given rounds, excluding
- * self-evaluations, on the same display basis as received averages. Used
- * to spot lenient and harsh raters.
- */
-export function givenAverage(model, rounds, studentId) {
-  const scored = rounds.filter(r => !r.points);
-  const evals = scored.flatMap(r => (model.evalsByRound[r.id] || []).filter(e => e.evaluator_id === studentId && !e.is_self));
-  return displayAverage(model, scored.length === 1 ? scored[0] : null, evals);
-}
-
-/** How far apart two averages must be to count as notable on this display basis. */
-export function notableGap(model, round) {
-  const { percent, max } = scoreDisplay(model, round);
-  return percent ? 10 : max * 0.1;
+  // Evaluations of someone who has since left the class still count
+  if (!group) {
+    const orphans = {};
+    (model.evalsByRound[round.id] || []).forEach(e => {
+      if (e.recipient_kind !== 'student' || model.studentById[e.recipient_id]) return;
+      (orphans[e.recipient_id] = orphans[e.recipient_id] || []).push(e);
+    });
+    Object.entries(orphans).forEach(([id, evals]) => {
+      rows.push({
+        key: `s-${id}`, kind: 'student', name: evals[0].recipient_name, email: '', groupName: '',
+        presentationDate: null, offRoster: true, ...summarize(evals)
+      });
+    });
+  }
+  return rows;
 }
