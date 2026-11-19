@@ -42,6 +42,7 @@ function EvaluationExplorer({ model, className, darkMode, reportGroup, setReport
   const groupRound = round.target === 'group';
   const showGroupColumn = !groupRound && hasGroups && !group;
   const likert = round.criteria.filter(c => c.question_type === 'likert');
+  const openEnded = round.criteria.filter(c => c.question_type !== 'likert');
   const display = scoreDisplay(model, round);
   const fmtAvg = (value) => (value == null ? '-' : display.percent ? `${Math.round(value)}%` : value.toFixed(2));
 
@@ -78,6 +79,81 @@ function EvaluationExplorer({ model, className, darkMode, reportGroup, setReport
       <RoundSection model={model} round={round} evals={r.evals} darkMode={darkMode} openImageViewer={openImageViewer} hideHeading />
     </>
   );
+
+  // An opened row lists its evaluators in the same columns as the averages
+  // above them, each followed by whatever they wrote
+  const subBg = darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
+  const subTd = { padding: '6px 10px', textAlign: 'center', fontSize: '0.9rem' };
+  const evaluatorRows = (r) => {
+    const sorted = [...r.evals].sort((a, b) => a.evaluator_name.localeCompare(b.evaluator_name));
+    return (
+      <>
+        {r.presentationDate && (
+          <tr style={{ background: subBg }}>
+            <td colSpan={colCount} style={{ padding: '6px 10px 0 38px', fontSize: '0.8rem', color: muted }}>
+              Presented {formatWallClock(r.presentationDate)}
+            </td>
+          </tr>
+        )}
+        {sorted.map((e, i) => {
+          const written = openEnded
+            .map(c => ({ name: c.name, text: e.scores.find(sc => sc.criterion_id === c.id)?.text_response }))
+            .filter(w => w.text);
+          const hasFeedback = written.length > 0 || e.comments || (e.attachments && e.attachments.length > 0);
+          const last = i === sorted.length - 1;
+          const evalAvg = display.percent ? (e.norm_score == null ? null : e.norm_score * 100) : e.avg_score;
+          return (
+            <React.Fragment key={e.id}>
+              <tr style={{ background: subBg }}>
+                <td style={{ padding: '6px 10px 6px 38px', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                  {e.evaluator_name}
+                  {e.is_self && <span style={{ color: muted, marginLeft: '6px', fontSize: '0.8rem' }}>(self)</span>}
+                  {e.is_former_group && <span style={{ color: muted, marginLeft: '6px', fontSize: '0.8rem' }} title="No longer in this student's group">(former group)</span>}
+                  <span style={{ color: muted, marginLeft: '8px', fontSize: '0.78rem' }}>
+                    {e.submitted_at ? new Date(e.submitted_at).toLocaleDateString() : ''}
+                    {e.is_late && <span style={{ color: '#e74c3c', marginLeft: '6px' }}>late</span>}
+                  </span>
+                </td>
+                {showGroupColumn && <td />}
+                <td />
+                {likert.map(c => {
+                  const score = e.scores.find(sc => sc.criterion_id === c.id)?.score;
+                  return <td key={c.id} style={subTd}>{score != null ? score : <span style={{ color: '#999' }}>-</span>}</td>;
+                })}
+                {(round.points || likert.length > 0) && (
+                  <td style={{ ...subTd, borderLeft: '2px solid #586e75' }}>
+                    {round.points ? (e.points ?? 0) : evalAvg == null ? '-' : display.percent ? `${Math.round(evalAvg)}%` : evalAvg.toFixed(1)}
+                  </td>
+                )}
+              </tr>
+              {hasFeedback && (
+                <tr style={{ background: subBg }}>
+                  <td colSpan={colCount} style={{ padding: '0 10px 8px 38px' }}>
+                    <div style={{ borderLeft: `3px solid ${borderColor}`, paddingLeft: '10px', fontSize: '0.88rem', color: muted, whiteSpace: 'pre-wrap' }}>
+                      {written.map((w, wi) => (
+                        <div key={wi} style={{ marginBottom: '4px' }}><span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{w.name}:</span> {w.text}</div>
+                      ))}
+                      {e.comments && <div>{e.comments}</div>}
+                      {e.attachments && e.attachments.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                          {e.attachments.map((att, attIdx) => (
+                            <button key={att.id} onClick={() => openImageViewer(e.attachments, attIdx)} style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer' }}>
+                              <img src={att.url} alt={att.fileName} style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }} />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {last && <tr style={{ background: subBg }}><td colSpan={colCount} style={{ padding: '3px 0' }} /></tr>}
+            </React.Fragment>
+          );
+        })}
+      </>
+    );
+  };
 
   const summaryCell = (r) => {
     if (r.count === 0) return <span style={{ color: '#999' }}>-</span>;
@@ -189,7 +265,6 @@ function EvaluationExplorer({ model, className, darkMode, reportGroup, setReport
                       <tr
                         onClick={canOpen ? () => toggle(r.key) : undefined}
                         style={{ background: rowBg, cursor: canOpen ? 'pointer' : 'default' }}
-                        title={canOpen ? (open ? 'Click to hide responses' : 'Click to see every evaluator\'s scores and comments') : undefined}
                       >
                         <td style={{ padding: '10px', whiteSpace: 'nowrap' }}>
                           <span style={{ display: 'inline-block', width: '1.1em', color: muted }}>{canOpen ? (open ? '▾' : '▸') : ''}</span>
@@ -205,11 +280,7 @@ function EvaluationExplorer({ model, className, darkMode, reportGroup, setReport
                           <td style={{ ...td, borderLeft: '2px solid #586e75' }}>{summaryCell(r)}</td>
                         )}
                       </tr>
-                      {open && (
-                        <tr style={{ background: rowBg }}>
-                          <td colSpan={colCount} style={{ padding: '4px 10px 14px 28px' }}>{details(r)}</td>
-                        </tr>
-                      )}
+                      {open && evaluatorRows(r)}
                     </React.Fragment>
                   );
                 })}
