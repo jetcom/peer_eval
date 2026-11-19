@@ -53,6 +53,8 @@ function AdminDashboard() {
     return localStorage.getItem('adminSelectedClass') || '';
   });
   const [classGroups, setClassGroups] = useState([]);
+  // The class whose groups/students/evaluations are held in state
+  const loadedClassRef = useRef(null);
   const [classStudents, setClassStudents] = useState([]);
   const [showCreateClassModal, setShowCreateClassModal] = useState(false);
   const [showClassWizard, setShowClassWizard] = useState(false);
@@ -107,6 +109,18 @@ function AdminDashboard() {
 
   // Fetch class-specific data when selectedClass changes
   useEffect(() => {
+    // A reply for a class the user has since switched away from is dropped,
+    // so one class's groups and students never appear under another
+    let stale = false;
+    // On a switch, empty the previous class's data rather than show it
+    // under the new class's name until the new data arrives
+    if (loadedClassRef.current !== selectedClass) {
+      loadedClassRef.current = selectedClass;
+      setClassGroups([]);
+      setClassStudents([]);
+      setAssignmentEvaluations(null);
+      setPaperReviewData(null);
+    }
     const fetchClassData = async () => {
       if (!selectedClass) {
         setClassGroups([]);
@@ -120,6 +134,7 @@ function AdminDashboard() {
           axios.get(`/api/classes/${selectedClass}/groups`),
           axios.get(`/api/classes/${selectedClass}/students`)
         ]);
+        if (stale) return;
         setClassGroups(groupsRes.data);
         setClassStudents(studentsRes.data);
 
@@ -134,9 +149,11 @@ function AdminDashboard() {
                 return { data: null };
               })
             ]);
+            if (stale) return;
             setAssignmentEvaluations(assignmentEvalsRes.data);
             setPaperReviewData(paperReviewRes.data);
           } catch (err) {
+            if (stale) return;
             console.error('Failed to fetch assignment evaluations:', err);
             setAssignmentEvaluations(null);
             setPaperReviewData(null);
@@ -150,6 +167,7 @@ function AdminDashboard() {
       }
     };
     fetchClassData();
+    return () => { stale = true; };
   }, [selectedClass, classes]);
 
   const fetchData = async () => {
