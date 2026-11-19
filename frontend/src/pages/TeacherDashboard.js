@@ -44,6 +44,9 @@ function TeacherDashboard() {
   const [pendingCsvFile, setPendingCsvFile] = useState(null);
   const [csvPreview, setCsvPreview] = useState(null);
   const fileInputRef = useRef(null);
+  const classDataRequest = useRef(0);
+  // The class whose students/groups/evaluations are held in state
+  const loadedClassRef = useRef(null);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -60,6 +63,11 @@ function TeacherDashboard() {
   }, [selectedClass]);
 
   const fetchClassData = useCallback(async () => {
+    // Only the latest request may fill the page: a reply for a class the
+    // user has since switched away from is dropped, so one class's groups
+    // and students never appear under another
+    const request = ++classDataRequest.current;
+    const stale = () => request !== classDataRequest.current;
     try {
       const [studentsRes, groupsRes, evalsRes, finalCommentsRes] = await Promise.all([
         axios.get(`/api/classes/${selectedClass}/students`),
@@ -67,6 +75,7 @@ function TeacherDashboard() {
         axios.get('/api/evaluations/all'),
         axios.get('/api/evaluations/all-final-comments')
       ]);
+      if (stale()) return;
       setStudents(studentsRes.data);
       setGroups(groupsRes.data);
       setEvaluations(evalsRes.data);
@@ -83,9 +92,11 @@ function TeacherDashboard() {
               return { data: null };
             })
           ]);
+          if (stale()) return;
           setAssignmentEvaluations(assignmentEvalsRes.data);
           setPaperReviewData(paperReviewRes.data);
         } catch (err) {
+          if (stale()) return;
           console.error('Failed to fetch assignment evaluations:', err);
           setAssignmentEvaluations(null);
           setPaperReviewData(null);
@@ -95,6 +106,7 @@ function TeacherDashboard() {
         setPaperReviewData(null);
       }
     } catch (err) {
+      if (stale()) return;
       setMessage({ type: 'error', text: 'Failed to load class data' });
     }
   }, [selectedClass, classes]);
@@ -104,6 +116,15 @@ function TeacherDashboard() {
   }, [fetchClasses]);
 
   useEffect(() => {
+    // On a switch, empty the previous class's data rather than show it
+    // under the new class's name until the new data arrives
+    if (loadedClassRef.current !== selectedClass) {
+      loadedClassRef.current = selectedClass;
+      setStudents([]);
+      setGroups([]);
+      setAssignmentEvaluations(null);
+      setPaperReviewData(null);
+    }
     if (selectedClass) {
       fetchClassData();
     }
