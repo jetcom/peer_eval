@@ -76,6 +76,7 @@ function fromPhases(classData, classId, studentIds, evaluations, finalComments) 
     multi: false,
     type: 'peer',
     target: 'individual',
+    include_self: true,
     criteria: [...PHASE_CRITERIA, PHASE_SCORE_CRITERION],
     points: false,
     presentation_slots: []
@@ -89,6 +90,7 @@ function fromPhases(classData, classId, studentIds, evaluations, finalComments) 
       multi: false,
       type: 'final',
       target: 'individual',
+      include_self: true,
       criteria: [],
       points: true,
       presentation_slots: []
@@ -162,6 +164,7 @@ function fromAssignments(assignmentEvaluations) {
       multi,
       type: et.eval_type,
       target: et.target_type === 'group' ? 'group' : 'individual',
+      include_self: !!et.include_self,
       criteria: (et.criteria || []).map(c => ({
         id: c.id,
         name: c.name,
@@ -272,6 +275,8 @@ export function buildModel({ classData, classStudents, classGroups, evaluations,
     rounds,
     evals,
     evalsByRound: indexEvals(rounds, evals),
+    // Audience rounds: per-student { available, required, completed } from the server, by round id
+    audienceProgress: (isAssignmentMode && assignmentEvaluations?.audience_progress) || {},
     studentById: Object.fromEntries(students.map(s => [s.id, s])),
     groupById: Object.fromEntries(groups.map(g => [g.id, g]))
   };

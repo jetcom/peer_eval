@@ -11,7 +11,7 @@ import ManageMembersModal from '../components/admin/ManageMembersModal';
 import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import UsersTab from '../components/admin/UsersTab';
 import GroupsTab from '../components/admin/GroupsTab';
-import EvaluationsTab from '../components/admin/EvaluationsTab';
+import EvaluatorsTab from '../components/admin/EvaluatorsTab';
 import ReportsTab from '../components/admin/ReportsTab';
 import ProgressTab from '../components/admin/ProgressTab';
 import AssignmentsTab from '../components/admin/AssignmentsTab';
@@ -32,7 +32,9 @@ function AdminDashboard() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState(() => {
-    return searchParams.get('tab') || localStorage.getItem('adminActiveTab') || 'progress';
+    const tab = searchParams.get('tab') || localStorage.getItem('adminActiveTab') || 'progress';
+    // The Evaluators tab used to be called Evaluations; old links and saved tabs still land on it
+    return tab === 'evaluations' ? 'evaluators' : tab;
   });
   const [users, setUsers] = useState([]);
   const [, setGroups] = useState([]);
@@ -941,10 +943,10 @@ function AdminDashboard() {
             Reports
           </button>
           <button
-            className={`admin-tab ${activeTab === 'evaluations' ? 'active' : ''}`}
-            onClick={() => setActiveTab('evaluations')}
+            className={`admin-tab ${activeTab === 'evaluators' ? 'active' : ''}`}
+            onClick={() => setActiveTab('evaluators')}
           >
-            Evaluations
+            Evaluators
           </button>
           {showGroups && (
             <button
@@ -1048,13 +1050,16 @@ function AdminDashboard() {
           />
         )}
 
-        {activeTab === 'evaluations' && (
-          <EvaluationsTab
+        {activeTab === 'evaluators' && (
+          <EvaluatorsTab
+            key={selectedClass}
+            darkMode={darkMode}
             selectedClass={selectedClass}
             classes={classes}
             classStudents={classStudents}
             classGroups={classGroups}
             evaluations={evaluations}
+            finalCommentsData={finalCommentsData}
             assignmentEvaluations={assignmentEvaluations}
             paperReviewData={paperReviewData}
             onManageExtensions={() => setShowExtensionsModal(true)}
