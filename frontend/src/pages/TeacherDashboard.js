@@ -6,7 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import ChangePasswordModal from '../components/ChangePasswordModal';
 import ProgressTab from '../components/admin/ProgressTab';
 import AssignmentsTab from '../components/admin/AssignmentsTab';
-import EvaluationsTab from '../components/admin/EvaluationsTab';
+import EvaluatorsTab from '../components/admin/EvaluatorsTab';
 import ReportsTab from '../components/admin/ReportsTab';
 import ManageExtensionsModal from '../components/admin/ManageExtensionsModal';
 import ClassSettingsPanel from '../components/admin/ClassSettingsPanel';
@@ -690,10 +690,10 @@ function TeacherDashboard() {
                   </button>
                 )}
                 <button
-                  className={`tab ${activeTab === 'evaluations' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('evaluations')}
+                  className={`tab ${activeTab === 'evaluators' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('evaluators')}
                 >
-                  Evaluations
+                  Evaluators
                 </button>
                 <button
                   className={`tab ${activeTab === 'reports' ? 'active' : ''}`}
@@ -810,13 +810,16 @@ function TeacherDashboard() {
               </div>
             )}
 
-            {activeTab === 'evaluations' && (
-              <EvaluationsTab
+            {activeTab === 'evaluators' && (
+              <EvaluatorsTab
+                key={selectedClass}
+                darkMode={darkMode}
                 selectedClass={selectedClass?.toString()}
                 classes={classes}
                 classStudents={students}
                 classGroups={groups}
                 evaluations={evaluations}
+                finalCommentsData={finalCommentsData}
                 assignmentEvaluations={assignmentEvaluations}
                 paperReviewData={paperReviewData}
                 onManageExtensions={() => setShowExtensionsModal(true)}

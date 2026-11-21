@@ -249,8 +249,8 @@ function QuickStats({
 
       <div
         className="admin-stat-card info clickable"
-        onClick={() => onNavigate && onNavigate('evaluations')}
-        title="View Evaluations tab"
+        onClick={() => onNavigate && onNavigate('evaluators')}
+        title="View Evaluators tab"
       >
         <div className="admin-stat-value">{totalEvaluations}</div>
         <div className="admin-stat-label">Evaluations</div>
