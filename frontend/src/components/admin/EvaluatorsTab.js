@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ImageViewer from '../ImageViewer';
 import ScoreBadge from './reports/ScoreBadge';
 import { buildModel, typeLabel, scoreDisplay } from './reports/model';
-import { evaluatorRows, summarize } from './reports/evaluators';
+import { evaluatorRows, summarize, isShort, countWords } from './reports/evaluators';
 import { downloadCSV } from './reports/csv';
 
 const STATUS = {
@@ -10,6 +10,16 @@ const STATUS = {
   partial: { label: 'In progress', color: '#f39c12' },
   'not-started': { label: 'Not started', color: '#e74c3c' },
   none: { label: 'Nothing due', color: '#95a5a6' }
+};
+
+// One mark per round, as the old submission indicators had: a green check
+// only when everything is in and every comment meets the word count
+const MARKS = {
+  complete: { symbol: '✓', color: '#27ae60', label: 'all submitted' },
+  short: { symbol: '✓', color: '#f39c12', label: 'all submitted, a comment below the word count' },
+  partial: { symbol: '◐', color: '#f39c12', label: 'some submitted' },
+  'not-started': { symbol: '✗', color: '#e74c3c', label: 'nothing submitted' },
+  none: { symbol: '–', color: '#999', label: 'nothing due' }
 };
 
 /**
@@ -75,6 +85,23 @@ function EvaluatorsTab({
   const stats = summarize(rows);
   const showGroupColumn = hasGroups && !group && !person;
   const showLate = model.isAssignmentMode;
+  const hasWordMinimum = rounds.some(r => r.min_words > 1);
+  const roundsLabel = model.isAssignmentMode ? (rounds.length === 1 ? 'Assignment' : 'Assignments') : (rounds.length === 1 ? 'Phase' : 'Phases');
+
+  const markTitle = (w) => {
+    const parts = [w.expected > 0 ? `${w.completed} of ${w.expected} completed` : 'nothing due'];
+    if (w.short > 0) parts.push(`${w.short} comment${w.short === 1 ? '' : 's'} under ${w.round.min_words} word${w.round.min_words === 1 ? '' : 's'}`);
+    return `${w.round.label}: ${parts.join(', ')}`;
+  };
+  const roundMarks = (row) => (
+    <span style={{ whiteSpace: 'nowrap', fontWeight: 700 }}>
+      {row.work.map(w => (
+        <span key={w.round.id} title={markTitle(w)} style={{ color: MARKS[w.mark].color, marginRight: '4px', cursor: 'help' }}>
+          {MARKS[w.mark].symbol}
+        </span>
+      ))}
+    </span>
+  );
 
   const isOpen = (row) => !!person || expanded.has(row.student.id);
   const toggle = (id) => setExpanded(prev => {
@@ -93,11 +120,11 @@ function EvaluatorsTab({
   const scopeName = [round?.label, group?.name, person?.name].filter(Boolean).join('_');
   const exportCompletion = () => {
     const headers = ['Student', 'Email', 'Group', 'Expected', 'Completed', '% Complete', 'Status',
-      ...(showLate ? ['Late'] : []), 'With written feedback', 'Last submitted'];
+      ...(showLate ? ['Late'] : []), 'Below word count', 'With written feedback', 'Last submitted'];
     const csvRows = rows.map(r => [
       r.student.name, r.student.email, r.student.group?.name || '', r.expected, r.completed,
       r.percentage == null ? '' : r.percentage, STATUS[r.status].label,
-      ...(showLate ? [r.late] : []), r.written,
+      ...(showLate ? [r.late] : []), r.short, r.written,
       r.lastSubmitted ? r.lastSubmitted.toLocaleString() : ''
     ]);
     downloadCSV([className, scopeName, 'evaluator_completion'].filter(Boolean).join('_').replace(/[\\/:]/g, '-') + '.csv', [headers, ...csvRows]);
@@ -141,14 +168,14 @@ function EvaluatorsTab({
     const hasAvg = r.points || likert.length > 0;
     const colCount = 2 + likert.length + (hasAvg ? 1 : 0);
     const sorted = [...w.evals].sort((a, b) => a.recipient_name.localeCompare(b.recipient_name, undefined, { numeric: true }));
-    const status = w.expected === 0 ? 'none' : w.completed >= w.expected ? 'complete' : w.completed > 0 ? 'partial' : 'not-started';
     return (
       <div key={r.id} style={{ marginBottom: '14px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: '8px', marginBottom: '4px' }}>
           <strong>{r.label}</strong>
           <span style={{ fontSize: '0.8rem', color: muted }}>{typeLabel(r.type)}</span>
-          <span style={{ fontSize: '0.85rem', color: STATUS[status].color, fontWeight: 600 }}>
-            {w.expected > 0 ? `${w.completed} of ${w.expected} completed` : 'Nothing due'}
+          <span style={{ fontSize: '0.85rem', color: MARKS[w.mark].color, fontWeight: 600 }}>
+            {MARKS[w.mark].symbol} {w.expected > 0 ? `${w.completed} of ${w.expected} completed` : 'Nothing due'}
+            {w.short > 0 && ` · ${w.short} below the ${r.min_words}-word minimum`}
           </span>
         </div>
         {w.evals.length > 0 && (
@@ -195,6 +222,11 @@ function EvaluatorsTab({
                         <td colSpan={colCount} style={{ padding: '0 10px 8px 10px' }}>
                           <div style={{ borderLeft: `3px solid ${borderColor}`, paddingLeft: '10px', fontSize: '0.88rem', color: muted, whiteSpace: 'pre-wrap' }}>
                             {!hasFeedback && <span style={{ fontStyle: 'italic' }}>No written feedback</span>}
+                            {r.min_words > 1 && (
+                              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: isShort(r, e) ? '#e74c3c' : '#27ae60' }}>
+                                {countWords(e.comments)} / {r.min_words} words {isShort(r, e) ? '✗' : '✓'}
+                              </div>
+                            )}
                             {written.map((x, i) => (
                               <div key={i} style={{ marginBottom: '4px' }}><span style={{ fontSize: '0.8rem', opacity: 0.8 }}>{x.name}:</span> {x.text}</div>
                             ))}
@@ -278,7 +310,7 @@ function EvaluatorsTab({
   }).filter(pr => pr.reviews.length + pr.teacherReviews.length > 0);
 
   const pctClass = stats.percentage == null ? 'info' : stats.percentage === 100 ? 'success' : stats.percentage >= 50 ? 'warning' : 'danger';
-  const colCount = 6 + (showGroupColumn ? 1 : 0) + (showLate ? 1 : 0);
+  const colCount = 7 + (showGroupColumn ? 1 : 0) + (showLate ? 1 : 0);
 
   return (
     <>
@@ -375,6 +407,13 @@ function EvaluatorsTab({
                   <div className="admin-stat-sublabel">of {stats.submitted} submitted</div>
                 </div>
               )}
+              {hasWordMinimum && (
+                <div className={`admin-stat-card ${stats.short > 0 ? 'warning' : 'success'}`}>
+                  <div className="admin-stat-value">{stats.short}</div>
+                  <div className="admin-stat-label">Below word count</div>
+                  <div className="admin-stat-sublabel">of {stats.submitted} submitted</div>
+                </div>
+              )}
               <div className="admin-stat-card purple">
                 <div className="admin-stat-value">{stats.submitted > 0 ? `${Math.round((stats.written / stats.submitted) * 100)}%` : '-'}</div>
                 <div className="admin-stat-label">Written feedback</div>
@@ -386,6 +425,14 @@ function EvaluatorsTab({
               <p>{group ? 'This group has no students.' : 'No students found.'}</p>
             ) : (
               <>
+                <p style={{ fontSize: '0.8rem', color: muted, margin: '0 0 8px 0' }}>
+                  {roundsLabel}:{' '}
+                  <span style={{ color: MARKS.complete.color, fontWeight: 700 }}>✓</span> all submitted{hasWordMinimum && ' and comments meet the word count'}
+                  {hasWordMinimum && <> · <span style={{ color: MARKS.short.color, fontWeight: 700 }}>✓</span> all submitted but a comment is below the word count</>}
+                  {' · '}<span style={{ color: MARKS.partial.color, fontWeight: 700 }}>◐</span> some submitted
+                  {' · '}<span style={{ color: MARKS['not-started'].color, fontWeight: 700 }}>✗</span> nothing submitted
+                  {' · '}<span style={{ color: MARKS.none.color, fontWeight: 700 }}>–</span> nothing due
+                </p>
                 <div className="desktop-table" style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
@@ -394,6 +441,7 @@ function EvaluatorsTab({
                         {showGroupColumn && <th style={{ textAlign: 'left', padding: '10px' }}>Group</th>}
                         <th style={{ textAlign: 'left', padding: '10px' }}>Completed</th>
                         <th style={td}>Status</th>
+                        <th style={td} title="One mark per round, in order; hover a mark for its round">{roundsLabel}</th>
                         {showLate && <th style={td}>Late</th>}
                         <th style={td} title="Submitted evaluations that include comments or an answer to an open question">Written feedback</th>
                         <th style={td} title={rawAverages ? 'Average score this student gave' : 'Average score this student gave, as a percent of the maximum'}>Avg given</th>
@@ -414,6 +462,7 @@ function EvaluatorsTab({
                               {showGroupColumn && <td style={{ padding: '10px', color: muted }}>{r.student.group?.name || 'No group'}</td>}
                               <td style={{ padding: '10px' }}>{completionCell(r)}</td>
                               <td style={td}>{statusBadge(r.status)}</td>
+                              <td style={td}>{roundMarks(r)}</td>
                               {showLate && <td style={td}>{r.late > 0 ? <span style={{ color: '#e74c3c' }}>{r.late}</span> : <span style={{ color: '#999' }}>0</span>}</td>}
                               <td style={td}>{r.submitted > 0 ? `${r.written}/${r.submitted}` : <span style={{ color: '#999' }}>-</span>}</td>
                               <td style={td}>{avgGiven(r)}</td>
@@ -453,6 +502,10 @@ function EvaluatorsTab({
                         <div className="mobile-card-row">
                           <span className="mobile-card-label">Status</span>
                           <span className="mobile-card-value">{statusBadge(r.status)}</span>
+                        </div>
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">{roundsLabel}</span>
+                          <span className="mobile-card-value">{roundMarks(r)}</span>
                         </div>
                         {showLate && (
                           <div className="mobile-card-row">

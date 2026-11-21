@@ -68,6 +68,8 @@ function finishRound(round) {
 
 function fromPhases(classData, classId, studentIds, evaluations, finalComments) {
   const numPhases = classData?.num_phases || 3;
+  // Phase evaluations always need a comment; the class may ask for more words
+  const minWords = Math.max(1, classData?.min_comment_words || 0);
   const rounds = Array.from({ length: numPhases }, (_, i) => finishRound({
     id: `phase-${i + 1}`,
     label: `Phase ${i + 1}`,
@@ -77,6 +79,7 @@ function fromPhases(classData, classId, studentIds, evaluations, finalComments) 
     type: 'peer',
     target: 'individual',
     include_self: true,
+    min_words: minWords,
     criteria: [...PHASE_CRITERIA, PHASE_SCORE_CRITERION],
     points: false,
     presentation_slots: []
@@ -91,6 +94,7 @@ function fromPhases(classData, classId, studentIds, evaluations, finalComments) 
       type: 'final',
       target: 'individual',
       include_self: true,
+      min_words: minWords,
       criteria: [],
       points: true,
       presentation_slots: []
@@ -165,6 +169,8 @@ function fromAssignments(assignmentEvaluations) {
       type: et.eval_type,
       target: et.target_type === 'group' ? 'group' : 'individual',
       include_self: !!et.include_self,
+      // Shortest comment the round accepts, 0 when comments are optional
+      min_words: et.require_comments ? Math.max(1, et.min_comment_words || 0) : 0,
       criteria: (et.criteria || []).map(c => ({
         id: c.id,
         name: c.name,

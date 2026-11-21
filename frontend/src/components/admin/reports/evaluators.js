@@ -13,8 +13,20 @@ import { mean } from './model';
 
 const hasText = (v) => !!(v && String(v).trim());
 
+const statusOf = (expected, completed) => {
+  if (expected === 0) return 'none';
+  if (completed >= expected) return 'complete';
+  return completed > 0 ? 'partial' : 'not-started';
+};
+
 /** Whether an evaluation carries anything written: comments or an open response. */
 export const hasWrittenFeedback = (e) => hasText(e.comments) || e.scores.some(s => hasText(s.text_response));
+
+/** Words in a comment, counted the way the student forms count them. */
+export const countWords = (text) => (hasText(text) ? String(text).trim().split(/\s+/).length : 0);
+
+/** Whether an evaluation's comment is shorter than its round requires. */
+export const isShort = (round, e) => round.min_words > 0 && countWords(e.comments) < round.min_words;
 
 /** What one student owes in one round and what they have submitted. */
 export function workForRound(model, round, student) {
@@ -52,23 +64,23 @@ export function workForRound(model, round, student) {
     }
   }
 
+  const short = evals.filter(e => isShort(round, e)).length;
+  const status = statusOf(expected, completed);
+
   return {
     round,
     evals,
     expected,
     completed,
+    short,
+    // The round at a glance: 'short' is everything submitted but a comment under the minimum
+    mark: status === 'complete' && short > 0 ? 'short' : status,
     missing,
     missingUnnamed,
     late: evals.filter(e => e.is_late).length,
     written: evals.filter(hasWrittenFeedback).length
   };
 }
-
-const statusOf = (expected, completed) => {
-  if (expected === 0) return 'none';
-  if (completed >= expected) return 'complete';
-  return completed > 0 ? 'partial' : 'not-started';
-};
 
 /**
  * One row per student across the given rounds: totals, a status, and the
@@ -92,6 +104,7 @@ export function evaluatorRows(model, rounds, students) {
         status: statusOf(expected, completed),
         submitted: evals.length,
         late: work.reduce((sum, w) => sum + w.late, 0),
+        short: work.reduce((sum, w) => sum + w.short, 0),
         written: work.reduce((sum, w) => sum + w.written, 0),
         lastSubmitted: dates.length > 0 ? new Date(Math.max(...dates)) : null,
         avgNorm: mean(evals.map(e => e.norm_score)),
@@ -123,6 +136,7 @@ export function summarize(rows) {
     notStarted: owing.filter(r => r.status === 'not-started').length,
     submitted,
     late: rows.reduce((sum, r) => sum + r.late, 0),
+    short: rows.reduce((sum, r) => sum + r.short, 0),
     written: rows.reduce((sum, r) => sum + r.written, 0)
   };
 }
