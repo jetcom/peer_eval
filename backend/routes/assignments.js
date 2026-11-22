@@ -933,25 +933,29 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
 
     const evalTypeIds = assignments.flatMap(a => a.evalTypes.map(et => et.id));
 
-    // Per-student audience progress (eligible / required / completed), keyed by eval type
-    const audienceProgress = {};
-    for (const a of assignments) {
-      for (const et of a.evalTypes) {
-        if (!audience.isAudienceEvalType(et)) continue;
+    // Per-student audience progress (eligible / required / completed), keyed
+    // by eval type. Every round is worked out at once, alongside the
+    // evaluations themselves, rather than one query after another.
+    const audienceEvalTypes = assignments.flatMap(a => a.evalTypes).filter(audience.isAudienceEvalType);
+    const loadAudienceProgress = async () => {
+      const entries = await Promise.all(audienceEvalTypes.map(async (et) => {
         const ctx = await audience.loadAudienceContext(et.id);
-        if (ctx) audienceProgress[et.id] = await audience.getClassAudienceProgress(ctx);
-      }
-    }
+        return ctx ? [et.id, await audience.getClassAudienceProgress(ctx)] : null;
+      }));
+      return Object.fromEntries(entries.filter(Boolean));
+    };
+    const NAME_ONLY = { select: { firstName: true, lastName: true } };
 
-    // Get all individual evaluations for this class
-    const [individualEvals, groupEvals] = await Promise.all([
+    // Get all individual and group evaluations for this class
+    const [audienceProgress, individualEvals, groupEvals] = await Promise.all([
+      loadAudienceProgress(),
       prisma.assignmentEvaluation.findMany({
         where: {
           evalTypeId: { in: evalTypeIds }
         },
         include: {
-          evaluator: true,
-          evaluatee: true,
+          evaluator: NAME_ONLY,
+          evaluatee: NAME_ONLY,
           evalType: {
             include: {
               assignment: true
@@ -970,7 +974,7 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
           evalTypeId: { in: evalTypeIds }
         },
         include: {
-          evaluator: true,
+          evaluator: NAME_ONLY,
           group: true,
           evalType: {
             include: {

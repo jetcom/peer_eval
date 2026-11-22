@@ -28,6 +28,9 @@ function TeacherDashboard() {
   const [finalCommentsData, setFinalCommentsData] = useState([]);
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
   const [paperReviewData, setPaperReviewData] = useState(null);
+  // True from a class switch until that class's evaluations have arrived, so
+  // the Evaluators and Reports tabs can say so instead of looking empty
+  const [classDataLoading, setClassDataLoading] = useState(false);
 
   // Form states
   const [newClass, setNewClass] = useState({ name: '', section: '', semester: '' });
@@ -68,47 +71,41 @@ function TeacherDashboard() {
     // and students never appear under another
     const request = ++classDataRequest.current;
     const stale = () => request !== classDataRequest.current;
+    // An assignment-based class also needs its assignment evaluations and
+    // paper reviews; everything is requested at once rather than in turn
+    const currentClass = classes.find(c => c.id === selectedClass);
+    const isAssignments = currentClass?.evaluation_mode === 'assignments';
+    const noData = { data: null };
     try {
-      const [studentsRes, groupsRes, evalsRes, finalCommentsRes] = await Promise.all([
+      const [studentsRes, groupsRes, evalsRes, finalCommentsRes, assignmentEvalsRes, paperReviewRes] = await Promise.all([
         axios.get(`/api/classes/${selectedClass}/students`),
         axios.get(`/api/classes/${selectedClass}/groups`),
         axios.get('/api/evaluations/all'),
-        axios.get('/api/evaluations/all-final-comments')
+        axios.get('/api/evaluations/all-final-comments'),
+        !isAssignments ? noData : axios.get(`/api/assignments/evaluations/admin/${selectedClass}`).catch(err => {
+          console.error('Failed to fetch assignment evaluations:', err);
+          return noData;
+        }),
+        !isAssignments ? noData : axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(err => {
+          console.error('Failed to fetch paper review report:', err.response?.status, err.response?.data);
+          return noData;
+        })
       ]);
       if (stale()) return;
       setStudents(studentsRes.data);
       setGroups(groupsRes.data);
       setEvaluations(evalsRes.data);
       setFinalCommentsData(finalCommentsRes.data);
-
-      // Check if this is an assignment-based class
-      const currentClass = classes.find(c => c.id === selectedClass);
-      if (currentClass?.evaluation_mode === 'assignments') {
-        try {
-          const [assignmentEvalsRes, paperReviewRes] = await Promise.all([
-            axios.get(`/api/assignments/evaluations/admin/${selectedClass}`),
-            axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(err => {
-              console.error('Failed to fetch paper review report:', err.response?.status, err.response?.data);
-              return { data: null };
-            })
-          ]);
-          if (stale()) return;
-          setAssignmentEvaluations(assignmentEvalsRes.data);
-          setPaperReviewData(paperReviewRes.data);
-        } catch (err) {
-          if (stale()) return;
-          console.error('Failed to fetch assignment evaluations:', err);
-          setAssignmentEvaluations(null);
-          setPaperReviewData(null);
-        }
-      } else {
-        setAssignmentEvaluations(null);
-        setPaperReviewData(null);
-      }
+      setAssignmentEvaluations(assignmentEvalsRes.data);
+      // Without assignment evaluations the paper reviews are not shown either
+      setPaperReviewData(assignmentEvalsRes.data ? paperReviewRes.data : null);
     } catch (err) {
       if (stale()) return;
       setMessage({ type: 'error', text: 'Failed to load class data' });
     }
+    // Until the class list is in, its evaluation mode is unknown and this
+    // runs again; only then is the class's data complete
+    if (currentClass) setClassDataLoading(false);
   }, [selectedClass, classes]);
 
   useEffect(() => {
@@ -124,6 +121,7 @@ function TeacherDashboard() {
       setGroups([]);
       setAssignmentEvaluations(null);
       setPaperReviewData(null);
+      setClassDataLoading(!!selectedClass);
     }
     if (selectedClass) {
       fetchClassData();
@@ -822,6 +820,7 @@ function TeacherDashboard() {
                 finalCommentsData={finalCommentsData}
                 assignmentEvaluations={assignmentEvaluations}
                 paperReviewData={paperReviewData}
+                loading={classDataLoading}
                 onManageExtensions={() => setShowExtensionsModal(true)}
               />
             )}
@@ -839,6 +838,7 @@ function TeacherDashboard() {
                 setReportGroup={setReportGroup}
                 assignmentEvaluations={assignmentEvaluations}
                 paperReviewData={paperReviewData}
+                loading={classDataLoading}
               />
             )}
           </>
