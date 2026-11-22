@@ -1620,60 +1620,72 @@ router.get('/:roundId/my-feedback', authenticateToken, async (req, res) => {
 router.get('/class/:classId/report', authenticateToken, async (req, res) => {
   try {
     const classId = parseInt(req.params.classId);
-    if (!await isTeacherOrAdmin(req.user.id, req.user.role, classId)) {
+
+    // Each table is read directly by class, all at once, alongside the
+    // permission check: as nested includes every level was a further round
+    // trip to the database. Nothing is sent unless the check passes.
+    const ofClass = { assignment: { classId }, evalType: 'paper_review' };  // filter for an eval type
+    const inClass = { round: { evalType: ofClass } };                       // filter for a row that belongs to a round
+    const [authorized, enrollments, assignmentRows, evalTypeRows, rounds, paperRows, reviewAssignments, peerReviews, teacherReviews] = await Promise.all([
+      isTeacherOrAdmin(req.user.id, req.user.role, classId),
+      prisma.classEnrollment.findMany({ where: { classId }, orderBy: { id: 'asc' } }),
+      prisma.assignment.findMany({ where: { classId }, orderBy: { orderIndex: 'asc' } }),
+      prisma.assignmentEvalType.findMany({ where: ofClass, orderBy: { id: 'asc' } }),
+      prisma.paperReviewRound.findMany({ where: { evalType: ofClass } }),
+      prisma.paper.findMany({ where: inClass, orderBy: { id: 'asc' } }),
+      prisma.paperReviewAssignment.findMany({ where: inClass }),
+      prisma.paperReview.findMany({
+        where: { assignment: inClass },
+        select: { id: true, assignmentId: true, overallComments: true, submittedAt: true, _count: { select: { annotations: true } } }
+      }),
+      prisma.paperReview.findMany({
+        where: { paper: inClass },
+        select: { id: true, paperId: true, overallComments: true, _count: { select: { annotations: true } } },
+        orderBy: { id: 'asc' }
+      })
+    ]);
+    if (!authorized) {
       return res.status(403).json({ error: 'Not authorized' });
     }
 
-    // Get all students enrolled in the class
-    const enrollments = await prisma.classEnrollment.findMany({
-      where: { classId },
-      include: { user: { select: { id: true, firstName: true, lastName: true, role: true } } }
+    // Second and last trip: the people those rows name
+    const userIds = new Set([
+      ...enrollments.map(e => e.userId),
+      ...paperRows.map(p => p.authorId),
+      ...reviewAssignments.map(a => a.reviewerId)
+    ]);
+    const users = await prisma.user.findMany({
+      where: { id: { in: [...userIds] } },
+      select: { id: true, firstName: true, lastName: true, role: true }
     });
-    const students = enrollments
-      .filter(e => e.user && e.user.role === 'student')
-      .map(e => ({ id: e.user.id, name: `${e.user.firstName} ${e.user.lastName}` }));
+    const userById = new Map(users.map(u => [u.id, u]));
 
-    // Find paper review rounds via Assignment -> EvalType -> PaperReviewRound
-    const assignments = await prisma.assignment.findMany({
-      where: { classId },
-      include: {
-        evalTypes: {
-          where: { evalType: 'paper_review' },
-          include: {
-            paperReviewRound: {
-              include: {
-                papers: {
-                  include: {
-                    author: { select: { id: true, firstName: true, lastName: true } },
-                    assignedReview: {
-                      include: {
-                        reviewer: { select: { id: true, firstName: true, lastName: true } },
-                        review: {
-                          select: {
-                            id: true,
-                            overallComments: true,
-                            submittedAt: true,
-                            _count: { select: { annotations: true } }
-                          }
-                        }
-                      }
-                    },
-                    teacherReviews: {
-                      select: {
-                        id: true,
-                        overallComments: true,
-                        _count: { select: { annotations: true } }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      orderBy: { orderIndex: 'asc' }
+    const students = enrollments
+      .map(e => userById.get(e.userId))
+      .filter(u => u && u.role === 'student')
+      .map(u => ({ id: u.id, name: `${u.firstName} ${u.lastName}` }));
+
+    // Put the rows back together in the shape the nested includes gave
+    const peerReviewByAssignment = new Map(peerReviews.map(r => [r.assignmentId, r]));
+    const reviewAssignmentByPaper = new Map(reviewAssignments.map(a => [a.paperId, a]));
+    const papers = paperRows.map(p => {
+      const assigned = reviewAssignmentByPaper.get(p.id);
+      return {
+        ...p,
+        author: userById.get(p.authorId),
+        assignedReview: assigned
+          ? { ...assigned, reviewer: userById.get(assigned.reviewerId), review: peerReviewByAssignment.get(assigned.id) || null }
+          : null,
+        teacherReviews: teacherReviews.filter(r => r.paperId === p.id)
+      };
     });
+    const roundByEvalType = new Map(rounds.map(r => [r.evalTypeId, { ...r, papers: papers.filter(p => p.roundId === r.id) }]));
+    const assignments = assignmentRows.map(a => ({
+      ...a,
+      evalTypes: evalTypeRows
+        .filter(et => et.assignmentId === a.id)
+        .map(et => ({ ...et, paperReviewRound: roundByEvalType.get(et.id) || null }))
+    }));
 
     // Flatten: each assignment may have one paper_review eval type with one round
     const result = [];

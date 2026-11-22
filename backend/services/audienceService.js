@@ -73,6 +73,21 @@ async function loadAudienceContext(evalTypeId) {
     })
   ]);
 
+  return buildAudienceContext(evalType, groups, enrollments.map(e => e.user));
+}
+
+/**
+ * The context for one audience eval type, from rows already in hand:
+ *   evalType  with its assignment (and that assignment's class), presentation
+ *             slots, excusals and assignments
+ *   groups    the class's groups, each with members[{ userId, user }]
+ *   students  the class's enrolled students
+ * Lets a caller that needs several rounds at once load the class's data a
+ * single time instead of once per round.
+ */
+function buildAudienceContext(evalType, groups, students) {
+  const classId = evalType.assignment.classId;
+
   const slotByGroup = new Map();
   const slotByUser = new Map();
   for (const slot of evalType.presentationSlots) {
@@ -105,7 +120,7 @@ async function loadAudienceContext(evalTypeId) {
     timezone,
     nowStr: getNowInTimezone(timezone),
     groups,
-    students: enrollments.map(e => e.user),
+    students,
     slotByGroup,
     slotByUser,
     excusedByStudent,
@@ -280,7 +295,11 @@ async function getClassAudienceProgress(ctx) {
       select: { id: true, evaluatorId: true, evaluateeId: true, submittedAt: true, isLate: true }
     })
   ]);
+  return classAudienceProgress(ctx, groupEvals, individualEvals);
+}
 
+/** The same counts, from the round's evaluations already in hand. */
+function classAudienceProgress(ctx, groupEvals, individualEvals) {
   const progress = {};
   for (const student of ctx.students) {
     const mine = {
@@ -658,10 +677,12 @@ module.exports = {
   isAudienceEvalType,
   addHoursToLocal,
   loadAudienceContext,
+  buildAudienceContext,
   buildTargets,
   requiredCount,
   getStudentAudienceStatus,
   getClassAudienceProgress,
+  classAudienceProgress,
   validateSubmission,
   listPresenters,
   listStudents,
