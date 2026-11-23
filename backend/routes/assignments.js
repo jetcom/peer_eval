@@ -924,99 +924,121 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
 
     const classId = parseInt(req.params.classId);
 
-    // Get all assignments for this class
-    const assignments = await prisma.assignment.findMany({
-      where: { classId },
-      include: EVAL_TYPES_INCLUDE,
-      orderBy: { orderIndex: 'asc' }
-    });
-
-    const evalTypeIds = assignments.flatMap(a => a.evalTypes.map(et => et.id));
-
-    // Per-student audience progress (eligible / required / completed), keyed by eval type
-    const audienceProgress = {};
-    for (const a of assignments) {
-      for (const et of a.evalTypes) {
-        if (!audience.isAudienceEvalType(et)) continue;
-        const ctx = await audience.loadAudienceContext(et.id);
-        if (ctx) audienceProgress[et.id] = await audience.getClassAudienceProgress(ctx);
-      }
-    }
-
-    // Get all individual evaluations for this class
-    const [individualEvals, groupEvals] = await Promise.all([
-      prisma.assignmentEvaluation.findMany({
-        where: {
-          evalTypeId: { in: evalTypeIds }
-        },
-        include: {
-          evaluator: true,
-          evaluatee: true,
-          evalType: {
-            include: {
-              assignment: true
-            }
-          },
-          scores: {
-            include: {
-              criterion: true
-            }
-          },
-          attachments: true
-        }
-      }),
-      prisma.groupEvaluation.findMany({
-        where: {
-          evalTypeId: { in: evalTypeIds }
-        },
-        include: {
-          evaluator: true,
-          group: true,
-          evalType: {
-            include: {
-              assignment: true
-            }
-          },
-          scores: {
-            include: {
-              criterion: true
-            }
-          },
-          attachments: true
-        }
-      })
+    // Each table is read directly by class, all at once. Nested includes
+    // cost a further round trip to the database for every level, and this
+    // report used to need some twenty of them one after another.
+    const ofClass = { assignment: { classId } };   // filter for an eval type
+    const inClass = { evalType: ofClass };         // filter for a row that belongs to an eval type
+    const [
+      cls, assignmentRows, evalTypeRows, criteria, slots, excusals, presenterAssignments,
+      individualEvals, groupEvals, individualScores, groupScores, individualAttachments, groupAttachments,
+      groupRows, memberRows, enrollments
+    ] = await Promise.all([
+      prisma.class.findUnique({ where: { id: classId }, select: { id: true, name: true, dueDateTimezone: true } }),
+      prisma.assignment.findMany({ where: { classId }, orderBy: { orderIndex: 'asc' } }),
+      prisma.assignmentEvalType.findMany({ where: ofClass, orderBy: { id: 'asc' } }),
+      prisma.evalTypeCriterion.findMany({ where: inClass, orderBy: [{ orderIndex: 'asc' }, { id: 'asc' }] }),
+      prisma.presentationSlot.findMany({ where: inClass, orderBy: { id: 'asc' } }),
+      prisma.presentationExcusal.findMany({ where: inClass }),
+      prisma.presentationAssignment.findMany({ where: inClass }),
+      prisma.assignmentEvaluation.findMany({ where: inClass }),
+      prisma.groupEvaluation.findMany({ where: inClass }),
+      prisma.assignmentEvaluationScore.findMany({ where: { evaluation: inClass } }),
+      prisma.groupEvaluationScore.findMany({ where: { groupEvaluation: inClass } }),
+      prisma.assignmentEvaluationAttachment.findMany({ where: { evaluation: inClass } }),
+      prisma.groupEvaluationAttachment.findMany({ where: { groupEvaluation: inClass } }),
+      prisma.group.findMany({ where: { classId }, orderBy: { name: 'asc' } }),
+      prisma.groupMember.findMany({ where: { group: { classId } } }),
+      prisma.classEnrollment.findMany({ where: { classId } })
     ]);
 
-    // Format individual evaluations with attachments
-    const formattedIndividual = await Promise.all(individualEvals.map(async (e) => {
-      // Generate presigned URLs for attachments
-      const attachmentsWithUrls = await Promise.all(
-        (e.attachments || []).map(async (att) => ({
-          id: att.id,
-          fileName: att.fileName,
-          mimeType: att.mimeType,
-          fileSize: att.fileSize,
-          url: await getPresignedUrl(att.s3Key),
-          uploadedAt: att.uploadedAt
-        }))
-      );
+    // Second and last trip: the people those rows name, and any evaluated
+    // group that is not one of the class's own
+    const userIds = new Set([
+      ...individualEvals.flatMap(e => [e.evaluatorId, e.evaluateeId]),
+      ...groupEvals.map(e => e.evaluatorId),
+      ...memberRows.map(m => m.userId),
+      ...enrollments.map(e => e.userId)
+    ]);
+    const classGroupIds = new Set(groupRows.map(g => g.id));
+    const otherGroupIds = [...new Set(groupEvals.map(e => e.groupId))].filter(id => !classGroupIds.has(id));
+    const [users, otherGroups] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: [...userIds] } },
+        select: { id: true, firstName: true, lastName: true, email: true, role: true }
+      }),
+      otherGroupIds.length > 0 ? prisma.group.findMany({ where: { id: { in: otherGroupIds } } }) : []
+    ]);
 
-      const likertScores = e.scores.filter(s => (s.criterion.questionType || 'likert') === 'likert' && s.score != null);
+    const groupedBy = (rows, key) => {
+      const map = new Map();
+      for (const row of rows) {
+        if (!map.has(row[key])) map.set(row[key], []);
+        map.get(row[key]).push(row);
+      }
+      return (id) => map.get(id) || [];
+    };
+    const userById = new Map(users.map(u => [u.id, u]));
+    const groupById = new Map([...groupRows, ...otherGroups].map(g => [g.id, g]));
+    const assignmentById = new Map(assignmentRows.map(a => [a.id, a]));
+    const criterionById = new Map(criteria.map(c => [c.id, c]));
+    const criteriaOf = groupedBy(criteria, 'evalTypeId');
+    const slotsOf = groupedBy(slots, 'evalTypeId');
+    const excusalsOf = groupedBy(excusals, 'evalTypeId');
+    const presenterAssignmentsOf = groupedBy(presenterAssignments, 'evalTypeId');
+
+    // Put the rows back together in the shape the nested includes gave
+    const evalTypes = evalTypeRows.map(et => ({
+      ...et,
+      criteria: criteriaOf(et.id),
+      presentationSlots: slotsOf(et.id),
+      presentationExcusals: excusalsOf(et.id),
+      presentationAssignments: presenterAssignmentsOf(et.id),
+      assignment: { ...assignmentById.get(et.assignmentId), class: cls }
+    }));
+    const evalTypeById = new Map(evalTypes.map(et => [et.id, et]));
+    const evalTypesOf = groupedBy(evalTypes, 'assignmentId');
+    const assignments = assignmentRows.map(a => ({ ...a, evalTypes: evalTypesOf(a.id) }));
+
+    // Per-student audience progress (eligible / required / completed), keyed
+    // by eval type, worked out from the rows above
+    const membersOf = groupedBy(memberRows.filter(m => userById.has(m.userId)), 'groupId');
+    const audienceGroups = groupRows.map(g => ({
+      ...g,
+      members: membersOf(g.id).map(m => ({ ...m, user: userById.get(m.userId) }))
+    }));
+    const audienceStudents = enrollments
+      .map(e => userById.get(e.userId))
+      .filter(u => u && u.role === 'student');
+    const individualEvalsOf = groupedBy(individualEvals, 'evalTypeId');
+    const groupEvalsOf = groupedBy(groupEvals, 'evalTypeId');
+    const audienceProgress = {};
+    for (const et of evalTypes) {
+      if (!audience.isAudienceEvalType(et)) continue;
+      const ctx = audience.buildAudienceContext(et, audienceGroups, audienceStudents);
+      audienceProgress[et.id] = audience.classAudienceProgress(ctx, groupEvalsOf(et.id), individualEvalsOf(et.id));
+    }
+
+    // One evaluation as the reports read it; `target` is who it was about
+    const formatEvaluation = async (e, scoreRows, attachmentRows, target) => {
+      const evalType = evalTypeById.get(e.evalTypeId);
+      const scores = scoreRows.map(s => ({ ...s, criterion: criterionById.get(s.criterionId) }));
+      const likertScores = scores.filter(s => (s.criterion.questionType || 'likert') === 'likert' && s.score != null);
+      const evaluator = userById.get(e.evaluatorId);
       return {
         id: e.id,
-        assignment_id: e.evalType.assignmentId,
-        assignment_name: e.evalType.assignment.name,
+        assignment_id: evalType.assignmentId,
+        assignment_name: evalType.assignment.name,
         eval_type_id: e.evalTypeId,
-        eval_type: e.evalType.evalType,
-        eval_type_name: e.evalType.name,
+        eval_type: evalType.evalType,
+        eval_type_name: evalType.name,
         evaluator_id: e.evaluatorId,
-        evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`,
-        evaluatee_id: e.evaluateeId,
-        evaluatee_name: `${e.evaluatee.firstName} ${e.evaluatee.lastName}`,
+        evaluator_name: `${evaluator.firstName} ${evaluator.lastName}`,
+        ...target,
         comments: e.comments,
         submitted_at: e.submittedAt,
         is_late: e.isLate === 1,
-        scores: e.scores.map(s => ({
+        scores: scores.map(s => ({
           criterion_id: s.criterionId,
           criterion_name: s.criterion.name,
           score: s.score,
@@ -1027,52 +1049,36 @@ router.get('/evaluations/admin/:classId', authenticateToken, async (req, res) =>
         avg_score: likertScores.length > 0
           ? likertScores.reduce((sum, s) => sum + s.score, 0) / likertScores.length
           : null,
-        attachments: attachmentsWithUrls
-      };
-    }));
-
-    // Format group evaluations with attachments
-    const formattedGroup = await Promise.all(groupEvals.map(async (e) => {
-      const attachmentsWithUrls = await Promise.all(
-        (e.attachments || []).map(async (att) => ({
+        // Presigned URLs for the attachments
+        attachments: await Promise.all(attachmentRows.map(async (att) => ({
           id: att.id,
           fileName: att.fileName,
           mimeType: att.mimeType,
           fileSize: att.fileSize,
           url: await getPresignedUrl(att.s3Key),
           uploadedAt: att.uploadedAt
-        }))
-      );
+        })))
+      };
+    };
 
-      const likertScores = e.scores.filter(s => (s.criterion.questionType || 'likert') === 'likert' && s.score != null);
-      return {
-        id: e.id,
-        assignment_id: e.evalType.assignmentId,
-        assignment_name: e.evalType.assignment.name,
-        eval_type_id: e.evalTypeId,
-        eval_type: e.evalType.evalType,
-        eval_type_name: e.evalType.name,
-        evaluator_id: e.evaluatorId,
-        evaluator_name: `${e.evaluator.firstName} ${e.evaluator.lastName}`,
+    const individualScoresOf = groupedBy(individualScores, 'evaluationId');
+    const individualAttachmentsOf = groupedBy(individualAttachments, 'evaluationId');
+    const groupScoresOf = groupedBy(groupScores, 'groupEvaluationId');
+    const groupAttachmentsOf = groupedBy(groupAttachments, 'groupEvaluationId');
+
+    const [formattedIndividual, formattedGroup] = await Promise.all([
+      Promise.all(individualEvals.map(e => {
+        const evaluatee = userById.get(e.evaluateeId);
+        return formatEvaluation(e, individualScoresOf(e.id), individualAttachmentsOf(e.id), {
+          evaluatee_id: e.evaluateeId,
+          evaluatee_name: `${evaluatee.firstName} ${evaluatee.lastName}`
+        });
+      })),
+      Promise.all(groupEvals.map(e => formatEvaluation(e, groupScoresOf(e.id), groupAttachmentsOf(e.id), {
         group_id: e.groupId,
-        group_name: e.group.name,
-        comments: e.comments,
-        submitted_at: e.submittedAt,
-        is_late: e.isLate === 1,
-        scores: e.scores.map(s => ({
-          criterion_id: s.criterionId,
-          criterion_name: s.criterion.name,
-          score: s.score,
-          max_value: s.criterion.maxValue,
-          question_type: s.criterion.questionType || 'likert',
-          text_response: s.textResponse || null
-        })),
-        avg_score: likertScores.length > 0
-          ? likertScores.reduce((sum, s) => sum + s.score, 0) / likertScores.length
-          : null,
-        attachments: attachmentsWithUrls
-      };
-    }));
+        group_name: groupById.get(e.groupId).name
+      })))
+    ]);
 
     res.json({
       assignments: assignments.map(formatAssignment),

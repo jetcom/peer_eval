@@ -19,7 +19,8 @@ function ReportsTab({
   reportGroup,
   setReportGroup,
   assignmentEvaluations,
-  paperReviewData
+  paperReviewData,
+  loading
 }) {
   // Image viewer state
   const [viewerImages, setViewerImages] = useState(null);
@@ -40,6 +41,17 @@ function ReportsTab({
       <div className="card">
         <h2>Select a Class</h2>
         <p>Please select a class from the header dropdown to view reports.</p>
+      </div>
+    );
+  }
+
+  // The class's evaluations are still on their way: say so rather than
+  // report that there are none
+  if (loading) {
+    return (
+      <div className="card">
+        <h2>Evaluation Reports</h2>
+        <p>Loading evaluations…</p>
       </div>
     );
   }

@@ -39,6 +39,7 @@ function EvaluatorsTab({
   finalCommentsData,
   assignmentEvaluations,
   paperReviewData,
+  loading,
   onManageExtensions
 }) {
   const [roundId, setRoundId] = useState('all');
@@ -53,6 +54,17 @@ function EvaluatorsTab({
       <div className="card">
         <h2>Select a Class</h2>
         <p>Please select a class from the header dropdown to view evaluators.</p>
+      </div>
+    );
+  }
+
+  // The class's evaluations are still on their way: say so rather than
+  // report that there are none
+  if (loading) {
+    return (
+      <div className="card">
+        <h2>Evaluators</h2>
+        <p>Loading evaluations…</p>
       </div>
     );
   }

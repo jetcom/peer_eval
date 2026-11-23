@@ -74,6 +74,9 @@ function AdminDashboard() {
   const [userSearchResults, setUserSearchResults] = useState([]);
   const [assignmentEvaluations, setAssignmentEvaluations] = useState(null);
   const [paperReviewData, setPaperReviewData] = useState(null);
+  // True from a class switch until that class's evaluations have arrived, so
+  // the Evaluators and Reports tabs can say so instead of looking empty
+  const [classDataLoading, setClassDataLoading] = useState(false);
   const [uploadedCredentials, setUploadedCredentials] = useState([]);
   const [sendEmailsOnUpload, setSendEmailsOnUpload] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -122,6 +125,7 @@ function AdminDashboard() {
       setClassStudents([]);
       setAssignmentEvaluations(null);
       setPaperReviewData(null);
+      setClassDataLoading(!!selectedClass);
     }
     const fetchClassData = async () => {
       if (!selectedClass) {
@@ -131,42 +135,37 @@ function AdminDashboard() {
         setPaperReviewData(null);
         return;
       }
+      // An assignment-based class also needs its assignment evaluations and
+      // paper reviews; everything is requested at once rather than in turn
+      const currentClass = classes.find(c => c.id.toString() === selectedClass);
+      const isAssignments = currentClass?.evaluation_mode === 'assignments';
+      const noData = { data: null };
       try {
-        const [groupsRes, studentsRes] = await Promise.all([
+        const [groupsRes, studentsRes, assignmentEvalsRes, paperReviewRes] = await Promise.all([
           axios.get(`/api/classes/${selectedClass}/groups`),
-          axios.get(`/api/classes/${selectedClass}/students`)
+          axios.get(`/api/classes/${selectedClass}/students`),
+          !isAssignments ? noData : axios.get(`/api/assignments/evaluations/admin/${selectedClass}`).catch(err => {
+            console.error('Failed to fetch assignment evaluations:', err);
+            return noData;
+          }),
+          !isAssignments ? noData : axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(err => {
+            console.error('Failed to fetch paper review report:', err.response?.status, err.response?.data);
+            return noData;
+          })
         ]);
         if (stale) return;
         setClassGroups(groupsRes.data);
         setClassStudents(studentsRes.data);
-
-        // Check if this is an assignment-based class and fetch assignment evaluations
-        const currentClass = classes.find(c => c.id.toString() === selectedClass);
-        if (currentClass?.evaluation_mode === 'assignments') {
-          try {
-            const [assignmentEvalsRes, paperReviewRes] = await Promise.all([
-              axios.get(`/api/assignments/evaluations/admin/${selectedClass}`),
-              axios.get(`/api/paper-review/class/${selectedClass}/report`).catch(err => {
-                console.error('Failed to fetch paper review report:', err.response?.status, err.response?.data);
-                return { data: null };
-              })
-            ]);
-            if (stale) return;
-            setAssignmentEvaluations(assignmentEvalsRes.data);
-            setPaperReviewData(paperReviewRes.data);
-          } catch (err) {
-            if (stale) return;
-            console.error('Failed to fetch assignment evaluations:', err);
-            setAssignmentEvaluations(null);
-            setPaperReviewData(null);
-          }
-        } else {
-          setAssignmentEvaluations(null);
-          setPaperReviewData(null);
-        }
+        setAssignmentEvaluations(assignmentEvalsRes.data);
+        // Without assignment evaluations the paper reviews are not shown either
+        setPaperReviewData(assignmentEvalsRes.data ? paperReviewRes.data : null);
       } catch (err) {
+        if (stale) return;
         console.error('Failed to fetch class data:', err);
       }
+      // Until the class list is in, its evaluation mode is unknown and this
+      // effect will run again; only then is the class's data complete
+      if (currentClass) setClassDataLoading(false);
     };
     fetchClassData();
     return () => { stale = true; };
@@ -1062,6 +1061,7 @@ function AdminDashboard() {
             finalCommentsData={finalCommentsData}
             assignmentEvaluations={assignmentEvaluations}
             paperReviewData={paperReviewData}
+            loading={classDataLoading}
             onManageExtensions={() => setShowExtensionsModal(true)}
           />
         )}
@@ -1102,6 +1102,7 @@ function AdminDashboard() {
             setReportGroup={setReportGroup}
             assignmentEvaluations={assignmentEvaluations}
             paperReviewData={paperReviewData}
+            loading={classDataLoading}
           />
         )}
 
